@@ -14,8 +14,8 @@ bool firstTorqueReading1 = true;
 bool firstTorqueReading2 = true;
 #define TORQUE_SENTINEL_INVALID_VALUE -9999.0f
 
-float torqueAbortLimit = 10.0f; // Default torque limit is 10%
-float torqueOffset = -2.4f;     // Configurable, default -2.4
+float torqueAbortLimit = 2.0f;      // Default torque limit is 2%
+float torqueOffset = -2.4f;         // Configurable offset
 
 int32_t customCommandedStepCounter = 0;
 
@@ -25,7 +25,7 @@ IpAddress terminalIp;
 uint16_t terminalPort = 0;
 bool terminalDiscovered = false;
 
-uint32_t pulsesPerRev = 6400;
+uint32_t pulsesPerRev = 800;
 uint32_t lastTorqueTime = 0;
 const uint32_t torqueInterval = 20;
 bool motorsAreEnabled = false;
@@ -64,7 +64,7 @@ float getSmoothedTorqueEWMA(MotorDriver &motor, float &smoothedValue, bool &firs
 		smoothedValue = EWMA_ALPHA * currentRawTorque + (1.0f - EWMA_ALPHA) * smoothedValue;
 	}
 	float adjusted = smoothedValue + torqueOffset;
-	return adjusted; // now signed!
+	return adjusted; // DO NOT clamp negative or zero!
 }
 
 void SetupUsbSerial() {
@@ -85,13 +85,12 @@ void SetupEthernet() {
 
 void SetupMotors() {
 	MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
-	// Motor 1: M0
 	ConnectorM0.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM0.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
 	ConnectorM0.VelMax(INT32_MAX);
 	ConnectorM0.AccelMax(INT32_MAX);
 	ConnectorM0.EnableRequest(true);
-	// Motor 2: M1
+
 	ConnectorM1.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM1.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
 	ConnectorM1.VelMax(INT32_MAX);
@@ -118,29 +117,17 @@ void sendTorqueDebug() {
 	int hlfb2 = (int)ConnectorM1.HlfbState();
 
 	char torque1Str[16], torque2Str[16];
-	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) {
-		strcpy(torque1Str, "---");
-		} else {
-		snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1);
-	}
-	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) {
-		strcpy(torque2Str, "---");
-		} else {
-		snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2);
-	}
+	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) strcpy(torque1Str, "---");
+	else snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1);
+	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) strcpy(torque2Str, "---");
+	else snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2);
 
-	char msg[200];
+	char msg[256];
 	snprintf(msg, sizeof(msg),
 	"torque1: %s, hlfb1: %d, enabled1: %d, pos_cmd1: %ld, "
 	"torque2: %s, hlfb2: %d, enabled2: %d, pos_cmd2: %ld, custom_pos: %ld",
-	torque1Str,
-	hlfb1,
-	motorsAreEnabled ? 1 : 0,
-	ConnectorM0.PositionRefCommanded(),
-	torque2Str,
-	hlfb2,
-	motorsAreEnabled ? 1 : 0,
-	ConnectorM1.PositionRefCommanded(),
+	torque1Str, hlfb1, motorsAreEnabled ? 1 : 0, ConnectorM0.PositionRefCommanded(),
+	torque2Str, hlfb2, motorsAreEnabled ? 1 : 0, ConnectorM1.PositionRefCommanded(),
 	customCommandedStepCounter
 	);
 	sendToPC(msg);
@@ -191,16 +178,19 @@ void moveWithSpeed(bool useAltSpeed, int steps, const char *label) {
 }
 
 void handleRevCommand(const char *msg) {
-	int revs = atoi(msg + 4);
-	moveWithSpeed(false, revs * pulsesPerRev, "rev move");
+	double revs = atof(msg + 4);
+	int32_t steps = static_cast<int32_t>(round(revs * pulsesPerRev));
+	moveWithSpeed(false, steps, "rev move");
 }
 void handleFastCommand(const char *msg) {
-	int revs = atoi(msg + 5);
-	moveWithSpeed(false, revs * pulsesPerRev, "fast move");
+	double revs = atof(msg + 5);
+	int32_t steps = static_cast<int32_t>(round(revs * pulsesPerRev));
+	moveWithSpeed(false, steps, "fast move");
 }
 void handleSlowCommand(const char *msg) {
-	int revs = atoi(msg + 5);
-	moveWithSpeed(true, revs * pulsesPerRev, "slow move");
+	double revs = atof(msg + 5);
+	int32_t steps = static_cast<int32_t>(round(revs * pulsesPerRev));
+	moveWithSpeed(true, steps, "slow move");
 }
 
 void handlePprCommand(const char *msg) {
@@ -230,7 +220,6 @@ void handleSetTorqueLimit(const char *msg) {
 	}
 }
 
-// New: Parse "SET_TORQUE_OFFSET <val>"
 void handleSetTorqueOffset(const char *msg) {
 	char *offsetStr = strstr(msg, " ");
 	if (offsetStr) {
@@ -346,6 +335,9 @@ void handleUdpMessage(const char *msg) {
 		sendToPC("PONG");
 		} else if (strncmp(msg, "JOG ", 4) == 0) {
 		handleJogCommand(msg);
+		} else if (strcmp(msg, "MACHINE_HOME") == 0 || strcmp(msg, "CARTRIDGE_HOME") == 0) {
+		resetCustomStepCounter();
+		sendToPC("STEPS RESET");
 	}
 }
 
@@ -363,9 +355,9 @@ void checkTorqueLimit() {
 		float currentSmoothedTorque1 = getSmoothedTorqueEWMA(ConnectorM0, smoothedTorqueValue1, firstTorqueReading1);
 		float currentSmoothedTorque2 = getSmoothedTorqueEWMA(ConnectorM1, smoothedTorqueValue2, firstTorqueReading2);
 		if ((currentSmoothedTorque1 != TORQUE_SENTINEL_INVALID_VALUE &&
-		fabs(currentSmoothedTorque1) > torqueAbortLimit) ||
+		fabsf(currentSmoothedTorque1) > torqueAbortLimit) ||
 		(currentSmoothedTorque2 != TORQUE_SENTINEL_INVALID_VALUE &&
-		fabs(currentSmoothedTorque2) > torqueAbortLimit)) {
+		fabsf(currentSmoothedTorque2) > torqueAbortLimit)) {
 			disableMotorsAndNotify("TORQUE LIMIT EXCEEDED");
 			resetCustomStepCounter();
 			Delay_ms(200);
@@ -374,13 +366,12 @@ void checkTorqueLimit() {
 	}
 }
 
-
 int main() {
 	SetupUsbSerial();
 	SetupEthernet();
 	SetupMotors();
 
-	torqueAbortLimit = 10.0f;
+	torqueAbortLimit = 2.0f;
 	torqueOffset = -2.4f;
 	customCommandedStepCounter = 0;
 
