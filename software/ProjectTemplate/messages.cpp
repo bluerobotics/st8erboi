@@ -105,12 +105,11 @@ void sendTelem(SystemStates *states) {
 	}
 	lastTelemTime = now;
 
-	// Get fresh motor data
 	float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue1, &firstTorqueReading1);
 	float displayTorque2 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue2, &firstTorqueReading2);
 	int hlfb1 = (int)ConnectorM0.HlfbState();
 	int hlfb2 = (int)ConnectorM1.HlfbState();
-	long pos_cmd1_val = ConnectorM0.PositionRefCommanded(); // Use long for consistency with snprintf %ld
+	long pos_cmd1_val = ConnectorM0.PositionRefCommanded();
 	long pos_cmd2_val = ConnectorM1.PositionRefCommanded();
 
 	char torque1Str[16], torque2Str[16];
@@ -126,26 +125,21 @@ void sendTelem(SystemStates *states) {
 	}
 
 	// Increased buffer size for additional state strings
-	char msg[350];
+	char msg[400]; // Increased size for homingPhaseStr
 	snprintf(msg, sizeof(msg),
-	"MAIN_STATE: %s, HOMING_STATE: %s, FEED_STATE: %s, ERROR_STATE: %s, "
+	"MAIN_STATE: %s, HOMING_STATE: %s, HOMING_PHASE: %s, FEED_STATE: %s, ERROR_STATE: %s, " // Added HOMING_PHASE
 	"torque1: %s, hlfb1: %d, enabled1: %d, pos_cmd1: %ld, "
 	"torque2: %s, hlfb2: %d, enabled2: %d, pos_cmd2: %ld, "
 	"machine_steps: %ld, cartridge_steps: %ld",
-	states->mainStateStr(),    // Uses method from SystemStates class
-	states->homingStateStr(),  // Uses method for HomingState
-	states->feedStateStr(),    // Uses method for FeedState
-	states->errorStateStr(),   // Uses method for ErrorState
-	torque1Str,
-	hlfb1,
-	motorsAreEnabled ? 1 : 0,  // Assuming motorsAreEnabled is still the global flag
-	pos_cmd1_val,
-	torque2Str,
-	hlfb2,
-	motorsAreEnabled ? 1 : 0,  // Both motors share the same enabled status from this flag
-	pos_cmd2_val,
-	(long)machineStepCounter,  // Cast to long just to be safe with %ld
-	(long)cartridgeStepCounter // Cast to long
+	states->mainStateStr(),
+	states->homingStateStr(),
+	states->homingPhaseStr(), // Added new phase string
+	states->feedStateStr(),
+	states->errorStateStr(),
+	torque1Str, hlfb1, motorsAreEnabled ? 1 : 0, pos_cmd1_val,
+	torque2Str, hlfb2, motorsAreEnabled ? 1 : 0, pos_cmd2_val,
+	(long)machineStepCounter,
+	(long)cartridgeStepCounter
 	);
 	sendToPC(msg);
 }
@@ -433,54 +427,75 @@ void handleMachineHomeMove(const char *msg, SystemStates *states) {
 		sendToPC("MACHINE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
-	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration, retract_mm, torque_percent;
-	// Format: <CMD_STR> <stroke_mm> <rapid_vel_mm_s> <touch_vel_mm_s> <retract_dist_mm> <torque_%>
-	
-	if (sscanf(msg + strlen(CMD_STR_MACHINE_HOME_MOVE), "%f %f %f %f %f %f",
-	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration, &retract_mm, &torque_percent) == 6) {
-		
-		if(states->homingMachineDone == false)
-		states->homingState = HOMING_MACHINE;
-		states->homingMachineDone = false;
+	if (states->currentHomingPhase != HOMING_PHASE_IDLE && states->currentHomingPhase != HOMING_PHASE_COMPLETE && states->currentHomingPhase != HOMING_PHASE_ERROR) {
+		sendToPC("MACHINE_HOME_MOVE ignored: Homing operation already in progress.");
+		return;
+	}
 
-		char response[200];
-		snprintf(response, sizeof(response), "MACHINE_HOME_MOVE RX: Strk:%.1f RpdV:%.1f TchV:%.1f Ret:%.1f Tq:%.1f%%",
-		stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, retract_mm, torque_percent);
+	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent;
+	// Format: <CMD_STR> <stroke_mm> <rapid_vel_mm_s> <touch_vel_mm_s> <acceleration_mm_s2> <retract_dist_mm> <torque_%>
+	
+	int parsed_count = sscanf(msg + strlen(CMD_STR_MACHINE_HOME_MOVE), "%f %f %f %f %f %f",
+	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration_mm_s2, &retract_mm, &torque_percent);
+
+	if (parsed_count == 6) {
+		char response[250]; // Increased for acceleration
+		snprintf(response, sizeof(response), "MACHINE_HOME_MOVE RX: Strk:%.1f RpdV:%.1f TchV:%.1f Acc:%.1f Ret:%.1f Tq:%.1f%%",
+		stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent);
 		sendToPC(response);
 
 		if (!motorsAreEnabled) {
-			sendToPC("MACHINE_HOME_MOVE blocked: Motors disabled.");
-			states->homingState = HOMING_NONE;
+			sendToPC("MACHINE_HOME_MOVE blocked: Motors disabled. Set to HOMING_PHASE_ERROR.");
+			states->homingState = HOMING_MACHINE; // Indicate it was attempted
+			states->currentHomingPhase = HOMING_PHASE_ERROR;
+			states->errorState = ERROR_MANUAL_ABORT; // Or a more specific error
 			return;
 		}
-		if (torque_percent <=0 || torque_percent > 100) {
+		if (torque_percent <= 0 || torque_percent > 100) {
 			sendToPC("Warning: Invalid torque for Machine Home. Using default 20%.");
 			torque_percent = 20.0f;
 		}
+		if (rapid_vel_mm_s <= 0 || touch_vel_mm_s <= 0 || acceleration_mm_s2 <=0 || stroke_mm <= 0 || retract_mm < 0) {
+			sendToPC("Error: Invalid parameters for Machine Home (must be positive, retract >= 0). Set to HOMING_PHASE_ERROR.");
+			states->homingState = HOMING_MACHINE;
+			states->currentHomingPhase = HOMING_PHASE_ERROR;
+			states->errorState = ERROR_MANUAL_ABORT; // Or specific param error
+			return;
+		}
 
-		long stroke_steps = (long)(stroke_mm * STEPS_PER_MM_CONST);
-		int rapid_sps = (int)(rapid_vel_mm_s * STEPS_PER_MM_CONST);
-		int touch_sps = (int)(touch_vel_mm_s * STEPS_PER_MM_CONST);
-		// long retract_steps = (long)(retract_mm * STEPS_PER_MM_CONST); // This will be used after touch-off
 
-		// Placeholder for actual machine homing sequence (typically downwards, so negative steps for M0/M1)
-		// This is a simplified representation. Real homing is more complex:
-		// 1. Rapid move towards endstop (e.g., -stroke_steps) with rapid_sps.
-		// 2. On torque spike (using torque_percent as the limit for checkTorqueLimit), stop.
-		// 3. Slowly back off a bit.
-		// 4. Slowly approach again with touch_sps.
-		// 5. On second torque spike/limit switch, stop and set machineStepCounter = 0.
-		// 6. Retract by retract_steps.
-		// For now, just a single move command as a placeholder.
-		sendToPC("Initiating Machine Homing (conceptual move)...");
-		// Example: Assume M0 and M1 move together for machine home
-		moveMotors(-stroke_steps, -stroke_steps, (int)torque_percent, rapid_sps, acceleration); // Using global accelerationLimit
+		// Store parameters in SystemStates
+		states->homing_stroke_mm_param = stroke_mm;
+		states->homing_rapid_vel_mm_s_param = rapid_vel_mm_s;
+		states->homing_touch_vel_mm_s_param = touch_vel_mm_s;
+		states->homing_acceleration_param = acceleration_mm_s2;
+		states->homing_retract_mm_param = retract_mm;
+		states->homing_torque_percent_param = torque_percent;
 
-		// Actual completion and setting machineStepCounter = 0 would be handled
-		// in main.cpp based on motor status and states->onHomingMachineDone().
+		// Calculate and store step/sps values
+		// STEPS_PER_MM_CONST needs pulsesPerRev which is from motor.cpp
+		const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV_CONST;
+		states->homing_actual_stroke_steps = (long)(stroke_mm * current_steps_per_mm);
+		states->homing_actual_rapid_sps = (int)(rapid_vel_mm_s * current_steps_per_mm);
+		states->homing_actual_touch_sps = (int)(touch_vel_mm_s * current_steps_per_mm);
+		states->homing_actual_accel_sps2 = (int)(acceleration_mm_s2 * current_steps_per_mm);
+		states->homing_actual_retract_steps = (long)(retract_mm * current_steps_per_mm);
+
+		// Initialize homing state machine
+		states->homingState = HOMING_MACHINE;
+		states->currentHomingPhase = HOMING_PHASE_RAPID_MOVE;
+		states->homingStartTime = Milliseconds(); // For timeout tracking
+		states->errorState = ERROR_NONE; // Clear previous errors
+
+		sendToPC("Initiating Machine Homing: RAPID_MOVE phase.");
+		// Machine homing is typically in the negative direction
+		long initial_move_steps = -1 * states->homing_actual_stroke_steps;
+		moveMotors(initial_move_steps, initial_move_steps, (int)states->homing_torque_percent_param, states->homing_actual_rapid_sps, states->homing_actual_accel_sps2);
 		
 		} else {
-		sendToPC("Invalid MACHINE_HOME_MOVE format. Expected 5 parameters.");
+		sendToPC("Invalid MACHINE_HOME_MOVE format. Expected 6 parameters.");
+		states->homingState = HOMING_MACHINE; // Indicate it was attempted
+		states->currentHomingPhase = HOMING_PHASE_ERROR;
 	}
 }
 
@@ -489,43 +504,69 @@ void handleCartridgeHomeMove(const char *msg, SystemStates *states) {
 		sendToPC("CARTRIDGE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
-	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration, retract_mm, torque_percent;
-	// Format: <CMD_STR> <stroke_mm> <rapid_vel_mm_s> <touch_vel_mm_s> <retract_dist_mm> <torque_%>
-	if (sscanf(msg + strlen(CMD_STR_CARTRIDGE_HOME_MOVE), "%f %f %f %f %f %f",
-	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration, &retract_mm, &torque_percent) == 6) {
+	if (states->currentHomingPhase != HOMING_PHASE_IDLE && states->currentHomingPhase != HOMING_PHASE_COMPLETE && states->currentHomingPhase != HOMING_PHASE_ERROR) {
+		sendToPC("CARTRIDGE_HOME_MOVE ignored: Homing operation already in progress.");
+		return;
+	}
+	
+	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent;
+	int parsed_count = sscanf(msg + strlen(CMD_STR_CARTRIDGE_HOME_MOVE), "%f %f %f %f %f %f",
+	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration_mm_s2, &retract_mm, &torque_percent);
 
-		states->homingState = HOMING_CARTRIDGE;
-		states->homingCartridgeDone = false;
-
-		char response[200];
-		snprintf(response, sizeof(response), "CARTRIDGE_HOME_MOVE RX: Strk:%.1f RpdV:%.1f TchV:%.1f Ret:%.1f Tq:%.1f%%",
-		stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, retract_mm, torque_percent);
+	if (parsed_count == 6) {
+		char response[250];
+		snprintf(response, sizeof(response), "CARTRIDGE_HOME_MOVE RX: Strk:%.1f RpdV:%.1f TchV:%.1f Acc:%.1f Ret:%.1f Tq:%.1f%%",
+		stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent);
 		sendToPC(response);
 
 		if (!motorsAreEnabled) {
-			sendToPC("CARTRIDGE_HOME_MOVE blocked: Motors disabled.");
-			states->homingState = HOMING_NONE;
+			sendToPC("CARTRIDGE_HOME_MOVE blocked: Motors disabled. Set to HOMING_PHASE_ERROR.");
+			states->homingState = HOMING_CARTRIDGE;
+			states->currentHomingPhase = HOMING_PHASE_ERROR;
+			states->errorState = ERROR_MANUAL_ABORT; // Or a more specific error
 			return;
 		}
-		if (torque_percent <=0 || torque_percent > 100) {
+		if (torque_percent <= 0 || torque_percent > 100) {
 			sendToPC("Warning: Invalid torque for Cartridge Home. Using default 20%.");
 			torque_percent = 20.0f;
 		}
+		if (rapid_vel_mm_s <= 0 || touch_vel_mm_s <= 0 || acceleration_mm_s2 <=0 || stroke_mm <= 0 || retract_mm < 0) {
+			sendToPC("Error: Invalid parameters for Cartridge Home (must be positive, retract >= 0). Set to HOMING_PHASE_ERROR.");
+			states->homingState = HOMING_CARTRIDGE;
+			states->currentHomingPhase = HOMING_PHASE_ERROR;
+			states->errorState = ERROR_MANUAL_ABORT; // Or specific param error
+			return;
+		}
 
-		long stroke_steps = (long)(stroke_mm * STEPS_PER_MM_CONST);
-		int rapid_sps = (int)(rapid_vel_mm_s * STEPS_PER_MM_CONST);
-		// int touch_sps = (int)(touch_vel_mm_s * STEPS_PER_MM_CONST);
-		// long retract_steps = (long)(retract_mm * STEPS_PER_MM_CONST);
 
-		sendToPC("Initiating Cartridge Homing (conceptual move)...");
-		// Example: Assume M0 and M1 move together for cartridge home (typically upwards, positive steps)
-		moveMotors(stroke_steps, stroke_steps, (int)torque_percent, rapid_sps, acceleration);
+		states->homing_stroke_mm_param = stroke_mm;
+		states->homing_rapid_vel_mm_s_param = rapid_vel_mm_s;
+		states->homing_touch_vel_mm_s_param = touch_vel_mm_s;
+		states->homing_acceleration_param = acceleration_mm_s2;
+		states->homing_retract_mm_param = retract_mm;
+		states->homing_torque_percent_param = torque_percent;
 
-		// Actual completion and setting cartridgeStepCounter = 0 in main.cpp
-		// based on motor status and states->onHomingCartridgeDone().
+		const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV_CONST;
+		states->homing_actual_stroke_steps = (long)(stroke_mm * current_steps_per_mm);
+		states->homing_actual_rapid_sps = (int)(rapid_vel_mm_s * current_steps_per_mm);
+		states->homing_actual_touch_sps = (int)(touch_vel_mm_s * current_steps_per_mm);
+		states->homing_actual_accel_sps2 = (int)(acceleration_mm_s2 * current_steps_per_mm);
+		states->homing_actual_retract_steps = (long)(retract_mm * current_steps_per_mm);
+
+		states->homingState = HOMING_CARTRIDGE;
+		states->currentHomingPhase = HOMING_PHASE_RAPID_MOVE;
+		states->homingStartTime = Milliseconds();
+		states->errorState = ERROR_NONE;
+
+		sendToPC("Initiating Cartridge Homing: RAPID_MOVE phase.");
+		// Cartridge homing is typically in the positive direction
+		long initial_move_steps = states->homing_actual_stroke_steps;
+		moveMotors(initial_move_steps, initial_move_steps, (int)states->homing_torque_percent_param, states->homing_actual_rapid_sps, states->homing_actual_accel_sps2);
 
 		} else {
-		sendToPC("Invalid CARTRIDGE_HOME_MOVE format. Expected 5 parameters.");
+		sendToPC("Invalid CARTRIDGE_HOME_MOVE format. Expected 6 parameters.");
+		states->homingState = HOMING_CARTRIDGE;
+		states->currentHomingPhase = HOMING_PHASE_ERROR;
 	}
 }
 
