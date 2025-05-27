@@ -433,12 +433,13 @@ void handleMachineHomeMove(const char *msg, SystemStates *states) {
 		sendToPC("MACHINE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
-	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, retract_mm, torque_percent;
+	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration, retract_mm, torque_percent;
 	// Format: <CMD_STR> <stroke_mm> <rapid_vel_mm_s> <touch_vel_mm_s> <retract_dist_mm> <torque_%>
-	// NO op_offset
-	if (sscanf(msg + strlen(CMD_STR_MACHINE_HOME_MOVE), "%f %f %f %f %f",
-	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &retract_mm, &torque_percent) == 5) {
+	
+	if (sscanf(msg + strlen(CMD_STR_MACHINE_HOME_MOVE), "%f %f %f %f %f %f",
+	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration, &retract_mm, &torque_percent) == 6) {
 		
+		if(states->homingMachineDone == false)
 		states->homingState = HOMING_MACHINE;
 		states->homingMachineDone = false;
 
@@ -457,7 +458,6 @@ void handleMachineHomeMove(const char *msg, SystemStates *states) {
 			torque_percent = 20.0f;
 		}
 
-
 		long stroke_steps = (long)(stroke_mm * STEPS_PER_MM_CONST);
 		int rapid_sps = (int)(rapid_vel_mm_s * STEPS_PER_MM_CONST);
 		int touch_sps = (int)(touch_vel_mm_s * STEPS_PER_MM_CONST);
@@ -474,7 +474,7 @@ void handleMachineHomeMove(const char *msg, SystemStates *states) {
 		// For now, just a single move command as a placeholder.
 		sendToPC("Initiating Machine Homing (conceptual move)...");
 		// Example: Assume M0 and M1 move together for machine home
-		moveMotors(-stroke_steps, -stroke_steps, (int)torque_percent, rapid_sps, accelerationLimit); // Using global accelerationLimit
+		moveMotors(-stroke_steps, -stroke_steps, (int)torque_percent, rapid_sps, acceleration); // Using global accelerationLimit
 
 		// Actual completion and setting machineStepCounter = 0 would be handled
 		// in main.cpp based on motor status and states->onHomingMachineDone().
@@ -489,10 +489,10 @@ void handleCartridgeHomeMove(const char *msg, SystemStates *states) {
 		sendToPC("CARTRIDGE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
-	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, retract_mm, torque_percent;
+	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration, retract_mm, torque_percent;
 	// Format: <CMD_STR> <stroke_mm> <rapid_vel_mm_s> <touch_vel_mm_s> <retract_dist_mm> <torque_%>
-	if (sscanf(msg + strlen(CMD_STR_CARTRIDGE_HOME_MOVE), "%f %f %f %f %f",
-	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &retract_mm, &torque_percent) == 5) {
+	if (sscanf(msg + strlen(CMD_STR_CARTRIDGE_HOME_MOVE), "%f %f %f %f %f %f",
+	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration, &retract_mm, &torque_percent) == 6) {
 
 		states->homingState = HOMING_CARTRIDGE;
 		states->homingCartridgeDone = false;
@@ -519,7 +519,7 @@ void handleCartridgeHomeMove(const char *msg, SystemStates *states) {
 
 		sendToPC("Initiating Cartridge Homing (conceptual move)...");
 		// Example: Assume M0 and M1 move together for cartridge home (typically upwards, positive steps)
-		moveMotors(stroke_steps, stroke_steps, (int)torque_percent, rapid_sps, accelerationLimit);
+		moveMotors(stroke_steps, stroke_steps, (int)torque_percent, rapid_sps, acceleration);
 
 		// Actual completion and setting cartridgeStepCounter = 0 in main.cpp
 		// based on motor status and states->onHomingCartridgeDone().
@@ -534,10 +534,10 @@ void handleInjectMove(const char *msg, SystemStates *states) {
 		sendToPC("INJECT_MOVE ignored: Not in FEED_MODE.");
 		return;
 	}
-	float volume_ml, speed_ml_s, steps_per_ml_val, torque_percent;
+	float volume_ml, speed_ml_s, acceleration, steps_per_ml_val, torque_percent;
 	// Format: <CMD_STR> <volume_ml> <speed_ml_s> <steps_per_ml_calc> <torque_%>
-	if (sscanf(msg + strlen(CMD_STR_INJECT_MOVE), "%f %f %f %f",
-	&volume_ml, &speed_ml_s, &steps_per_ml_val, &torque_percent) == 4) {
+	if (sscanf(msg + strlen(CMD_STR_INJECT_MOVE), "%f %f %f %f %f",
+	&volume_ml, &speed_ml_s, &acceleration, &steps_per_ml_val, &torque_percent) == 5) {
 		
 		states->feedState = FEED_INJECT;
 		states->feedingDone = false;
@@ -570,7 +570,7 @@ void handleInjectMove(const char *msg, SystemStates *states) {
 		
 		sendToPC("Initiating Inject move...");
 		// Assuming inject moves both motors symmetrically
-		moveMotors(total_steps, total_steps, (int)torque_percent, feed_velocity_sps, accelerationLimit);
+		moveMotors(total_steps, total_steps, (int)torque_percent, feed_velocity_sps, acceleration);
 		// Main loop should monitor for completion and call states->onFeedingDone()
 		// and then transition states->feedState back to FEED_STANDBY.
 
@@ -584,9 +584,9 @@ void handlePurgeMove(const char *msg, SystemStates *states) {
 		sendToPC("PURGE_MOVE ignored: Not in FEED_MODE.");
 		return;
 	}
-	float volume_ml, speed_ml_s, steps_per_ml_val, torque_percent;
-	if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f",
-	&volume_ml, &speed_ml_s, &steps_per_ml_val, &torque_percent) == 4) {
+	float volume_ml, speed_ml_s, acceleration, steps_per_ml_val, torque_percent;
+	if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
+	&volume_ml, &speed_ml_s, &acceleration, &steps_per_ml_val, &torque_percent) == 5) {
 
 		states->feedState = FEED_PURGE;
 		states->feedingDone = false;
@@ -617,7 +617,7 @@ void handlePurgeMove(const char *msg, SystemStates *states) {
 		}
 
 		sendToPC("Initiating Purge move...");
-		moveMotors(total_steps, total_steps, (int)torque_percent, purge_velocity_sps, accelerationLimit);
+		moveMotors(total_steps, total_steps, (int)torque_percent, purge_velocity_sps, acceleration);
 		} else {
 		sendToPC("Invalid PURGE_MOVE format. Expected 4 parameters.");
 	}
@@ -628,9 +628,9 @@ void handleRetractMove(const char *msg, SystemStates *states) {
 		sendToPC("RETRACT_MOVE ignored: Not in FEED_MODE.");
 		return;
 	}
-	float volume_ml, speed_ml_s, steps_per_ml_val, torque_percent;
-	if (sscanf(msg + strlen(CMD_STR_RETRACT_MOVE), "%f %f %f %f",
-	&volume_ml, &speed_ml_s, &steps_per_ml_val, &torque_percent) == 4) {
+	float volume_ml, speed_ml_s, steps_per_ml_val, torque_percent, acceleration;
+	if (sscanf(msg + strlen(CMD_STR_RETRACT_MOVE), "%f %f %f %f %f",
+	&volume_ml, &speed_ml_s, &steps_per_ml_val, &torque_percent, &acceleration) == 5) {
 
 		states->feedState = FEED_RETRACT;
 		states->feedingDone = false;
@@ -661,7 +661,7 @@ void handleRetractMove(const char *msg, SystemStates *states) {
 		}
 		
 		sendToPC("Initiating Retract move...");
-		moveMotors(total_steps, total_steps, (int)torque_percent, retract_velocity_sps, accelerationLimit);
+		moveMotors(total_steps, total_steps, (int)torque_percent, retract_velocity_sps, acceleration);
 		} else {
 		sendToPC("Invalid RETRACT_MOVE format. Expected 4 parameters.");
 	}

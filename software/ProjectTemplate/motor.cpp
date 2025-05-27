@@ -102,11 +102,11 @@ void moveMotors(int stepsM0, int stepsM1, int torque_limit_percent, int velocity
 		sendToPC("Error: Invalid torque limit for moveMotors. Using default.");
 		torque_limit_percent = (int)globalTorqueLimit; // Fallback or a safe default
 	}
-	if (velocity_sps <= 0) {
+	if (velocity_sps <= 0 || velocity_sps > 10000) {
 		sendToPC("Error: Invalid velocity for moveMotors. Using default max.");
 		velocity_sps = velocityLimit; // Or a safe default
 	}
-	if (accel_sps2 <= 0) {
+	if (accel_sps2 <= 0 || velocity_sps > 100000) {
 		sendToPC("Error: Invalid acceleration for moveMotors. Using default max.");
 		accel_sps2 = accelerationLimit; // Or a safe default
 	}
@@ -116,9 +116,9 @@ void moveMotors(int stepsM0, int stepsM1, int torque_limit_percent, int velocity
 	
 	// Set speed and acceleration for this specific move
 	// These will cap at the motor's VelMax/AccelMax if higher.
-	ConnectorM0.VelMax(velocity_sps); // Use SpeedMax for move-specific speed
+	ConnectorM0.VelMax(velocity_sps);
 	ConnectorM1.VelMax(velocity_sps);
-	ConnectorM0.AccelMax(accel_sps2);   // Use AccelMax for move-specific acceleration
+	ConnectorM0.AccelMax(accel_sps2); 
 	ConnectorM1.AccelMax(accel_sps2);
 	
 	char msg[128]; // Reduced size, only sending essential info

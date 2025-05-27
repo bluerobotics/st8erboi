@@ -48,13 +48,21 @@ int main(void)
 			break;
 
 			case HOMING_MODE:
-				if (checkTorqueLimit() == true) abortMove();
+				// Do nothing until another command is received
 				switch (states.homingState){
 					case HOMING_CARTRIDGE:
-						// home cartridge routine
+						if(states.homingCartridgeDone == true){
+							//zero the cartridge home step counter
+							states.homingCartridgeDone == false;
+							states.homingState = HOMING_NONE;
+						}
 					break;
 					case HOMING_MACHINE:
-						// home cartridge routine
+						if(states.homingMachineDone == true){
+							//zero the cartridge home step counter
+							states.homingCartridgeDone == false;
+							states.homingState = HOMING_NONE;
+						}
 					break;
 				}
 			break;
@@ -75,7 +83,11 @@ int main(void)
 			break;
 
 			case JOG_MODE:
-			// Standby and monitor for jog commands and execute the moves
+			if (checkTorqueLimit() == true){
+				abortMove();
+				states.mainState = STANDBY_MODE;
+				states.errorState = ERROR_TORQUE_ABORT;
+			}
 			break;
 
 			case DISABLED_MODE:

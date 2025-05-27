@@ -78,6 +78,7 @@ class SystemStates {
 	// State as string
 	const char* mainStateStr() const;
 	const char* homingStateStr() const;
+	const char* feedStateStr() const;
 	const char* errorStateStr() const;
 };
 
