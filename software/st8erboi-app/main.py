@@ -5,150 +5,225 @@ import datetime
 from gui import build_gui
 
 CLEARCORE_PORT = 8888
-HEARTBEAT_INTERVAL = 0.02
+CLIENT_PORT = 6272
+HEARTBEAT_INTERVAL = 0.3
+DISCOVERY_RETRY_INTERVAL = 2.0
 TIMEOUT_THRESHOLD = 1.0
 TORQUE_HISTORY_LENGTH = 200
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(('', 6272))
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-sock.settimeout(0.1)
+try:
+    sock.bind(('', CLIENT_PORT))
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.settimeout(0.1)
+except OSError as e:
+    print(f"ERROR binding socket: {e}. Port {CLIENT_PORT} may be in use.")
+    exit()
 
 clearcore_ip = None
-clearcore_connected = False
-last_telem_time = 0
+last_rx_time = 0
+connected = False
+last_ui_logic_state = None
 
-def log_to_terminal(msg, terminal_cb):
-    timestr = datetime.datetime.now().strftime("[%H:%M:%S] ")
-    terminal_cb(f"{timestr}{msg}\n")
 
-def discover(terminal_cb):
-    global clearcore_ip
-    msg = f"DISCOVER_TELEM PORT=6272"
+def log_to_terminal(msg, terminal_cb_func):
+    timestr = datetime.datetime.now().strftime("[%H:%M:%S.%f]")[:-3]
+    if terminal_cb_func:
+        terminal_cb_func(f"{timestr} {msg}\n")
+    else:
+        print(f"{timestr} {msg}")
+
+
+def discover(terminal_cb_func):
+    msg = f"DISCOVER_TELEM PORT={CLIENT_PORT}"
     try:
-        destination = ('255.255.255.255', CLEARCORE_PORT)
-        sock.sendto(msg.encode(), destination)
-        log_to_terminal(f"Discovery packet sent: '{msg}' to {destination[0]}:{destination[1]}", terminal_cb)
+        sock.sendto(msg.encode(), ('255.255.255.255', CLEARCORE_PORT))
+        log_to_terminal(f"Discovery: '{msg}'", terminal_cb_func)
     except Exception as e:
-        log_to_terminal(f"Error sending discovery packet: {e}", terminal_cb)
-    clearcore_ip = None
+        log_to_terminal(f"Discovery error: {e}", terminal_cb_func)
 
-def send_udp(msg, terminal_cb):
-    global clearcore_ip
+
+def send_udp(msg, terminal_cb_func):
     if clearcore_ip:
         try:
-            log_to_terminal(f"Sending to {clearcore_ip}:{CLEARCORE_PORT} - {msg}", terminal_cb)
             sock.sendto(msg.encode(), (clearcore_ip, CLEARCORE_PORT))
         except Exception as e:
-            log_to_terminal(f"UDP send error: {e}", terminal_cb)
+            log_to_terminal(f"UDP send error to {clearcore_ip}: {e}", terminal_cb_func)
     else:
-        log_to_terminal(f"UDP send skipped (no ClearCore IP): {msg}", terminal_cb)
+        log_to_terminal(f"UDP send skipped (no IP): {msg}", terminal_cb_func)
 
-def send_heartbeat(terminal_cb):
-    discover(terminal_cb)  # Always sends "DISCOVER_TELEM PORT=6272"
 
-def monitor_connection(update_status_cb, update_motor_cb, terminal_cb):
-    global clearcore_connected, last_telem_time
-    was_connected = False
+def monitor_connection(gui_refs):
+    global connected, last_rx_time, clearcore_ip
+    prev_conn = False
     while True:
-        send_heartbeat(terminal_cb)
+        now = time.time();
+        curr_conn = connected
+        if curr_conn and (now - last_rx_time) > TIMEOUT_THRESHOLD:
+            log_to_terminal("Connection timeout.", gui_refs['terminal_cb'])
+            connected = False;
+            clearcore_ip = None;
+            curr_conn = False
+            gui_refs['update_status']("🔌 Disconnected (Timeout)")
+            gui_refs['update_state']("Unknown")
+            gui_refs['prominent_firmware_state_var'].set("DISCONNECTED")
+            if gui_refs['prominent_state_display_frame'].winfo_exists():
+                gui_refs['prominent_state_display_frame'].config(bg="#500000")
+                if gui_refs['prominent_state_label'].winfo_exists(): gui_refs['prominent_state_label'].config(
+                    bg="#500000", fg="white")
+            for i in [1, 2]: gui_refs['update_motor_status'](i, "N/A", "#808080"); gui_refs['update_enabled_status'](i,
+                                                                                                                     "N/A",
+                                                                                                                     "#808080")
+        if curr_conn != prev_conn:
+            if curr_conn: log_to_terminal(f"Connected to {clearcore_ip}", gui_refs['terminal_cb']); gui_refs[
+                'update_status'](f"✅ Connected to {clearcore_ip}")
+            prev_conn = curr_conn
         time.sleep(HEARTBEAT_INTERVAL)
-        if time.time() - last_telem_time > TIMEOUT_THRESHOLD:
-            if clearcore_connected:
-                clearcore_connected = False
-                log_to_terminal("Connection lost: timed out.", terminal_cb)
-                update_status_cb("🔌 Disconnected")
-                update_motor_cb(1, "Unknown", "#ffffff")
-                update_motor_cb(2, "Unknown", "#ffffff")
-        elif clearcore_ip:
-            if not was_connected:
-                log_to_terminal(f"Connection established: {clearcore_ip}", terminal_cb)
-                was_connected = True
-            update_status_cb(f"✅ Connected to {clearcore_ip}")
 
-def parse_telemetry(msg, update_motor_cb, update_enabled_cb, commanded_steps_var, torque_history1, torque_history2, torque_times, update_torque_plot, terminal_cb):
+
+def auto_discover_loop(terminal_cb_func):
+    while True:
+        if not connected: discover(terminal_cb_func)
+        time.sleep(DISCOVERY_RETRY_INTERVAL)
+
+
+def parse_telemetry(msg, gui_refs):  # gui_refs now contains all necessary UI elements
+    global last_ui_logic_state
     try:
-        parts = dict(p.strip().split(':', 1) for p in msg.replace('%','').split(',') if ':' in p)
-        t1 = float(parts.get("torque1", "0").strip()) if parts.get("torque1", "---").strip() != "---" else 0.0
-        h1 = int(parts.get("hlfb1", "0").strip())
-        e1 = int(parts.get("enabled1", "0").strip())
-        pc1 = int(parts.get("pos_cmd1", "0").strip())
-        t2 = float(parts.get("torque2", "0").strip()) if parts.get("torque2", "---").strip() != "---" else 0.0
-        h2 = int(parts.get("hlfb2", "0").strip())
-        e2 = int(parts.get("enabled2", "0").strip())
-        pc2 = int(parts.get("pos_cmd2", "0").strip())
-        msteps = int(parts.get("machine_steps", "0").strip())
-        csteps = int(parts.get("cartridge_steps", "0").strip())
-        commanded_steps_var.set(str(msteps))
+        parts = {};
+        normalized_msg = msg.replace('%', '')
+        for item in normalized_msg.split(','):
+            if ':' in item: key, value = item.split(':', 1); parts[key.strip()] = value.strip()
 
-        torque_history1.append(t1)
-        torque_history2.append(t2)
-        torque_times.append(time.time())
-        if len(torque_history1) > TORQUE_HISTORY_LENGTH:
-            torque_history1.pop(0)
-            torque_history2.pop(0)
-            torque_times.pop(0)
-        update_torque_plot(t1, t2, torque_times, torque_history1, torque_history2)
+        fw_main_state = parts.get("MAIN_STATE", "N/A")
+        fw_moving_state = parts.get("MOVING_STATE", "N/A")
+        fw_error_state = parts.get("ERROR_STATE", "N/A")
 
-        for motor, hlfb, enabled in [(1, h1, e1), (2, h2, e2)]:
-            if enabled == 0:
-                update_enabled_cb(motor, "Disabled", "#ff4444")
-                update_motor_cb(motor, "N/A", "#888888")
+        # Update prominent status display
+        current_status_text = "---";
+        bg_color = "#444444";
+        fg_color = "white"
+        if fw_error_state != "ERROR_NONE" and fw_error_state != "N/A":
+            current_status_text = f"{fw_error_state.replace('ERROR_', '')}"
+            bg_color = "#8B0000"  # Dark Red
+        elif fw_main_state == "MOVING":
+            current_status_text = fw_moving_state.replace('MOVING_', '')
+            bg_color = "#B8860B";
+            fg_color = "white"
+        elif fw_main_state == "STANDBY":
+            current_status_text = "STANDBY"  # Simplified
+            bg_color = "#005000"  # Dark Green
+        elif fw_main_state == "TEST_STATE":
+            current_status_text = "TEST MODE";
+            bg_color = "#E07000";
+            fg_color = "white"
+        elif fw_main_state == "DISABLED":
+            current_status_text = "SYSTEM DISABLED";
+            bg_color = "#333333"
+        else:
+            current_status_text = fw_main_state
+
+        gui_refs['prominent_firmware_state_var'].set(current_status_text.upper())
+        if gui_refs['prominent_state_display_frame'].winfo_exists():
+            gui_refs['prominent_state_display_frame'].config(bg=bg_color)
+            if gui_refs['prominent_state_label'].winfo_exists():
+                gui_refs['prominent_state_label'].config(bg=bg_color, fg=fg_color)
+
+        # Determine UI logical state for mode buttons & jog/contextual panel enable
+        ui_logic_state = "Standby"
+        if fw_main_state == "STANDBY":
+            ui_logic_state = "Standby"
+        elif fw_main_state == "TEST_STATE":
+            ui_logic_state = "Test Mode"
+        elif fw_main_state == "MOVING":
+            if fw_moving_state == "MOVING_JOG":
+                ui_logic_state = "Jog"
+            elif fw_moving_state == "MOVING_HOMING":
+                ui_logic_state = "Homing Mode"
+            elif fw_moving_state == "MOVING_FEEDING":
+                ui_logic_state = "Feed Mode"
             else:
-                update_enabled_cb(motor, "Enabled", "#00ff88")
-                if hlfb == 1:
-                    update_motor_cb(motor, "At Position", "#00bfff" if motor == 1 else "yellow")
-                else:
-                    update_motor_cb(motor, "Moving / Busy", "#ffff55")
-    except Exception as e:
-        log_to_terminal(f"Error parsing telemetry: {e}", terminal_cb)
+                ui_logic_state = "Moving"  # A generic moving state for UI
+        elif fw_main_state == "ERROR":
+            ui_logic_state = "Error"
+        elif fw_main_state == "DISABLED":
+            ui_logic_state = "Disabled"
 
-def recv_loop(update_status_cb, update_motor_cb, update_enabled_cb, commanded_steps_var,
-              torque_history1, torque_history2, torque_times, update_torque_plot, terminal_cb):
-    global clearcore_ip, clearcore_connected, last_telem_time
+        if ui_logic_state != last_ui_logic_state:
+            gui_refs['update_state'](ui_logic_state);
+            last_ui_logic_state = ui_logic_state
+
+        t1_str = parts.get("torque1", "---");
+        t1 = float(t1_str) if t1_str != "---" else 0.0
+        h1 = int(parts.get("hlfb1", "0"));
+        e1 = int(parts.get("enabled1", "0"))  # motorsAreEnabled
+        pos_cmd1 = int(parts.get("pos_cmd1", "0"))
+        t2_str = parts.get("torque2", "---");
+        t2 = float(t2_str) if t2_str != "---" else 0.0
+        h2 = int(parts.get("hlfb2", "0"));
+        pos_cmd2 = int(parts.get("pos_cmd2", "0"))
+        msteps = int(parts.get("machine_steps", "0"))
+
+        gui_refs['commanded_steps_var'].set(str(msteps))
+        ct = time.time()
+        if not gui_refs['torque_times'] or ct > gui_refs['torque_times'][-1]:
+            gui_refs['torque_history1'].append(t1);
+            gui_refs['torque_history2'].append(t2)
+            gui_refs['torque_times'].append(ct)
+            while len(gui_refs['torque_history1']) > TORQUE_HISTORY_LENGTH:
+                gui_refs['torque_history1'].pop(0);
+                gui_refs['torque_history2'].pop(0);
+                gui_refs['torque_times'].pop(0)
+        if gui_refs['torque_times']: gui_refs['update_torque_plot'](t1, t2, gui_refs['torque_times'],
+                                                                    gui_refs['torque_history1'],
+                                                                    gui_refs['torque_history2'])
+        gui_refs['update_position_cmd'](pos_cmd1, pos_cmd2)
+
+        motors_enabled = (e1 == 1);
+        en_txt, en_clr = ("Enabled", "#00ff88") if motors_enabled else ("Disabled", "#ff4444")
+        motor_off_txt, motor_off_clr = ("N/A (Dis.)", "#808080")  # Shortened
+        gui_refs['update_enabled_status'](1, en_txt, en_clr);
+        gui_refs['update_enabled_status'](2, en_txt, en_clr)
+        if motors_enabled:
+            gui_refs['update_motor_status'](1, "At Pos" if h1 == 1 else "Moving/Busy", "#00bfff")  # Shortened
+            gui_refs['update_motor_status'](2, "At Pos" if h2 == 1 else "Moving/Busy", "yellow")  # Shortened
+        else:
+            gui_refs['update_motor_status'](1, motor_off_txt, motor_off_clr);
+            gui_refs['update_motor_status'](2, motor_off_txt, motor_off_clr)
+    except Exception as e:
+        log_to_terminal(f"Telemetry parse error: {e} in '{msg}'", gui_refs['terminal_cb'])
+
+
+def recv_loop(gui_refs):
+    global clearcore_ip, connected, last_rx_time
     while True:
         try:
             data, addr = sock.recvfrom(1024)
-            msg = data.decode().strip()
-            log_to_terminal(f"Received from {addr[0]}: {msg}", terminal_cb)
-            # Save IP if not set
-            if clearcore_ip != addr[0]:
-                clearcore_ip = addr[0]
-            last_telem_time = time.time()
-            clearcore_connected = True
-            terminal_cb(f"[{addr[0]}]: {msg}\n")
-            parse_telemetry(msg, update_motor_cb, update_enabled_cb, commanded_steps_var,
-                            torque_history1, torque_history2, torque_times, update_torque_plot, terminal_cb)
+            msg = data.decode('utf-8', errors='replace').strip()
+            if "MAIN_STATE" in msg and "MOVING_STATE" in msg:
+                if not connected or clearcore_ip != addr[0]: clearcore_ip = addr[0]
+                connected = True;
+                last_rx_time = time.time()
+                parse_telemetry(msg, gui_refs)
+            else:
+                if clearcore_ip and addr[0] == clearcore_ip: log_to_terminal(f"[CC@{addr[0]}]: {msg}",
+                                                                             gui_refs['terminal_cb'])
         except socket.timeout:
             continue
         except Exception as e:
-            log_to_terminal(f"Error in recv_loop: {e}", terminal_cb)
-            terminal_cb(f"Error processing message: {e}\n")
+            log_to_terminal(f"Recv_loop error: {e}", gui_refs['terminal_cb']); time.sleep(0.1)
+
 
 def main():
     gui = build_gui(
-        lambda msg: send_udp(msg, gui['terminal_cb']),
-        lambda: discover(gui['terminal_cb']),
+        lambda msg_to_send: send_udp(msg_to_send, gui.get('terminal_cb')),
+        lambda: discover(gui.get('terminal_cb'))
     )
-    threading.Thread(target=recv_loop, args=(
-        gui['update_status'],
-        gui['update_motor_status'],
-        gui['update_enabled_status'],
-        gui['commanded_steps_var'],
-        gui['torque_history1'],
-        gui['torque_history2'],
-        gui['torque_times'],
-        gui['update_torque_plot'],
-        gui['terminal_cb'],
-    ), daemon=True).start()
-
-    threading.Thread(target=monitor_connection, args=(
-        gui['update_status'],
-        gui['update_motor_status'],
-        gui['terminal_cb'],
-    ), daemon=True).start()
-
+    threading.Thread(target=recv_loop, args=(gui,), daemon=True).start()
+    threading.Thread(target=monitor_connection, args=(gui,), daemon=True).start()
+    threading.Thread(target=auto_discover_loop, args=(gui.get('terminal_cb'),), daemon=True).start()
     gui['root'].mainloop()
+
 
 if __name__ == "__main__":
     main()

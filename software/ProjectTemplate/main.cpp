@@ -15,70 +15,71 @@ int main(void)
 	//SetupUsbSerial();
 	SetupEthernet();
 	SetupMotors();
+	
+	uint32_t now = Milliseconds();
+	uint32_t lastMotorTime = now;
+	uint32_t motorInterval = 2000;
+	int motorFlip = 1;
 
 	// --- Main application loop ---
-	while (1)
+	while (true)
 	{
 		checkUdpBuffer(&states);
+		sendTelem(&states);
+		now = Milliseconds();
 
 		switch (states.mainState)
 		{
-			case STANDBY:
+			case STANDBY_MODE:
 			// Idle, do nothing
 			break;
+			
+			case TEST_MODE:
+				if (checkTorqueLimit() == true){
+					abortMove();
+					states.mainState = STANDBY_MODE;
+					states.errorState = ERROR_TORQUE_ABORT;
+				}
+				if (now - lastMotorTime > motorInterval) {
+					moveMotors(motorFlip*800, motorFlip*800, 2, 800, 5000);  //void moveMotors(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel)
+					motorFlip = motorFlip*-1;
+					lastMotorTime = now;
+				}
+			break;
 
-			case MOVING:
-			checkTorqueLimit(); // <--- Only checked while moving!
-			switch (states.movingState)
-			{
-				case MOVING_JOG:
-				if (!checkMoving()) {
-					states.jogDone = true;
-				}
-				break;
-				case MOVING_HOMING:
-				switch (states.homingState)
-				{
-					case MOVING_HOMING_MACHINE:
-					if (!checkMoving()) {
-						states.homingMachineDone = true;
-						states.homingState = MOVING_HOMING_CARTRIDGE;
-					}
+			case HOMING_MODE:
+				if (checkTorqueLimit() == true) abortMove();
+				switch (states.homingState){
+					case HOMING_CARTRIDGE:
+						// home cartridge routine
 					break;
-					case MOVING_HOMING_CARTRIDGE:
-					if (!checkMoving()) {
-						states.homingCartridgeDone = true;
-						states.mainState = STANDBY;
-						states.movingState = MOVING_NONE;
-						states.homingState = MOVING_HOMING_NONE;
-					}
-					break;
-					default:
+					case HOMING_MACHINE:
+						// home cartridge routine
 					break;
 				}
+			break;
+			
+			case FEED_MODE:
+			switch (states.feedState){
+				case FEED_STANDBY:
+				// Idle, do nothing
 				break;
-				case MOVING_FEEDING:
-				if (!checkMoving()) {
-					states.feedingDone = true;
-					states.mainState = STANDBY;
-					states.movingState = MOVING_NONE;
-				}
-				break;
-				default:
+				case FEED_PURGE:
+				// purge cartridge routine
+				case FEED_INJECT:
+				// inject cartridge routine
+				case FEED_RETRACT:
+				// feed cartridge routine
 				break;
 			}
 			break;
 
-			case ERROR:
-			// Wait for UDP command to reset or standby
+			case JOG_MODE:
+			// Standby and monitor for jog commands and execute the moves
 			break;
 
-			case DISABLED:
+			case DISABLED_MODE:
 			// Only ENABLE command should change state from here
-			break;
-
-			default:
-			states.mainState = DISABLED;
 			break;
 		}
 	}

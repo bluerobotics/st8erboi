@@ -151,23 +151,34 @@ int main() {
 	} else {
 		SerialPort.SendLine("Motor Ready");	
 	}
+	
+	uint32_t now = Milliseconds();
+	uint32_t lastTelemTime = now;
+	uint32_t telemInterval = 10;
+	
+	uint32_t lastMotorTime = now;
+	uint32_t motorInterval = 5000;
+	
+	int motorFlip = 1;
 
+	
     while (true) {
-        // Move 6400 counts (positive direction) then wait 2000ms.
-        SynchronizedMove(6400);
-        Delay_ms(2000);
-        // Move 19200 counts farther positive, then wait 2000ms.
-        SynchronizedMove(19200);
-        Delay_ms(2000);
-        // Move back 12800 counts (negative direction), then wait 2000ms.
-        SynchronizedMove(-12800);
-        Delay_ms(2000);
-        // Move back 6400 counts (negative direction), then wait 2000ms.
-        SynchronizedMove(-6400);
-        Delay_ms(2000);
-        // Move back to the start (negative 6400 pulses), then wait 2000ms.
-        SynchronizedMove(-6400);
-        Delay_ms(2000);
+		//SerialPort.SendLine("hi");
+		
+		now = Milliseconds();
+		
+		if (now - lastTelemTime > telemInterval) {
+			SerialPort.SendLine(ConnectorM0.PositionRefCommanded());
+			SerialPort.SendLine(ConnectorM1.PositionRefCommanded());
+			lastTelemTime = now;
+		}
+		
+		if (now - lastMotorTime > motorInterval) {
+			SynchronizedMove(motorFlip*800);
+			motorFlip = motorFlip*-1;
+			lastMotorTime = now;
+		}
+		
     }
 }
 
@@ -207,37 +218,6 @@ bool SynchronizedMove(int32_t distance) {
     // Move both motors the same distance.
     motor0.Move(distance);
     motor1.Move(distance);
-
-    // Tell the user that the program will wait for HLFB to assert on both motors
-    SerialPort.SendLine("Waiting for HLFB to assert on both motors");
-
-    // Wait until both motors complete their moves.
-    uint32_t lastStatusTime = Milliseconds();
-    while ( (!motor0.StepsComplete() || motor0.HlfbState() != MotorDriver::HLFB_ASSERTED ||
-           !motor1.StepsComplete() || motor1.HlfbState() != MotorDriver::HLFB_ASSERTED) &&
-		   !motor0.StatusReg().bit.AlertsPresent && !motor1.StatusReg().bit.AlertsPresent ){
-        continue;
-    }
-
-    // Check if motor alert occurred during move
-    // Clear alert if configured to do so 
-    if (motor0.StatusReg().bit.AlertsPresent || motor1.StatusReg().bit.AlertsPresent){
-        motor0.MoveStopAbrupt();
-        motor1.MoveStopAbrupt();
-        SerialPort.SendLine("Motor alert detected.");		
-        PrintAlerts();
-        if(HANDLE_ALERTS){
-            HandleAlerts();
-        } else {
-            SerialPort.SendLine("Enable automatic fault handling by setting HANDLE_ALERTS to 1.");
-        }
-        SerialPort.SendLine("Motion may not have completed as expected. Proceed with caution.");
-        SerialPort.SendLine();
-        return false;
-    } else {
-        SerialPort.SendLine("Move Done");
-        return true;
-    }
 }
 
 

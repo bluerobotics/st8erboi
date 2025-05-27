@@ -1,35 +1,42 @@
 #include "motor.h"
-#include "messages.h"
+#include "messages.h" // For sendToPC (though typically messages.cpp includes motor.h)
+#include <math.h>     // For fabsf
 
-// --- Module globals ---
-float globalTorqueLimit = 2.0f;
-float torqueOffset = -2.4f;
+// --- Module globals / Definitions for externs from motor.h ---
+float globalTorqueLimit    = 2.0f;   // Default overall limit, overridden by moveMotors's param
+float torqueOffset         = -2.4f;  // Global offset, settable by CMD_SET_TORQUE_OFFSET
 float smoothedTorqueValue1 = 0.0f;
 float smoothedTorqueValue2 = 0.0f;
-bool firstTorqueReading1 = true;
-bool firstTorqueReading2 = true;
-uint32_t lastTorqueTime = 0;
-bool motorsAreEnabled = false;
-uint32_t pulsesPerRev = 800;
-int32_t machineStepCounter = 0;
+bool firstTorqueReading1   = true;
+bool firstTorqueReading2   = true;
+bool motorsAreEnabled      = false;
+uint32_t pulsesPerRev      = 800;    // Used for calculations, ensure consistency
+int32_t machineStepCounter   = 0;
 int32_t cartridgeStepCounter = 0;
+int32_t accelerationLimit  = 100000; // pulses/sec^2
+int32_t velocityLimit      = 10000;  // pulses/sec
 
-// Extern sendToPC from elsewhere in your project
-extern void sendToPC(const char *msg);
+// Define default/reference torque limits (declared extern in motor.h)
+// These are not directly used by moveMotors if commands always supply a torque limit.
+// They can serve as defaults for the GUI or other internal logic.
+float jogTorqueLimit    = 30.0f;
+float homingTorqueLimit = 20.0f;
+float feedTorqueLimit   = 15.0f;
+
 
 void SetupMotors(void)
 {
 	MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
 	ConnectorM0.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM0.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	ConnectorM0.VelMax(INT32_MAX);
-	ConnectorM0.AccelMax(INT32_MAX);
+	ConnectorM0.VelMax(velocityLimit);
+	ConnectorM0.AccelMax(accelerationLimit);
 	ConnectorM0.EnableRequest(true);
 
 	ConnectorM1.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM1.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	ConnectorM1.VelMax(INT32_MAX);
-	ConnectorM1.AccelMax(INT32_MAX);
+	ConnectorM1.VelMax(velocityLimit);
+	ConnectorM1.AccelMax(accelerationLimit);
 	ConnectorM1.EnableRequest(true);
 
 	motorsAreEnabled = true;
@@ -38,23 +45,35 @@ void SetupMotors(void)
 	Delay_ms(100);
 }
 
-void enableMotors(const char* reason_message)
-{
+void enableMotors(const char* reason_message) {
 	ConnectorM0.EnableRequest(true);
 	ConnectorM1.EnableRequest(true);
-	motorsAreEnabled = true;
-	while (ConnectorM0.HlfbState() != MotorDriver::HLFB_ASSERTED || ConnectorM1.HlfbState() != MotorDriver::HLFB_ASSERTED)
-	Delay_ms(50);
+	motorsAreEnabled = true; // Set flag AFTER attempting to enable
+
+	// Wait for HLFB to assert, indicating motors are ready
+	uint32_t enableTimeout = Milliseconds() + 2000; // 2 second timeout
+	while (ConnectorM0.HlfbState() != MotorDriver::HLFB_ASSERTED ||
+	ConnectorM1.HlfbState() != MotorDriver::HLFB_ASSERTED) {
+		if (Milliseconds() > enableTimeout) {
+			sendToPC("Error: Timeout waiting for motors to enable (HLFB).");
+			motorsAreEnabled = false; // Failed to enable
+			// Optionally set an error state in SystemStates
+			return;
+		}
+		Delay_ms(10); // Brief delay while polling
+	}
+	
 	sendToPC(reason_message);
+	// Reset torque smoothing on enable
 	smoothedTorqueValue1 = 0.0f;
 	smoothedTorqueValue2 = 0.0f;
 	firstTorqueReading1 = true;
 	firstTorqueReading2 = true;
 }
 
-void disableMotors(const char* reason_message)
-{
+void disableMotors(const char* reason_message){
 	if (!motorsAreEnabled) return;
+	
 	ConnectorM0.EnableRequest(false);
 	ConnectorM1.EnableRequest(false);
 	motorsAreEnabled = false;
@@ -67,34 +86,49 @@ void disableMotors(const char* reason_message)
 	Delay_ms(50);
 }
 
-void moveMotors(int stepsM0, int stepsM1, int torque_limit, SimpleSpeedState speed, uint8_t motorMask)
-{
+void abortMove(){
+	ConnectorM0.MoveStopAbrupt();
+	ConnectorM1.MoveStopAbrupt();
+}
+
+void moveMotors(int stepsM0, int stepsM1, int torque_limit_percent, int velocity_sps, int accel_sps2) {
 	if (!motorsAreEnabled) {
-		sendToPC("MOVE BLOCKED: Motors are disabled");
+		sendToPC("MOVE BLOCKED: Motors are disabled.");
 		return;
 	}
 
-	if (speed == SLOW) {
-		if (motorMask & MOTOR_M0) ConnectorM0.EnableTriggerPulse(1, 25, true);
-		if (motorMask & MOTOR_M1) ConnectorM1.EnableTriggerPulse(1, 25, true);
-		Delay_ms(5);
+	// Validate parameters (basic examples)
+	if (torque_limit_percent < 0 || torque_limit_percent > 100) {
+		sendToPC("Error: Invalid torque limit for moveMotors. Using default.");
+		torque_limit_percent = (int)globalTorqueLimit; // Fallback or a safe default
 	}
-
-	globalTorqueLimit = torque_limit;
-
-	if (motorMask & MOTOR_M0) {
-		ConnectorM0.Move(stepsM0);
+	if (velocity_sps <= 0) {
+		sendToPC("Error: Invalid velocity for moveMotors. Using default max.");
+		velocity_sps = velocityLimit; // Or a safe default
 	}
-	if (motorMask & MOTOR_M1) {
-		ConnectorM1.Move(stepsM1);
+	if (accel_sps2 <= 0) {
+		sendToPC("Error: Invalid acceleration for moveMotors. Using default max.");
+		accel_sps2 = accelerationLimit; // Or a safe default
 	}
-	Delay_ms(2);
-
-	char msg[128];
-	snprintf(msg, sizeof(msg),
-	"MOVE COMMANDED: M0=%ld, M1=%ld, Mask=%02X, Torque=%d, Speed=%s",
-	(long)stepsM0, (long)stepsM1, motorMask, torque_limit, speed == FAST ? "FAST" : "SLOW");
+	
+	// Set the globalTorqueLimit that checkTorqueLimit() will use for this operation
+	globalTorqueLimit = (float)torque_limit_percent;
+	
+	// Set speed and acceleration for this specific move
+	// These will cap at the motor's VelMax/AccelMax if higher.
+	ConnectorM0.VelMax(velocity_sps); // Use SpeedMax for move-specific speed
+	ConnectorM1.VelMax(velocity_sps);
+	ConnectorM0.AccelMax(accel_sps2);   // Use AccelMax for move-specific acceleration
+	ConnectorM1.AccelMax(accel_sps2);
+	
+	char msg[128]; // Reduced size, only sending essential info
+	snprintf(msg, sizeof(msg), "moveMotors: M0s:%d M1s:%d TqL: %d%% V:%d A:%d",
+	stepsM0, stepsM1, torque_limit_percent, velocity_sps, accel_sps2);
 	sendToPC(msg);
+	
+	// Initiate moves
+	if (stepsM0 != 0) ConnectorM0.Move(stepsM0);
+	if (stepsM1 != 0) ConnectorM1.Move(stepsM1);
 }
 
 bool checkMoving(void)
@@ -122,25 +156,22 @@ float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firs
 	return adjusted;
 }
 
-void checkTorqueLimit(void)
-{
+bool checkTorqueLimit(void){
 	if (motorsAreEnabled && checkMoving()) {
 		float currentSmoothedTorque1 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue1, &firstTorqueReading1);
 		float currentSmoothedTorque2 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue2, &firstTorqueReading2);
-		if ((currentSmoothedTorque1 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(currentSmoothedTorque1) > globalTorqueLimit) ||
-		(currentSmoothedTorque2 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(currentSmoothedTorque2) > globalTorqueLimit)) {
-			disableMotors("TORQUE LIMIT EXCEEDED");
-			enableMotors("MOTORS RE-ENABLED AFTER TORQUE ABORT");
+
+		// The operational_offset from commands like JOG_MOVE, HOME_MOVE etc. is not yet used here.
+
+		bool m0_over_limit = (currentSmoothedTorque1 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(currentSmoothedTorque1) > globalTorqueLimit);
+		bool m1_over_limit = (currentSmoothedTorque2 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(currentSmoothedTorque2) > globalTorqueLimit);
+
+		if (m0_over_limit || m1_over_limit) {
+			abortMove();
+			Delay_ms(200);
+			sendToPC("TORQUE LIMIT REACHED, MOTION ABORTED");
+			return true; // Limit exceeded
 		}
 	}
-}
-
-void resetMotors(void)
-{
-	disableMotors("motors reset initiated");
-	ConnectorM0.ClearAlerts();
-	ConnectorM1.ClearAlerts();
-	machineStepCounter = 0;
-	cartridgeStepCounter = 0;
-	enableMotors("motors reset complete");
+	return false; // Limit not exceeded or not applicable
 }
