@@ -639,138 +639,12 @@ void handleCartridgeHomeMove(const char *msg, SystemStates *states) {
 	}
 }
 
-void handleInjectMove(const char *msg, SystemStates *states) {
-	if (states->mainState != FEED_MODE) { /* ... */ return; }
-	if (checkMoving()){ sendToPC("Error: Motors busy. Cannot start inject."); return; }
-
-	resetActiveDispenseOp(states); // Reset before starting new operation
-
-	float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
-	if (sscanf(msg + strlen(CMD_STR_INJECT_MOVE), "%f %f %f %f %f",
-	&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
-		
-		// ... (Parameter validation from your previous version) ...
-		if (!motorsAreEnabled) { sendToPC("Inject blocked: Motors disabled."); return; }
-		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive for Inject."); return;}
-		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 15.0f; // Default
-		if (volume_ml <= 0) { sendToPC("Error: Inject volume must be positive."); return; }
-
-
-		states->feedState = FEED_INJECT;
-		states->feedingDone = false;
-		states->active_dispense_operation_ongoing = true;
-		states->active_operation_target_ml = volume_ml;
-		states->active_operation_steps_per_ml = steps_per_ml_val;
-		states->active_operation_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-		states->active_operation_dispensed_ml_rt = 0.0f; // Initialize real-time display
-		states->last_completed_dispense_ml = 0.0f; // Clear last completed for this new op
-
-		long total_steps = (long)(volume_ml * steps_per_ml_val);
-		int feed_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
-		if (feed_velocity_sps <= 0) feed_velocity_sps = 100; // Default if calculated is invalid
-		
-		char response[200];
-		snprintf(response, sizeof(response), "INJECT_MOVE RX: Vol:%.3fml, Speed:%.3fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
-		volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
-		sendToPC(response);
-		sendToPC("Initiating Inject move...");
-		moveMotors(total_steps, total_steps, (int)torque_percent, feed_velocity_sps, (int)acceleration_sps2);
-		} else {
-		sendToPC("Invalid INJECT_MOVE format.");
-	}
-}
-
-void handlePurgeMove(const char *msg, SystemStates *states) {
-	if (states->mainState != FEED_MODE) { /* ... */ return; }
-	if (checkMoving()){ sendToPC("Error: Motors busy. Cannot start purge."); return; }
-
-	resetActiveDispenseOp(states); // Reset before starting
-
-	float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
-	if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
-	&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
-
-		// ... (Parameter validation) ...
-		if (!motorsAreEnabled) { sendToPC("Purge blocked: Motors disabled."); return; }
-		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive for Purge."); return;}
-		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 15.0f;
-		if (volume_ml <= 0) { sendToPC("Error: Purge volume must be positive."); return; }
-
-		states->feedState = FEED_PURGE;
-		states->feedingDone = false;
-		states->active_dispense_operation_ongoing = true;
-		states->active_operation_target_ml = volume_ml;
-		states->active_operation_steps_per_ml = steps_per_ml_val;
-		states->active_operation_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-		states->active_operation_dispensed_ml_rt = 0.0f;
-		states->last_completed_dispense_ml = 0.0f;
-
-		long total_steps = (long)(volume_ml * steps_per_ml_val);
-		int purge_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
-		if (purge_velocity_sps <=0) purge_velocity_sps = 200;
-
-		char response[200];
-		snprintf(response, sizeof(response), "PURGE_MOVE RX: Vol:%.3fml, Speed:%.3fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
-		volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
-		sendToPC(response);
-		sendToPC("Initiating Purge move...");
-		moveMotors(total_steps, total_steps, (int)torque_percent, purge_velocity_sps, (int)acceleration_sps2);
-		} else {
-		sendToPC("Invalid PURGE_MOVE format.");
-	}
-}
-
-void handleRetractMove(const char *msg, SystemStates *states) {
-	if (states->mainState != FEED_MODE) {
-		sendToPC("RETRACT_MOVE ignored: Not in FEED_MODE.");
-		return;
-	}
-	float volume_ml, speed_ml_s, steps_per_ml_val, torque_percent, acceleration;
-	if (sscanf(msg + strlen(CMD_STR_RETRACT_MOVE), "%f %f %f %f %f",
-	&volume_ml, &speed_ml_s, &steps_per_ml_val, &torque_percent, &acceleration) == 5) {
-
-		states->feedState = FEED_RETRACT;
-		states->feedingDone = false;
-
-		char response[200];
-		snprintf(response, sizeof(response), "RETRACT_MOVE RX: Vol:%.3fml, Speed:%.3fml/s, Steps/ml:%.2f, Tq:%.1f%%",
-		volume_ml, speed_ml_s, steps_per_ml_val, torque_percent);
-		sendToPC(response);
-
-		if (!motorsAreEnabled) {
-			sendToPC("RETRACT_MOVE blocked: Motors disabled.");
-			states->feedState = FEED_STANDBY; return;
-		}
-		if (steps_per_ml_val <= 0) {
-			sendToPC("Error: Steps/ml must be positive for RETRACT_MOVE.");
-			states->feedState = FEED_STANDBY; return;
-		}
-		if (torque_percent <= 0 || torque_percent > 100) {
-			sendToPC("Warning: Invalid torque for Retract. Using default 15%.");
-			torque_percent = 15.0f;
-		}
-
-		long total_steps = - (long)(volume_ml * steps_per_ml_val); // Negative steps for retraction
-		int retract_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
-		if (retract_velocity_sps <=0) {
-			sendToPC("Warning: Calculated retract velocity is zero or negative. Using default 200sps.");
-			retract_velocity_sps = 200;
-		}
-		
-		sendToPC("Initiating Retract move...");
-		moveMotors(total_steps, total_steps, (int)torque_percent, retract_velocity_sps, acceleration);
-		} else {
-		sendToPC("Invalid RETRACT_MOVE format. Expected 4 parameters.");
-	}
-}
-
 void resetActiveDispenseOp(SystemStates *states) {
-	states->active_operation_target_ml = 0.0f;
-	states->active_operation_dispensed_ml_rt = 0.0f;
-	// last_completed_dispense_ml is preserved until a new op successfully completes or is aborted
-	states->active_operation_initial_axis_steps = ConnectorM0.PositionRefCommanded(); // Reset base for next calc
-	states->active_operation_steps_per_ml = 0.0f;
-	states->active_dispense_operation_ongoing = false;
+    states->active_op_target_ml = 0.0f;
+    states->active_op_total_dispensed_ml = 0.0f;
+    states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+    states->active_op_steps_per_ml = 0.0f;
+    states->active_dispense_operation_ongoing = false;
 }
 
 void handleClearErrors(SystemStates *states) {
@@ -882,124 +756,124 @@ void handleInjectMove(const char *msg, SystemStates *states) { // This is effect
 		states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
 		states->feedState = FEED_INJECT_ACTIVE; // Update state after move command
 		} else { sendToPC("Invalid INJECT_MOVE format."); }
+}
+
+void handlePurgeMove(const char *msg, SystemStates *states) { // This is effectively START_PURGE
+	// Similar logic to handleInjectMove
+	if (states->mainState != FEED_MODE) { sendToPC("PURGE ignored: Not in FEED_MODE."); return; }
+	if (checkMoving() || states->active_dispense_operation_ongoing) { sendToPC("Error: Operation already in progress or motors busy."); return; }
+
+	float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
+	if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
+	&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
+			
+		if (!motorsAreEnabled) { sendToPC("PURGE blocked: Motors disabled."); return; }
+		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive."); return;}
+		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f;
+		if (volume_ml <= 0) { sendToPC("Error: Purge volume must be positive."); return; }
+		if (speed_ml_s <= 0) { sendToPC("Error: Purge speed must be positive."); return; }
+		if (acceleration_sps2 <= 0) { sendToPC("Error: Purge acceleration must be positive."); return; }
+
+		states->feedState = FEED_PURGE_STARTING;
+		states->feedingDone = false;
+		states->active_dispense_operation_ongoing = true;
+		states->active_op_target_ml = volume_ml;
+		states->active_op_steps_per_ml = steps_per_ml_val;
+		states->active_op_total_target_steps = (long)(volume_ml * steps_per_ml_val);
+		states->active_op_remaining_steps = states->active_op_total_target_steps;
+		states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+		states->active_op_total_dispensed_ml = 0.0f;
+
+		states->active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
+		states->active_op_accel_sps2 = (int)acceleration_sps2;
+		states->active_op_torque_percent = (int)torque_percent;
+		if (states->active_op_velocity_sps <= 0) states->active_op_velocity_sps = 200;
+
+		char response[200];
+		snprintf(response, sizeof(response), "RX PURGE: Vol:%.2fml, Speed:%.2fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
+		volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
+		sendToPC(response);
+		sendToPC("Starting Purge operation...");
+		moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
+		states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
+		states->feedState = FEED_PURGE_ACTIVE;
+		} else { sendToPC("Invalid PURGE_MOVE format."); }
+}
+
+void handlePauseOperation(SystemStates *states) {
+	if (!states->active_dispense_operation_ongoing) {
+		sendToPC("PAUSE ignored: No active inject/purge operation.");
+		return;
 	}
+	if (states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE) {
+		sendToPC("Cmd: Pausing operation...");
+		ConnectorM0.MoveStopDecel(); // Use decelerated stop
+		ConnectorM1.MoveStopDecel();
+		// The actual calculation of remaining steps and state change to PAUSED
+		// will happen in main.cpp once motors confirm they've stopped.
+		// For now, we just signal the intent.
+		// We need a way for main.cpp to know a pause was requested.
+		if(states->feedState == FEED_INJECT_ACTIVE) states->feedState = FEED_INJECT_PAUSED; // Tentative state
+		if(states->feedState == FEED_PURGE_ACTIVE) states->feedState = FEED_PURGE_PAUSED;   // Tentative state
+		// The main loop will see motors stopping and then finalize the pause.
+		} else {
+		sendToPC("PAUSE ignored: Not in an active inject/purge state.");
+	}
+}
 
-	void handlePurgeMove(const char *msg, SystemStates *states) { // This is effectively START_PURGE
-		// Similar logic to handleInjectMove
-		if (states->mainState != FEED_MODE) { sendToPC("PURGE ignored: Not in FEED_MODE."); return; }
-		if (checkMoving() || states->active_dispense_operation_ongoing) { sendToPC("Error: Operation already in progress or motors busy."); return; }
-
-		float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
-		if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
-		&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
-			
-			if (!motorsAreEnabled) { sendToPC("PURGE blocked: Motors disabled."); return; }
-			if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive."); return;}
-			if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f;
-			if (volume_ml <= 0) { sendToPC("Error: Purge volume must be positive."); return; }
-			if (speed_ml_s <= 0) { sendToPC("Error: Purge speed must be positive."); return; }
-			if (acceleration_sps2 <= 0) { sendToPC("Error: Purge acceleration must be positive."); return; }
-
-			states->feedState = FEED_PURGE_STARTING;
-			states->feedingDone = false;
-			states->active_dispense_operation_ongoing = true;
-			states->active_op_target_ml = volume_ml;
-			states->active_op_steps_per_ml = steps_per_ml_val;
-			states->active_op_total_target_steps = (long)(volume_ml * steps_per_ml_val);
-			states->active_op_remaining_steps = states->active_op_total_target_steps;
-			states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-			states->active_op_total_dispensed_ml = 0.0f;
-
-			states->active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
-			states->active_op_accel_sps2 = (int)acceleration_sps2;
-			states->active_op_torque_percent = (int)torque_percent;
-			if (states->active_op_velocity_sps <= 0) states->active_op_velocity_sps = 200;
-
-			char response[200];
-			snprintf(response, sizeof(response), "RX PURGE: Vol:%.2fml, Speed:%.2fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
-			volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
-			sendToPC(response);
-			sendToPC("Starting Purge operation...");
-			moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
-			states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
-			states->feedState = FEED_PURGE_ACTIVE;
-			} else { sendToPC("Invalid PURGE_MOVE format."); }
-		}
-
-		void handlePauseOperation(SystemStates *states) {
-			if (!states->active_dispense_operation_ongoing) {
-				sendToPC("PAUSE ignored: No active inject/purge operation.");
-				return;
-			}
-			if (states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE) {
-				sendToPC("Cmd: Pausing operation...");
-				ConnectorM0.MoveStopDecel(); // Use decelerated stop
-				ConnectorM1.MoveStopDecel();
-				// The actual calculation of remaining steps and state change to PAUSED
-				// will happen in main.cpp once motors confirm they've stopped.
-				// For now, we just signal the intent.
-				// We need a way for main.cpp to know a pause was requested.
-				if(states->feedState == FEED_INJECT_ACTIVE) states->feedState = FEED_INJECT_PAUSED; // Tentative state
-				if(states->feedState == FEED_PURGE_ACTIVE) states->feedState = FEED_PURGE_PAUSED;   // Tentative state
-				// The main loop will see motors stopping and then finalize the pause.
-				} else {
-				sendToPC("PAUSE ignored: Not in an active inject/purge state.");
-			}
-		}
-
-		void handleResumeOperation(SystemStates *states) {
-			if (!states->active_dispense_operation_ongoing) {
-				sendToPC("RESUME ignored: No operation was ongoing or paused.");
-				return;
-			}
-			if (states->feedState == FEED_INJECT_PAUSED || states->feedState == FEED_PURGE_PAUSED) {
-				if (states->active_op_remaining_steps <= 0) {
-					sendToPC("RESUME ignored: No remaining volume/steps to dispense.");
-					fullyResetActiveDispenseOperation(states);
-					states->feedState = FEED_STANDBY;
-					return;
-				}
-				sendToPC("Cmd: Resuming operation...");
-				states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded(); // Update base for this segment
-				states->feedingDone = false; // New segment starting
-
-				moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
-				states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
-				
-				if(states->feedState == FEED_INJECT_PAUSED) states->feedState = FEED_INJECT_RESUMING; // Or directly to _ACTIVE
-				if(states->feedState == FEED_PURGE_PAUSED) states->feedState = FEED_PURGE_RESUMING;  // Or directly to _ACTIVE
-				// main.cpp will transition from RESUMING to ACTIVE once motors are moving, or directly here.
-				// For simplicity let's assume it goes active if move command is successful.
-				if(states->feedState == FEED_INJECT_RESUMING) states->feedState = FEED_INJECT_ACTIVE;
-				if(states->feedState == FEED_PURGE_RESUMING) states->feedState = FEED_PURGE_ACTIVE;
-
-
-				} else {
-				sendToPC("RESUME ignored: Operation not paused.");
-			}
-		}
-
-		void handleCancelOperation(SystemStates *states) {
-			if (!states->active_dispense_operation_ongoing) {
-				sendToPC("CANCEL ignored: No active operation to cancel.");
-				return;
-			}
-			sendToPC("Cmd: Cancelling operation...");
-			abortMove(); // Stop motors abruptly
-			
-			// Calculate final dispensed amount before resetting
-			if (states->active_dispense_operation_ongoing && states->active_op_steps_per_ml > 0.0001f) {
-				long steps_moved_on_axis = ConnectorM0.PositionRefCommanded() - states->active_op_segment_initial_axis_steps;
-				float segment_dispensed_ml = (float)fabs(steps_moved_on_axis) / states->active_op_steps_per_ml;
-				states->active_op_total_dispensed_ml += segment_dispensed_ml; // Add last segment's dispense
-			}
-			states->last_completed_dispense_ml = states->active_op_total_dispensed_ml; // Store total dispensed before cancel
-
+void handleResumeOperation(SystemStates *states) {
+	if (!states->active_dispense_operation_ongoing) {
+		sendToPC("RESUME ignored: No operation was ongoing or paused.");
+		return;
+	}
+	if (states->feedState == FEED_INJECT_PAUSED || states->feedState == FEED_PURGE_PAUSED) {
+		if (states->active_op_remaining_steps <= 0) {
+			sendToPC("RESUME ignored: No remaining volume/steps to dispense.");
 			fullyResetActiveDispenseOperation(states);
-			states->feedState = FEED_OPERATION_CANCELLED; // Or directly to FEED_STANDBY
-			states->feedingDone = true; // Mark as "done" via cancellation
-			sendToPC("Operation cancelled.");
+			states->feedState = FEED_STANDBY;
+			return;
 		}
+		sendToPC("Cmd: Resuming operation...");
+		states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded(); // Update base for this segment
+		states->feedingDone = false; // New segment starting
+
+		moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
+		states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
+				
+		if(states->feedState == FEED_INJECT_PAUSED) states->feedState = FEED_INJECT_RESUMING; // Or directly to _ACTIVE
+		if(states->feedState == FEED_PURGE_PAUSED) states->feedState = FEED_PURGE_RESUMING;  // Or directly to _ACTIVE
+		// main.cpp will transition from RESUMING to ACTIVE once motors are moving, or directly here.
+		// For simplicity let's assume it goes active if move command is successful.
+		if(states->feedState == FEED_INJECT_RESUMING) states->feedState = FEED_INJECT_ACTIVE;
+		if(states->feedState == FEED_PURGE_RESUMING) states->feedState = FEED_PURGE_ACTIVE;
+
+
+		} else {
+		sendToPC("RESUME ignored: Operation not paused.");
+	}
+}
+
+void handleCancelOperation(SystemStates *states) {
+	if (!states->active_dispense_operation_ongoing) {
+		sendToPC("CANCEL ignored: No active operation to cancel.");
+		return;
+	}
+	sendToPC("Cmd: Cancelling operation...");
+	abortMove(); // Stop motors abruptly
+			
+	// Calculate final dispensed amount before resetting
+	if (states->active_dispense_operation_ongoing && states->active_op_steps_per_ml > 0.0001f) {
+		long steps_moved_on_axis = ConnectorM0.PositionRefCommanded() - states->active_op_segment_initial_axis_steps;
+		float segment_dispensed_ml = (float)fabs(steps_moved_on_axis) / states->active_op_steps_per_ml;
+		states->active_op_total_dispensed_ml += segment_dispensed_ml; // Add last segment's dispense
+	}
+	states->last_completed_dispense_ml = states->active_op_total_dispensed_ml; // Store total dispensed before cancel
+
+	fullyResetActiveDispenseOperation(states);
+	states->feedState = FEED_OPERATION_CANCELLED; // Or directly to FEED_STANDBY
+	states->feedingDone = true; // Mark as "done" via cancellation
+	sendToPC("Operation cancelled.");
+}
 
 
 

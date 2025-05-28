@@ -82,6 +82,8 @@ class SystemStates {
 	long active_op_segment_initial_axis_steps; // Motor steps at start of current segment (after resume)
 	float active_op_steps_per_ml;
 	bool active_dispense_operation_ongoing; // Overall flag for inject/purge sequence
+	long active_op_initial_axis_steps;
+	float last_completed_dispense_ml;
 	
 	// Store original parameters for resume
 	int active_op_velocity_sps;

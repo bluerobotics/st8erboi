@@ -54,6 +54,8 @@ void SystemStates::reset() {
 	active_op_velocity_sps = 0;
 	active_op_accel_sps2 = 0;
 	active_op_torque_percent = 0;
+	active_op_initial_axis_steps = 0;
+	last_completed_dispense_ml = 0;
 }
 
 void SystemStates::onHomingMachineDone()   { homingMachineDone = true; }
