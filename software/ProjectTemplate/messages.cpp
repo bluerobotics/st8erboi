@@ -790,48 +790,57 @@ void handleMoveToCartridgeRetract(const char *msg, SystemStates *states) {
 }
 
 
-void handleInjectMove(const char *msg, SystemStates *states) { // This is effectively START_INJECT
-	if (states->mainState != FEED_MODE) { sendToPC("INJECT ignored: Not in FEED_MODE."); return; }
-	if (checkMoving() || states->active_dispense_operation_ongoing) { sendToPC("Error: Operation already in progress or motors busy."); return; }
+void handleInjectMove(const char *msg, SystemStates *states) {
+	if (states->mainState != FEED_MODE) {
+		sendToPC("INJECT ignored: Not in FEED_MODE.");
+		return;
+	}
+	if (checkMoving() || states->active_dispense_operation_ongoing) {
+		sendToPC("Error: Operation already in progress or motors busy.");
+		return;
+	}
 
 	float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
 	if (sscanf(msg + strlen(CMD_STR_INJECT_MOVE), "%f %f %f %f %f",
-	&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
+		&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
 		
 		if (!motorsAreEnabled) { sendToPC("INJECT blocked: Motors disabled."); return; }
-		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive."); return;}
-		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f; // Default
+		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive."); return; }
+		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f;
 		if (volume_ml <= 0) { sendToPC("Error: Inject volume must be positive."); return; }
 		if (speed_ml_s <= 0) { sendToPC("Error: Inject speed must be positive."); return; }
 		if (acceleration_sps2 <= 0) { sendToPC("Error: Inject acceleration must be positive."); return; }
 
-		states->feedState = FEED_INJECT_STARTING; // Transition state
+		states->feedState = FEED_INJECT_STARTING;
 		states->feedingDone = false;
 		states->active_dispense_operation_ongoing = true;
 		states->active_op_target_ml = volume_ml;
 		states->active_op_steps_per_ml = steps_per_ml_val;
 		states->active_op_total_target_steps = (long)(volume_ml * steps_per_ml_val);
 		states->active_op_remaining_steps = states->active_op_total_target_steps;
-		states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-		states->active_op_total_dispensed_ml = 0.0f; // Reset total for this new operation
 
-		// Store params for potential resume
+		long current_pos = ConnectorM0.PositionRefCommanded();
+		states->active_op_initial_axis_steps = current_pos;                // <== REQUIRED
+		states->active_op_segment_initial_axis_steps = current_pos;        // <== USED for pause tracking
+		states->active_op_total_dispensed_ml = 0.0f;
+
 		states->active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
 		states->active_op_accel_sps2 = (int)acceleration_sps2;
 		states->active_op_torque_percent = (int)torque_percent;
-
-		if (states->active_op_velocity_sps <= 0) states->active_op_velocity_sps = 100; // Default
+		if (states->active_op_velocity_sps <= 0) states->active_op_velocity_sps = 100;
 
 		char response[200];
 		snprintf(response, sizeof(response), "RX INJECT: Vol:%.2fml, Speed:%.2fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
-		volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
+			volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
 		sendToPC(response);
 		sendToPC("Starting Inject operation...");
-		
+
 		moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
-		states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
-		states->feedState = FEED_INJECT_ACTIVE; // Update state after move command
-		} else { sendToPC("Invalid INJECT_MOVE format."); }
+			states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
+		states->feedState = FEED_INJECT_ACTIVE;
+	} else {
+		sendToPC("Invalid INJECT_MOVE format.");
+	}
 }
 
 void handlePurgeMove(const char *msg, SystemStates *states) { // This is effectively START_PURGE

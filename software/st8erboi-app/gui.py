@@ -7,7 +7,6 @@ import time
 
 MOTOR_STEPS_PER_REV = 800  # Consistent with firmware's pulsesPerRev
 
-
 def build_gui(send_udp, discover):
     root = tk.Tk()
     root.title("st8erboi app v2")
