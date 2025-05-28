@@ -46,6 +46,9 @@ typedef enum
 	CMD_INJECT_MOVE,
 	CMD_PURGE_MOVE,
 	CMD_RETRACT_MOVE,
+	
+	CMD_MOVE_TO_CARTRIDGE_HOME,     // New
+	CMD_MOVE_TO_CARTRIDGE_RETRACT,  // New (will take an offset parameter)
 
 	CMD_COUNT
 } MessageCommand;

@@ -27,6 +27,8 @@ const uint16_t MAX_PACKET_LENGTH = 100;
 #define CMD_STR_INJECT_MOVE          "INJECT_MOVE "
 #define CMD_STR_PURGE_MOVE           "PURGE_MOVE "
 #define CMD_STR_RETRACT_MOVE         "RETRACT_MOVE "
+#define CMD_STR_MOVE_TO_CARTRIDGE_HOME "MOVE_TO_CARTRIDGE_HOME"
+#define CMD_STR_MOVE_TO_CARTRIDGE_RETRACT "MOVE_TO_CARTRIDGE_RETRACT "
 
 EthernetUdp Udp;
 unsigned char packetBuffer[MAX_PACKET_LENGTH];
@@ -47,6 +49,13 @@ extern int32_t machineStepCounter;
 extern int32_t cartridgeStepCounter;
 const float PITCH_MM_PER_REV_CONST = 5.0f; // 5mm
 const float STEPS_PER_MM_CONST = (float)pulsesPerRev / PITCH_MM_PER_REV_CONST;
+
+extern int32_t machineHomeReferenceSteps;
+extern int32_t cartridgeHomeReferenceSteps;
+
+const int FEED_GOTO_VELOCITY_SPS = 2000;  // Example speed for positioning moves
+const int FEED_GOTO_ACCEL_SPS2 = 10000; // Example acceleration
+const int FEED_GOTO_TORQUE_PERCENT = 40; // Example torque
 
 void sendToPC(const char *msg)
 {
@@ -107,10 +116,21 @@ void sendTelem(SystemStates *states) {
 
 	float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue1, &firstTorqueReading1);
 	float displayTorque2 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue2, &firstTorqueReading2);
-	int hlfb1 = (int)ConnectorM0.HlfbState();
-	int hlfb2 = (int)ConnectorM1.HlfbState();
-	long pos_cmd1_val = ConnectorM0.PositionRefCommanded();
-	long pos_cmd2_val = ConnectorM1.PositionRefCommanded();
+	int hlfb1_val = (int)ConnectorM0.HlfbState();
+	int hlfb2_val = (int)ConnectorM1.HlfbState();
+	
+	long current_pos_m0 = ConnectorM0.PositionRefCommanded();
+	long current_pos_m1 = ConnectorM1.PositionRefCommanded();
+
+	// Calculate positions relative to home.
+	// These calculations are always performed. The 'homed' flags will indicate their validity.
+	long machine_pos_from_home = current_pos_m0 - machineHomeReferenceSteps;
+	long cartridge_pos_from_home = current_pos_m1 - cartridgeHomeReferenceSteps;
+	
+	// Get homed status from SystemStates.
+	// These flags are set to true in main.cpp when a full homing sequence completes.
+	int machine_is_homed_flag = states->homingMachineDone ? 1 : 0;
+	int cartridge_is_homed_flag = states->homingCartridgeDone ? 1 : 0;
 
 	char torque1Str[16], torque2Str[16];
 	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) {
@@ -124,22 +144,31 @@ void sendTelem(SystemStates *states) {
 		snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2);
 	}
 
-	// Increased buffer size for additional state strings
-	char msg[400]; // Increased size for homingPhaseStr
+	// Ensure msg buffer is large enough for new fields. Increased to 450 as an estimate.
+	char msg[450];
 	snprintf(msg, sizeof(msg),
-	"MAIN_STATE: %s, HOMING_STATE: %s, HOMING_PHASE: %s, FEED_STATE: %s, ERROR_STATE: %s, " // Added HOMING_PHASE
-	"torque1: %s, hlfb1: %d, enabled1: %d, pos_cmd1: %ld, "
-	"torque2: %s, hlfb2: %d, enabled2: %d, pos_cmd2: %ld, "
-	"machine_steps: %ld, cartridge_steps: %ld",
+	"MAIN_STATE: %s, HOMING_STATE: %s, HOMING_PHASE: %s, FEED_STATE: %s, ERROR_STATE: %s, "
+	"torque1: %s, hlfb1: %d, enabled1: %d, pos_cmd1: %ld, " // pos_cmd1 is raw M0 absolute
+	"torque2: %s, hlfb2: %d, enabled2: %d, pos_cmd2: %ld, " // pos_cmd2 is raw M1 absolute
+	"machine_steps: %ld, machine_homed: %d, "               // machine_steps is from home; machine_homed is its validity flag
+	"cartridge_steps: %ld, cartridge_homed: %d",            // cartridge_steps is from home; cartridge_homed is its validity flag
 	states->mainStateStr(),
 	states->homingStateStr(),
-	states->homingPhaseStr(), // Added new phase string
+	states->homingPhaseStr(),
 	states->feedStateStr(),
 	states->errorStateStr(),
-	torque1Str, hlfb1, motorsAreEnabled ? 1 : 0, pos_cmd1_val,
-	torque2Str, hlfb2, motorsAreEnabled ? 1 : 0, pos_cmd2_val,
-	(long)machineStepCounter,
-	(long)cartridgeStepCounter
+	torque1Str,
+	hlfb1_val,
+	motorsAreEnabled ? 1 : 0,
+	current_pos_m0, // Raw absolute position of Motor 0
+	torque2Str,
+	hlfb2_val,
+	motorsAreEnabled ? 1 : 0,
+	current_pos_m1, // Raw absolute position of Motor 1
+	machine_pos_from_home,
+	machine_is_homed_flag,
+	cartridge_pos_from_home,
+	cartridge_is_homed_flag
 	);
 	sendToPC(msg);
 }
@@ -162,9 +191,14 @@ MessageCommand parseMessageCommand(const char *msg) {
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
 	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
+	
 	if (strncmp(msg, CMD_STR_INJECT_MOVE, strlen(CMD_STR_INJECT_MOVE)) == 0) return CMD_INJECT_MOVE;
 	if (strncmp(msg, CMD_STR_PURGE_MOVE, strlen(CMD_STR_PURGE_MOVE)) == 0) return CMD_PURGE_MOVE;
-	if (strncmp(msg, CMD_STR_RETRACT_MOVE, strlen(CMD_STR_RETRACT_MOVE)) == 0) return CMD_RETRACT_MOVE;
+	// if (strncmp(msg, CMD_STR_RETRACT_MOVE, strlen(CMD_STR_RETRACT_MOVE)) == 0) return CMD_RETRACT_MOVE; // If you remove it
+
+	// --- New Feed Mode Positioning Commands ---
+	if (strcmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
+	if (strncmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
 
 	return CMD_UNKNOWN;
 }
@@ -489,7 +523,7 @@ void handleMachineHomeMove(const char *msg, SystemStates *states) {
 
 		sendToPC("Initiating Machine Homing: RAPID_MOVE phase.");
 		// Machine homing is typically in the negative direction
-		long initial_move_steps = -1 * states->homing_actual_stroke_steps;
+		long initial_move_steps = states->homing_actual_stroke_steps;
 		moveMotors(initial_move_steps, initial_move_steps, (int)states->homing_torque_percent_param, states->homing_actual_rapid_sps, states->homing_actual_accel_sps2);
 		
 		} else {
@@ -560,7 +594,7 @@ void handleCartridgeHomeMove(const char *msg, SystemStates *states) {
 
 		sendToPC("Initiating Cartridge Homing: RAPID_MOVE phase.");
 		// Cartridge homing is typically in the positive direction
-		long initial_move_steps = states->homing_actual_stroke_steps;
+		long initial_move_steps = -1 * states->homing_actual_stroke_steps;
 		moveMotors(initial_move_steps, initial_move_steps, (int)states->homing_torque_percent_param, states->homing_actual_rapid_sps, states->homing_actual_accel_sps2);
 
 		} else {
@@ -706,6 +740,87 @@ void handleRetractMove(const char *msg, SystemStates *states) {
 		} else {
 		sendToPC("Invalid RETRACT_MOVE format. Expected 4 parameters.");
 	}
+}
+
+void handleMoveToCartridgeHome(SystemStates *states) {
+	if (states->mainState != FEED_MODE) {
+		sendToPC("MOVE_TO_CARTRIDGE_HOME ignored: Not in FEED_MODE.");
+		return;
+	}
+	if (!states->homingCartridgeDone) { // Make sure cartridge home reference is valid
+		sendToPC("Error: Cartridge has not been homed. Cannot move to cartridge home.");
+		states->errorState = ERROR_NO_CARTRIDGE_HOME;
+		return;
+	}
+	if (!motorsAreEnabled) {
+		sendToPC("Error: Motors are disabled. Cannot move to cartridge home.");
+		return;
+	}
+
+	sendToPC("Moving to Cartridge Home position...");
+	
+	// Get current position of the axis (e.g., from M0)
+	long current_axis_pos = ConnectorM0.PositionRefCommanded();
+	
+	// Calculate steps needed to move the single axis to the cartridgeHomeReferenceSteps
+	long steps_to_move_axis = cartridgeHomeReferenceSteps - current_axis_pos;
+
+	// Move both motors by the same amount to drive the single axis
+	// Parameters for moveMotors: (stepsM0, stepsM1, torque_limit_percent, velocity_sps, accel_sps2)
+	moveMotors((int)steps_to_move_axis, (int)steps_to_move_axis,
+	FEED_GOTO_TORQUE_PERCENT,
+	FEED_GOTO_VELOCITY_SPS,
+	FEED_GOTO_ACCEL_SPS2);
+	
+	// Optional: Set a sub-state within FEED_MODE if tracking completion, as discussed before.
+	// states->feedState = FEED_MOVING_TO_POS; states->feedingDone = false;
+}
+
+void handleMoveToCartridgeRetract(const char *msg, SystemStates *states) {
+	if (states->mainState != FEED_MODE) {
+		sendToPC("MOVE_TO_CARTRIDGE_RETRACT ignored: Not in FEED_MODE.");
+		return;
+	}
+	if (!states->homingCartridgeDone) { // Make sure cartridge home reference is valid
+		sendToPC("Error: Cartridge has not been homed. Cannot move to cartridge retract position.");
+		states->errorState = ERROR_NO_CARTRIDGE_HOME;
+		return;
+	}
+	if (!motorsAreEnabled) {
+		sendToPC("Error: Motors are disabled. Cannot move to cartridge retract position.");
+		return;
+	}
+
+	float offset_mm = 0.0f;
+	// CMD_STR_MOVE_TO_CARTRIDGE_RETRACT should end with a space for sscanf
+	int parsed_count = sscanf(msg + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT), "%f", &offset_mm);
+
+	if (parsed_count != 1 || offset_mm < 0) { // Offset is a distance, should be positive
+		sendToPC("Error: Invalid or missing offset_mm for MOVE_TO_CARTRIDGE_RETRACT. Must be a positive value.");
+		return;
+	}
+	
+	const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV_CONST; // Ensure this is correct
+	long offset_steps = (long)(offset_mm * current_steps_per_mm);
+
+	// Positive steps are downward. "50mm below cartridge home" means adding offset_steps
+	// to the cartridgeHomeReferenceSteps (which is an absolute position).
+	long target_absolute_axis_position = cartridgeHomeReferenceSteps + offset_steps;
+
+	char response[150];
+	snprintf(response, sizeof(response), "Moving to Cartridge Retract (Offset: %.2fmm, TargetAbsSteps: %ld)", offset_mm, target_absolute_axis_position);
+	sendToPC(response);
+
+	long current_axis_pos = ConnectorM0.PositionRefCommanded(); // Get current position
+	long steps_to_move_axis = target_absolute_axis_position - current_axis_pos;
+
+	// Move both motors by the same amount
+	moveMotors((int)steps_to_move_axis, (int)steps_to_move_axis,
+	FEED_GOTO_TORQUE_PERCENT,
+	FEED_GOTO_VELOCITY_SPS,
+	FEED_GOTO_ACCEL_SPS2);
+
+	// Optional: Set a sub-state for tracking completion.
 }
 
 

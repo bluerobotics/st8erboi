@@ -19,6 +19,8 @@ extern bool motorsAreEnabled;
 extern uint32_t pulsesPerRev;      // Should be MOTOR_STEPS_PER_REV for consistency
 extern int32_t machineStepCounter;
 extern int32_t cartridgeStepCounter;
+extern int32_t machineHomeReferenceSteps;
+extern int32_t cartridgeHomeReferenceSteps;
 
 extern float jogTorqueLimit;
 extern float homingTorqueLimit;

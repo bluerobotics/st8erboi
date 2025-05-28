@@ -10,14 +10,17 @@
 // Define a timeout for the entire homing operation
 #define MAX_HOMING_DURATION_MS 30000 // 30 seconds, adjust as needed
 
+// These should be defined in motor.cpp and externed in motor.h or states.h
+// int32_t machineHomeReferenceSteps = 0; // Example definition, actual should be in motor.cpp
+// int32_t cartridgeHomeReferenceSteps = 0; // Example definition, actual should be in motor.cpp
+
 int main(void)
 {
 	SystemStates states;
 
 	// --- Hardware and protocol initialization ---
-	//SetupUsbSerial();
 	SetupEthernet();
-	SetupMotors();
+	SetupMotors(); // This should initialize motors and motor-related globals
 	
 	uint32_t now = Milliseconds();
 	uint32_t lastMotorTime = now; // For TEST_MODE
@@ -28,12 +31,11 @@ int main(void)
 	while (true)
 	{
 		checkUdpBuffer(&states);
-		sendTelem(&states);
+		sendTelem(&states); // Sends current states including calculated steps from home
 		now = Milliseconds();
 
 		switch (states.mainState)
 		{
-			// ... (other cases like STANDBY_MODE, TEST_MODE) ...
 			case STANDBY_MODE:
 			// Idle, do nothing
 			break;
@@ -45,136 +47,147 @@ int main(void)
 				sendToPC("TEST_MODE: Torque limit reached, stopping test and returning to STANDBY.");
 			}
 			if (now - lastMotorTime > motorInterval) {
-				moveMotors(motorFlip * 800, motorFlip * 800, 20, 800, 5000); // Example: 20% torque
+				// Ensure moveMotors updates the actual motor positions that get read for telemetry
+				moveMotors(motorFlip * 800, motorFlip * 800, 20, 800, 5000);
 				motorFlip *= -1;
 				lastMotorTime = now;
 			}
 			break;
 
-			case HOMING_MODE: { // Scope for local variables in HOMING_MODE case
-				if (states.homingState == HOMING_NONE || states.currentHomingPhase == HOMING_PHASE_IDLE || states.currentHomingPhase == HOMING_PHASE_COMPLETE || states.currentHomingPhase == HOMING_PHASE_ERROR) {
-					if (states.currentHomingPhase != HOMING_PHASE_COMPLETE && states.currentHomingPhase != HOMING_PHASE_ERROR) {
-						states.mainState = STANDBY_MODE;
-						states.homingState = HOMING_NONE;
-						states.currentHomingPhase = HOMING_PHASE_IDLE;
-					}
-					break;
-				}
+			case HOMING_MODE: { // Scope for local variables
 
-				if (now - states.homingStartTime > MAX_HOMING_DURATION_MS) {
-					sendToPC("Homing Error: Timeout. Aborting homing.");
-					abortMove();
-					states.errorState = ERROR_HOMING_TIMEOUT;
+				if (states.currentHomingPhase == HOMING_PHASE_COMPLETE || states.currentHomingPhase == HOMING_PHASE_ERROR) {
+					if (states.currentHomingPhase == HOMING_PHASE_COMPLETE) {
+						sendToPC("Homing sequence complete. Returning to STANDBY_MODE.");
+						} else {
+						sendToPC("Homing sequence ended with error. Returning to STANDBY_MODE.");
+					}
 					states.mainState = STANDBY_MODE;
 					states.homingState = HOMING_NONE;
-					states.currentHomingPhase = HOMING_PHASE_ERROR;
+					states.currentHomingPhase = HOMING_PHASE_IDLE;
 					break;
 				}
 
-				bool is_machine_homing = (states.homingState == HOMING_MACHINE);
-				int direction = is_machine_homing ? -1 : 1;
+				if (states.homingState == HOMING_NONE && states.currentHomingPhase == HOMING_PHASE_IDLE) {
+					break;
+				}
 
-				if (states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE || states.currentHomingPhase == HOMING_PHASE_TOUCH_OFF) {
-					if (checkTorqueLimit()) {
-						if (states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE) {
-							// Create a new scope for variable declaration
-							{ // <<< FIX: Added opening brace
-								sendToPC(is_machine_homing ? "Machine Homing: Torque detected (RAPID_MOVE). Transitioning to BACK_OFF."
-								: "Cartridge Homing: Torque detected (RAPID_MOVE). Transitioning to BACK_OFF.");
-								states.currentHomingPhase = HOMING_PHASE_BACK_OFF;
-								
-								long back_off_s = -direction * SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS; // Line ~151 was here
-								moveMotors(back_off_s, back_off_s,
+				if ((states.homingState == HOMING_MACHINE || states.homingState == HOMING_CARTRIDGE) &&
+				(states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE ||
+				states.currentHomingPhase == HOMING_PHASE_BACK_OFF ||
+				states.currentHomingPhase == HOMING_PHASE_TOUCH_OFF ||
+				states.currentHomingPhase == HOMING_PHASE_RETRACT)) {
+
+					if (now - states.homingStartTime > MAX_HOMING_DURATION_MS) {
+						sendToPC("Homing Error: Timeout during active sequence. Aborting.");
+						abortMove();
+						states.errorState = ERROR_HOMING_TIMEOUT;
+						states.currentHomingPhase = HOMING_PHASE_ERROR;
+						break;
+					}
+
+					bool is_machine_homing = (states.homingState == HOMING_MACHINE);
+					int direction = is_machine_homing ? 1 : -1;
+
+					if (states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE || states.currentHomingPhase == HOMING_PHASE_TOUCH_OFF) {
+						if (checkTorqueLimit()) {
+							if (states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE) {
+								{
+									sendToPC(is_machine_homing ? "Machine Homing: Torque detected (RAPID_MOVE). Transitioning to BACK_OFF."
+									: "Cartridge Homing: Torque detected (RAPID_MOVE). Transitioning to BACK_OFF.");
+									states.currentHomingPhase = HOMING_PHASE_BACK_OFF;
+									long back_off_s = -direction * SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS;
+									moveMotors(back_off_s, back_off_s,
+									(int)states.homing_torque_percent_param,
+									states.homing_actual_touch_sps,
+									states.homing_actual_accel_sps2);
+								}
+								} else { // Torque hit during HOMING_PHASE_TOUCH_OFF
+								{
+									sendToPC(is_machine_homing ? "Machine Homing: Torque detected (TOUCH_OFF). Zeroing reference and transitioning to RETRACT."
+									: "Cartridge Homing: Torque detected (TOUCH_OFF). Zeroing reference and transitioning to RETRACT.");
+									if (is_machine_homing) {
+										// SET THE HOME REFERENCE POINT
+										machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded(); // Assuming M0 for machine
+										sendToPC("Machine home reference point set.");
+										} else { // Cartridge Homing
+										// SET THE HOME REFERENCE POINT
+										cartridgeHomeReferenceSteps = ConnectorM1.PositionRefCommanded(); // Assuming M1 for cartridge
+										sendToPC("Cartridge home reference point set.");
+									}
+									states.currentHomingPhase = HOMING_PHASE_RETRACT;
+									long retract_s = -direction * states.homing_actual_retract_steps;
+									moveMotors(retract_s, retract_s,
+									(int)states.homing_torque_percent_param,
+									states.homing_actual_rapid_sps,
+									states.homing_actual_accel_sps2);
+								}
+							}
+							break;
+						}
+					}
+
+					if (!checkMoving()) {
+						switch (states.currentHomingPhase) {
+							case HOMING_PHASE_RAPID_MOVE: {
+								sendToPC(is_machine_homing ? "Machine Homing Error: RAPID_MOVE completed full stroke without torque."
+								: "Cartridge Homing Error: RAPID_MOVE completed full stroke without torque.");
+								states.errorState = ERROR_HOMING_NO_TORQUE_RAPID;
+								states.currentHomingPhase = HOMING_PHASE_ERROR;
+							} break;
+
+							case HOMING_PHASE_BACK_OFF: {
+								sendToPC(is_machine_homing ? "Machine Homing: BACK_OFF complete. Starting TOUCH_OFF."
+								: "Cartridge Homing: BACK_OFF complete. Starting TOUCH_OFF.");
+								states.currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
+								long touch_off_move_length = SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS * 2;
+								if (SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS == 0) {
+									touch_off_move_length = 200;
+									sendToPC("Homing Warning: HOMING_DEFAULT_BACK_OFF_STEPS is 0! Using fallback touch-off travel.");
+									} else if (touch_off_move_length == 0) {
+									touch_off_move_length = 10;
+									sendToPC("Homing Warning: Calculated touch_off_move_length is 0, using minimal travel.");
+								}
+								long final_touch_off_move_steps = direction * touch_off_move_length;
+								char log_msg[100];
+								snprintf(log_msg, sizeof(log_msg), "Homing: Touch-off approach (steps): %ld", final_touch_off_move_steps);
+								sendToPC(log_msg);
+								moveMotors(final_touch_off_move_steps, final_touch_off_move_steps,
 								(int)states.homing_torque_percent_param,
 								states.homing_actual_touch_sps,
 								states.homing_actual_accel_sps2);
-							} // <<< FIX: Added closing brace
-							} else { // Torque hit during HOMING_PHASE_TOUCH_OFF
-							// Create a new scope for variable declaration
-							{ // <<< FIX: Added opening brace
-								sendToPC(is_machine_homing ? "Machine Homing: Torque detected (TOUCH_OFF). Zeroing and transitioning to RETRACT."
-								: "Cartridge Homing: Torque detected (TOUCH_OFF). Zeroing and transitioning to RETRACT.");
+							} break;
+
+							case HOMING_PHASE_TOUCH_OFF: {
+								sendToPC(is_machine_homing ? "Machine Homing Error: TOUCH_OFF completed without torque."
+								: "Cartridge Homing Error: TOUCH_OFF completed without torque.");
+								states.errorState = ERROR_HOMING_NO_TORQUE_TOUCH;
+								states.currentHomingPhase = HOMING_PHASE_ERROR;
+							} break;
+
+							case HOMING_PHASE_RETRACT: {
+								sendToPC(is_machine_homing ? "Machine Homing: RETRACT complete. Homing successful."
+								: "Cartridge Homing: RETRACT complete. Homing successful.");
 								if (is_machine_homing) {
-									machineStepCounter = 0;
-									sendToPC("Machine step counter zeroed.");
+									states.onHomingMachineDone();
 									} else {
-									cartridgeStepCounter = 0;
-									sendToPC("Cartridge step counter zeroed.");
+									states.onHomingCartridgeDone();
 								}
-								
-								states.currentHomingPhase = HOMING_PHASE_RETRACT;
-								long retract_s = -direction * states.homing_actual_retract_steps; // Line ~160 was here
-								moveMotors(retract_s, retract_s,
-								(int)states.homing_torque_percent_param,
-								states.homing_actual_rapid_sps,
-								states.homing_actual_accel_sps2);
-							} // <<< FIX: Added closing brace
+								states.errorState = ERROR_NONE;
+								states.currentHomingPhase = HOMING_PHASE_COMPLETE;
+							} break;
+
+							default:
+							sendToPC("Homing Warning: Unexpected phase with stopped motors during active sequence. Erroring out.");
+							states.errorState = ERROR_MANUAL_ABORT;
+							states.currentHomingPhase = HOMING_PHASE_ERROR;
+							break;
 						}
-						break;
-					}
-				}
-
-				if (!checkMoving()) {
-					switch (states.currentHomingPhase) {
-						case HOMING_PHASE_RAPID_MOVE:
-						sendToPC(is_machine_homing ? "Machine Homing Error: RAPID_MOVE completed full stroke without torque."
-						: "Cartridge Homing Error: RAPID_MOVE completed full stroke without torque.");
-						states.errorState = ERROR_HOMING_NO_TORQUE_RAPID;
-						states.mainState = STANDBY_MODE;
-						states.currentHomingPhase = HOMING_PHASE_ERROR;
-						break;
-
-						case HOMING_PHASE_BACK_OFF:
-						// Create a new scope for variable declaration
-						{ // <<< FIX: Added opening brace
-							sendToPC(is_machine_homing ? "Machine Homing: BACK_OFF complete. Starting TOUCH_OFF."
-							: "Cartridge Homing: BACK_OFF complete. Starting TOUCH_OFF.");
-							states.currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
-							
-							long touch_off_move_dist = direction * (SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS + SystemStates::HOMING_TOUCH_OFF_EXTRA_STEPS); // Line ~180 was here
-							moveMotors(touch_off_move_dist, touch_off_move_dist,
-							(int)states.homing_torque_percent_param,
-							states.homing_actual_touch_sps,
-							states.homing_actual_accel_sps2);
-						} // <<< FIX: Added closing brace
-						break;
-
-						case HOMING_PHASE_TOUCH_OFF:
-						sendToPC(is_machine_homing ? "Machine Homing Error: TOUCH_OFF completed without torque."
-						: "Cartridge Homing Error: TOUCH_OFF completed without torque.");
-						states.errorState = ERROR_HOMING_NO_TORQUE_TOUCH;
-						states.mainState = STANDBY_MODE;
-						states.currentHomingPhase = HOMING_PHASE_ERROR;
-						break;
-
-						case HOMING_PHASE_RETRACT:
-						sendToPC(is_machine_homing ? "Machine Homing: RETRACT complete. Homing successful."
-						: "Cartridge Homing: RETRACT complete. Homing successful.");
-						if (is_machine_homing) {
-							states.onHomingMachineDone();
-							} else {
-							states.onHomingCartridgeDone();
-						}
-						states.mainState = STANDBY_MODE;
-						states.currentHomingPhase = HOMING_PHASE_COMPLETE;
-						states.errorState = ERROR_NONE;
-						states.homingState = HOMING_NONE;
-						break;
-						
-						default:
-						if (states.currentHomingPhase != HOMING_PHASE_COMPLETE && states.currentHomingPhase != HOMING_PHASE_ERROR) {
-							sendToPC("Homing Warning: Unexpected phase with stopped motors. Resetting homing.");
-							states.mainState = STANDBY_MODE;
-							states.homingState = HOMING_NONE;
-							states.currentHomingPhase = HOMING_PHASE_IDLE;
-						}
-						break;
 					}
 				}
 			}
 			break;
-
-			// ... (other cases like FEED_MODE, JOG_MODE, DISABLED_MODE) ...
+			
 			case FEED_MODE:
 			if (states.feedState == FEED_INJECT || states.feedState == FEED_PURGE || states.feedState == FEED_RETRACT) {
 				if (checkTorqueLimit()) {
@@ -195,12 +208,13 @@ int main(void)
 				states.errorState = ERROR_TORQUE_ABORT;
 				sendToPC("JOG_MODE: Torque limit reached, jog aborted. Returning to STANDBY.");
 				} else if (!checkMoving() && !states.jogDone) {
-				// states.jogDone = true; // This flag is typically managed by the command handler or if a jog completion event is needed
+				// jogDone state management could be added if needed
 			}
 			break;
 
 			case DISABLED_MODE:
+			// Only ENABLE command should change state from here
 			break;
-		}
-	}
-}
+		} // end switch (states.mainState)
+	} // end while(true)
+} // end main

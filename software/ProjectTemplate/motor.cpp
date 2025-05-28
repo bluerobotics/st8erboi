@@ -23,6 +23,9 @@ float jogTorqueLimit    = 30.0f;
 float homingTorqueLimit = 20.0f;
 float feedTorqueLimit   = 15.0f;
 
+int32_t machineHomeReferenceSteps = 0;
+int32_t cartridgeHomeReferenceSteps = 0;
+
 
 void SetupMotors(void)
 {
