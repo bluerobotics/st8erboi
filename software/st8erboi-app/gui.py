@@ -681,10 +681,10 @@ def build_gui(send_udp, discover):
                                                      f"INJECT_MOVE {inject_amount_ml_var.get()} {inject_speed_ml_s_var.get()} {feed_acceleration_var.get()} {feed_steps_per_ml_var.get()} {feed_torque_percent_var.get()}"))
     ui_elements['start_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 2))
     ui_elements['pause_inject_btn'] = ttk.Button(inject_op_frame, text="Pause", style='Pause.TButton',
-                                                 command=lambda: send_udp("PAUSE_INJECT"), state=tk.DISABLED)
+                                                 command=lambda: send_udp("PAUSE_INJECT"))
     ui_elements['pause_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
     ui_elements['resume_inject_btn'] = ttk.Button(inject_op_frame, text="Resume", style='Resume.TButton',
-                                                  command=lambda: send_udp("RESUME_INJECT"), state=tk.DISABLED)
+                                                  command=lambda: send_udp("RESUME_INJECT"))
     ui_elements['resume_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 20))
     f_row += 1
     ttk.Separator(feed_controls_frame, orient='horizontal').grid(row=f_row, column=0, columnspan=4, sticky='ew',

@@ -39,7 +39,7 @@ def log_to_terminal(msg, terminal_cb_func):
 def discover(terminal_cb_func):
     msg = f"DISCOVER_TELEM PORT={CLIENT_PORT}"  # CMD_STR_DISCOVER_TELEM
     try:
-        sock.sendto(msg.encode(), ('255.255.255.255', CLEARCORE_PORT))
+        sock.sendto(msg.encode(), ('192.168.1.255', CLEARCORE_PORT))
         log_to_terminal(f"Discovery: '{msg}' sent to broadcast", terminal_cb_func)  # Re-enabled this log
     except Exception as e:
         log_to_terminal(f"Discovery error: {e}", terminal_cb_func)

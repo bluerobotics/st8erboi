@@ -27,6 +27,7 @@ MessageCommand parseMessageCommand(const char *msg);
 void handleMessage(const char *msg, SystemStates *states);
 
 void SetupEthernet(void);
+void SetupUsbSerial(void);
 void checkUdpBuffer(SystemStates *states);
 void sendTelem(SystemStates *states);
 void sendToPC(const char *msg);

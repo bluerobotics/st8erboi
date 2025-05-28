@@ -80,32 +80,104 @@ void SetupUsbSerial(void)
 
 void SetupEthernet(void)
 {
+	ConnectorUsb.SendLine("SetupEthernet: Starting...");
 	EthernetMgr.Setup();
-	if (!EthernetMgr.DhcpBegin()) while (1);
-	while (!EthernetMgr.PhyLinkActive()) Delay_ms(1000);
+	ConnectorUsb.SendLine("SetupEthernet: EthernetMgr.Setup() done.");
+
+	if (!EthernetMgr.DhcpBegin()) {
+		ConnectorUsb.SendLine("SetupEthernet: DhcpBegin() FAILED. System Halted.");
+		while (1);
+	}
+	
+	char ipAddrStr[100];
+	// CORRECTED LINE: Using StringValue() which returns char*
+	snprintf(ipAddrStr, sizeof(ipAddrStr), "SetupEthernet: DhcpBegin() successful. IP: %s", EthernetMgr.LocalIp().StringValue());
+	ConnectorUsb.SendLine(ipAddrStr);
+
+	ConnectorUsb.SendLine("SetupEthernet: Waiting for PhyLinkActive...");
+	while (!EthernetMgr.PhyLinkActive()) {
+		Delay_ms(1000);
+		ConnectorUsb.SendLine("SetupEthernet: Still waiting for PhyLinkActive...");
+	}
+	ConnectorUsb.SendLine("SetupEthernet: PhyLinkActive is active.");
+
 	Udp.Begin(LOCAL_PORT);
+	ConnectorUsb.SendLine("SetupEthernet: Udp.Begin() called for port 8888. Setup Complete.");
 }
 
 void handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp, SystemStates *states)
 {
+	char dbgBuffer[256];
+	// CORRECTED LINE: Using StringValue() for senderIp
+	snprintf(dbgBuffer, sizeof(dbgBuffer), "Discovery: RX from %s:%u, Msg: '%.*s'",
+	senderIp.StringValue(), Udp.RemotePort(), MAX_PACKET_LENGTH-1, msg);
+	ConnectorUsb.SendLine(dbgBuffer);
+
 	char *portStr = strstr(msg, "PORT=");
 	if (portStr) {
+		ConnectorUsb.SendLine("Discovery: Found 'PORT=' in message.");
 		terminalPort = atoi(portStr + 5);
-		terminalIp = senderIp;
+		terminalIp = senderIp; // terminalIp is also an IpAddress object
 		terminalDiscovered = true;
+		// CORRECTED LINE: Using StringValue() for terminalIp
+		snprintf(dbgBuffer, sizeof(dbgBuffer), "Discovery: Set terminalPort=%u, terminalIp=%s, terminalDiscovered=true",
+		terminalPort, terminalIp.StringValue());
+		ConnectorUsb.SendLine(dbgBuffer);
+		} else {
+		ConnectorUsb.SendLine("Discovery Error: 'PORT=' NOT found in message. Cannot discover.");
 	}
-	sendTelem(states); // Always reply with telemetry!
+
+	ConnectorUsb.SendLine("Discovery: Attempting to send telemetry reply...");
+	sendTelem(states);
+	ConnectorUsb.SendLine("Discovery: Called sendTelem.");
 }
 
 void checkUdpBuffer(SystemStates *states)
 {
-	memset(packetBuffer, 0, MAX_PACKET_LENGTH);
-	uint16_t packetSize = Udp.PacketParse();
-	if (packetSize > 0) {
-		int32_t bytesRead = Udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
-		packetBuffer[bytesRead] = '\0';
-		handleMessage((char *)packetBuffer, states);
-	}
+    // This static variable and check can be used to reduce spam if needed,
+    // but for now, let's see every potential parse.
+    /*
+    static uint32_t lastCheckTime = 0;
+    if (Milliseconds() - lastCheckTime < 200) { // Check every 200ms
+        return;
+    }
+    lastCheckTime = Milliseconds();
+    ConnectorUsb.SendLine("checkUdpBuffer: Polling..."); // Indicates function is being called
+    */
+
+    memset(packetBuffer, 0, MAX_PACKET_LENGTH);
+    uint16_t packetSize = Udp.PacketParse(); // Attempt to see if a packet is waiting
+
+    if (packetSize > 0) {
+        // If we get here, a UDP packet has been detected by the hardware/stack!
+        char dbgBuffer[MAX_PACKET_LENGTH + 70]; 
+        snprintf(dbgBuffer, sizeof(dbgBuffer), "checkUdpBuffer: Udp.PacketParse() found a packet! Size: %u", packetSize);
+        ConnectorUsb.SendLine(dbgBuffer);
+
+        IpAddress remote_ip = Udp.RemoteIp();
+        uint16_t remote_port = Udp.RemotePort();
+        snprintf(dbgBuffer, sizeof(dbgBuffer), "checkUdpBuffer: Packet is from IP: %s, Port: %u", remote_ip.StringValue(), remote_port);
+        ConnectorUsb.SendLine(dbgBuffer);
+
+        int32_t bytesRead = Udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
+        
+        if (bytesRead > 0) {
+            packetBuffer[bytesRead] = '\0'; // Null-terminate the received data
+            snprintf(dbgBuffer, sizeof(dbgBuffer), "checkUdpBuffer: Udp.PacketRead() %ld bytes. Msg: '%s'", bytesRead, (char*)packetBuffer);
+            ConnectorUsb.SendLine(dbgBuffer);
+            
+            // Now, let's see if handleMessage gets called
+            ConnectorUsb.SendLine("checkUdpBuffer: Calling handleMessage...");
+            handleMessage((char *)packetBuffer, states);
+        } else if (bytesRead == 0) {
+            ConnectorUsb.SendLine("checkUdpBuffer: Udp.PacketRead() read 0 bytes, though parse indicated a packet.");
+        } else {
+            // bytesRead < 0 usually indicates an error
+            ConnectorUsb.SendLine("checkUdpBuffer: Udp.PacketRead() returned an error or no data.");
+        }
+    }
+    // No 'else' here; it's normal for no packet to be available during many checks.
+    // The "sendTelem check..." messages will continue to show the main loop is active.
 }
 
 void finalizeAndResetActiveDispenseOperation(SystemStates *states, bool operationCompletedSuccessfully) {
@@ -140,6 +212,10 @@ void fullyResetActiveDispenseOperation(SystemStates *states) {
 void sendTelem(SystemStates *states) {
 	static uint32_t lastTelemTime = 0;
 	uint32_t now = Milliseconds();
+	
+	char dbgBuffer[100];
+	snprintf(dbgBuffer, sizeof(dbgBuffer), "sendTelem check: discovered=%d, port=%u\r\n", terminalDiscovered, terminalPort);
+	//ConnectorUsb.SendLine(dbgBuffer);
 
 	if (!terminalDiscovered || terminalPort == 0) return;
 	if (now - lastTelemTime < telemInterval && lastTelemTime != 0) return;

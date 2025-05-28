@@ -18,8 +18,13 @@ int main(void)
 {
 	SystemStates states;
 
+	SetupUsbSerial();
+	Delay_ms(5000);
+	ConnectorUsb.SendLine("main: Delay finished. Proceeding with setup...");
+
 	SetupEthernet();
 	SetupMotors();
+
 	
 	uint32_t now = Milliseconds();
 	uint32_t lastMotorTime = now;
