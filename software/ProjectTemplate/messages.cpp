@@ -15,6 +15,7 @@ const uint16_t MAX_PACKET_LENGTH = 100;
 #define CMD_STR_ENABLE               "ENABLE"
 #define CMD_STR_DISABLE              "DISABLE"
 #define CMD_STR_ABORT                "ABORT"
+#define CMD_STR_CLEAR_ERRORS         "CLEAR_ERRORS" // New
 #define CMD_STR_STANDBY_MODE         "STANDBY_MODE"
 #define CMD_STR_TEST_MODE            "TEST_MODE"
 #define CMD_STR_JOG_MODE             "JOG_MODE"
@@ -26,9 +27,11 @@ const uint16_t MAX_PACKET_LENGTH = 100;
 #define CMD_STR_CARTRIDGE_HOME_MOVE  "CARTRIDGE_HOME_MOVE "
 #define CMD_STR_INJECT_MOVE          "INJECT_MOVE "
 #define CMD_STR_PURGE_MOVE           "PURGE_MOVE "
-#define CMD_STR_RETRACT_MOVE         "RETRACT_MOVE "
 #define CMD_STR_MOVE_TO_CARTRIDGE_HOME "MOVE_TO_CARTRIDGE_HOME"
 #define CMD_STR_MOVE_TO_CARTRIDGE_RETRACT "MOVE_TO_CARTRIDGE_RETRACT "
+#define CMD_STR_PAUSE_OPERATION "PAUSE_OPERATION"
+#define CMD_STR_RESUME_OPERATION "RESUME_OPERATION"
+#define CMD_STR_CANCEL_OPERATION "CANCEL_OPERATION"
 
 EthernetUdp Udp;
 unsigned char packetBuffer[MAX_PACKET_LENGTH];
@@ -105,71 +108,107 @@ void checkUdpBuffer(SystemStates *states)
 	}
 }
 
+void finalizeAndResetActiveDispenseOperation(SystemStates *states, bool operationCompletedSuccessfully) {
+	if (states->active_dispense_operation_ongoing) {
+		// Calculate final dispensed amount for this operation segment
+		if (states->active_op_steps_per_ml > 0.0001f) {
+			long steps_moved_this_segment = ConnectorM0.PositionRefCommanded() - states->active_op_segment_initial_axis_steps;
+			float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / states->active_op_steps_per_ml;
+			states->active_op_total_dispensed_ml += segment_dispensed_ml;
+		}
+		states->last_completed_dispense_ml = states->active_op_total_dispensed_ml; // Store final total
+	}
+	
+	states->active_dispense_operation_ongoing = false;
+	states->active_op_target_ml = 0.0f; // Clear target for next op
+	states->active_op_remaining_steps = 0;
+	// active_op_total_dispensed_ml is now in last_completed_dispense_ml
+	// active_op_segment_initial_axis_steps will be reset by the next START command
+}
+
+void fullyResetActiveDispenseOperation(SystemStates *states) {
+	states->active_dispense_operation_ongoing = false;
+	states->active_op_target_ml = 0.0f;
+	states->active_op_total_dispensed_ml = 0.0f; // Reset total for this op
+	states->active_op_total_target_steps = 0;
+	states->active_op_remaining_steps = 0;
+	states->active_op_segment_initial_axis_steps = 0;
+	states->active_op_steps_per_ml = 0.0f;
+	// states->last_completed_dispense_ml remains to show the result of the last FINISHED op
+}
+
 void sendTelem(SystemStates *states) {
 	static uint32_t lastTelemTime = 0;
 	uint32_t now = Milliseconds();
 
-	if (!terminalDiscovered || (now - lastTelemTime < telemInterval)) {
-		return;
-	}
+	if (!terminalDiscovered || terminalPort == 0) return;
+	if (now - lastTelemTime < telemInterval && lastTelemTime != 0) return;
 	lastTelemTime = now;
 
+	// ... (motor data fetching: torque, hlfb, pos_cmd) ...
 	float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue1, &firstTorqueReading1);
 	float displayTorque2 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue2, &firstTorqueReading2);
 	int hlfb1_val = (int)ConnectorM0.HlfbState();
 	int hlfb2_val = (int)ConnectorM1.HlfbState();
-	
 	long current_pos_m0 = ConnectorM0.PositionRefCommanded();
 	long current_pos_m1 = ConnectorM1.PositionRefCommanded();
 
-	// Calculate positions relative to home.
-	// These calculations are always performed. The 'homed' flags will indicate their validity.
 	long machine_pos_from_home = current_pos_m0 - machineHomeReferenceSteps;
-	long cartridge_pos_from_home = current_pos_m1 - cartridgeHomeReferenceSteps;
+	long cartridge_pos_from_home = current_pos_m0 - cartridgeHomeReferenceSteps; // Single axis system
 	
-	// Get homed status from SystemStates.
-	// These flags are set to true in main.cpp when a full homing sequence completes.
 	int machine_is_homed_flag = states->homingMachineDone ? 1 : 0;
 	int cartridge_is_homed_flag = states->homingCartridgeDone ? 1 : 0;
 
-	char torque1Str[16], torque2Str[16];
-	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) {
-		strcpy(torque1Str, "---");
-		} else {
-		snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1);
+	float current_dispensed_for_telemetry = 0.0f;
+	float current_target_for_telemetry = 0.0f;
+
+	if (states->active_dispense_operation_ongoing &&
+	(states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE ||
+	states->feedState == FEED_INJECT_RESUMING || states->feedState == FEED_PURGE_RESUMING) ) {
+		if (states->active_op_steps_per_ml > 0.0001f) {
+			long steps_moved_this_segment = current_pos_m0 - states->active_op_segment_initial_axis_steps;
+			float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / states->active_op_steps_per_ml;
+			// active_op_total_dispensed_ml should be updated when PAUSING or COMPLETING a segment/operation.
+			// For real-time display, it's total_dispensed_so_far + current_segment_dispense.
+			// Let's simplify: sendTelem calculates based on initial start of the whole operation for ongoing.
+			long total_steps_moved_for_op = current_pos_m0 - states->active_op_initial_axis_steps; // initial_axis_steps set at START of op
+			current_dispensed_for_telemetry = (float)fabs(total_steps_moved_for_op) / states->active_op_steps_per_ml;
+
+		}
+		current_target_for_telemetry = states->active_op_target_ml;
+		} else if (states->feedState == FEED_INJECT_PAUSED || states->feedState == FEED_PURGE_PAUSED) {
+		// Show the total dispensed so far when paused
+		current_dispensed_for_telemetry = states->active_op_total_dispensed_ml;
+		current_target_for_telemetry = states->active_op_target_ml;
 	}
-	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) {
-		strcpy(torque2Str, "---");
-		} else {
-		snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2);
+	else { // Not actively dispensing or paused, show last completed op's info
+		current_dispensed_for_telemetry = states->last_completed_dispense_ml;
+		current_target_for_telemetry = 0.0f; // Or last target, depends on desired display
 	}
 
-	// Ensure msg buffer is large enough for new fields. Increased to 450 as an estimate.
-	char msg[450];
+
+	char torque1Str[16], torque2Str[16];
+	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "---"); }
+	else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
+	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "---"); }
+	else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
+
+	char msg[500];
 	snprintf(msg, sizeof(msg),
 	"MAIN_STATE: %s, HOMING_STATE: %s, HOMING_PHASE: %s, FEED_STATE: %s, ERROR_STATE: %s, "
-	"torque1: %s, hlfb1: %d, enabled1: %d, pos_cmd1: %ld, " // pos_cmd1 is raw M0 absolute
-	"torque2: %s, hlfb2: %d, enabled2: %d, pos_cmd2: %ld, " // pos_cmd2 is raw M1 absolute
-	"machine_steps: %ld, machine_homed: %d, "               // machine_steps is from home; machine_homed is its validity flag
-	"cartridge_steps: %ld, cartridge_homed: %d",            // cartridge_steps is from home; cartridge_homed is its validity flag
-	states->mainStateStr(),
-	states->homingStateStr(),
-	states->homingPhaseStr(),
-	states->feedStateStr(),
-	states->errorStateStr(),
-	torque1Str,
-	hlfb1_val,
-	motorsAreEnabled ? 1 : 0,
-	current_pos_m0, // Raw absolute position of Motor 0
-	torque2Str,
-	hlfb2_val,
-	motorsAreEnabled ? 1 : 0,
-	current_pos_m1, // Raw absolute position of Motor 1
-	machine_pos_from_home,
-	machine_is_homed_flag,
-	cartridge_pos_from_home,
-	cartridge_is_homed_flag
-	);
+	"torque1: %s, hlfb1: %d, enabled1: %d, pos_cmd1: %ld, "
+	"torque2: %s, hlfb2: %d, enabled2: %d, pos_cmd2: %ld, "
+	"machine_steps: %ld, machine_homed: %d, "
+	"cartridge_steps: %ld, cartridge_homed: %d, "
+	"dispensed_ml:%.2f, target_ml:%.2f", // New fields
+	states->mainStateStr(), states->homingStateStr(), states->homingPhaseStr(),
+	states->feedStateStr(), states->errorStateStr(),
+	torque1Str, hlfb1_val, motorsAreEnabled ? 1 : 0, current_pos_m0,
+	torque2Str, hlfb2_val, motorsAreEnabled ? 1 : 0, current_pos_m1,
+	machine_pos_from_home, machine_is_homed_flag,
+	cartridge_pos_from_home, cartridge_is_homed_flag,
+	current_dispensed_for_telemetry,
+	current_target_for_telemetry);
 	sendToPC(msg);
 }
 
@@ -179,6 +218,7 @@ MessageCommand parseMessageCommand(const char *msg) {
 	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
+	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS; // New
 
 	if (strcmp(msg, CMD_STR_STANDBY_MODE) == 0) return CMD_STANDBY_MODE;
 	if (strcmp(msg, CMD_STR_TEST_MODE) == 0) return CMD_TEST_MODE;
@@ -187,59 +227,54 @@ MessageCommand parseMessageCommand(const char *msg) {
 	if (strcmp(msg, CMD_STR_FEED_MODE) == 0) return CMD_FEED_MODE;
 
 	if (strncmp(msg, CMD_STR_SET_TORQUE_OFFSET, strlen(CMD_STR_SET_TORQUE_OFFSET)) == 0) return CMD_SET_TORQUE_OFFSET;
-
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
 	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
-	
 	if (strncmp(msg, CMD_STR_INJECT_MOVE, strlen(CMD_STR_INJECT_MOVE)) == 0) return CMD_INJECT_MOVE;
 	if (strncmp(msg, CMD_STR_PURGE_MOVE, strlen(CMD_STR_PURGE_MOVE)) == 0) return CMD_PURGE_MOVE;
-	// if (strncmp(msg, CMD_STR_RETRACT_MOVE, strlen(CMD_STR_RETRACT_MOVE)) == 0) return CMD_RETRACT_MOVE; // If you remove it
+	// if (strncmp(msg, CMD_STR_RETRACT_MOVE, strlen(CMD_STR_RETRACT_MOVE)) == 0) return CMD_RETRACT_MOVE;
 
-	// --- New Feed Mode Positioning Commands ---
 	if (strcmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
 	if (strncmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
+
+	if (strcmp(msg, CMD_STR_PAUSE_OPERATION) == 0) return CMD_PAUSE_OPERATION;
+	if (strcmp(msg, CMD_STR_RESUME_OPERATION) == 0) return CMD_RESUME_OPERATION;
+	if (strcmp(msg, CMD_STR_CANCEL_OPERATION) == 0) return CMD_CANCEL_OPERATION;
 
 	return CMD_UNKNOWN;
 }
 
 void handleMessage(const char *msg, SystemStates *states) {
-	MessageCommand command = parseMessageCommand(msg); // Use the corrected parser from above
+	MessageCommand command = parseMessageCommand(msg);
 
 	switch (command) {
-		// --- System & Connection Commands ---
 		case CMD_DISCOVER_TELEM:        handleDiscoveryTelemPacket(msg, Udp.RemoteIp(), states); break;
 		case CMD_ENABLE:                handleEnable(states); break;
 		case CMD_DISABLE:               handleDisable(states); break;
 		case CMD_ABORT:                 handleAbort(states); break;
-
-		// --- Mode Setting Commands ---
-		case CMD_STANDBY_MODE:          handleStandbyMode(states); break; // Ensure this handler is correctly defined
-		case CMD_TEST_MODE:             handleTestMode(states); break;    // Ensure this handler is correctly defined
+		case CMD_CLEAR_ERRORS:          handleClearErrors(states); break;
+		case CMD_STANDBY_MODE:          handleStandbyMode(states); break;
+		case CMD_TEST_MODE:             handleTestMode(states); break;
 		case CMD_JOG_MODE:              handleJogMode(states); break;
 		case CMD_HOMING_MODE:           handleHomingMode(states); break;
 		case CMD_FEED_MODE:             handleFeedMode(states); break;
-
-		// --- Parameter Setting Commands ---
-		case CMD_SET_TORQUE_OFFSET:     handleSetTorqueOffset(msg); break; // This handler is in your uploaded messages.cpp
-
-		// --- Jog Operation Commands ---
-		case CMD_JOG_MOVE:              handleJogMove(msg, states); break; // You'll need to create/update this handler
-
-		// --- Homing Operation Commands ---
-		case CMD_MACHINE_HOME_MOVE:     handleMachineHomeMove(msg, states); break;  // You'll need to create/update this handler
-		case CMD_CARTRIDGE_HOME_MOVE:   handleCartridgeHomeMove(msg, states); break; // You'll need to create/update this handler
-
-		// --- Feed Operation Commands ---
-		case CMD_INJECT_MOVE:           handleInjectMove(msg, states); break; // You'll need to create/update this handler
-		case CMD_PURGE_MOVE:            handlePurgeMove(msg, states); break;  // You'll need to create/update this handler
-		case CMD_RETRACT_MOVE:          handleRetractMove(msg, states); break;// You'll need to create/update this handler
+		case CMD_SET_TORQUE_OFFSET:     handleSetTorqueOffset(msg); break;
+		case CMD_JOG_MOVE:              handleJogMove(msg, states); break;
+		case CMD_MACHINE_HOME_MOVE:     handleMachineHomeMove(msg, states); break;
+		case CMD_CARTRIDGE_HOME_MOVE:   handleCartridgeHomeMove(msg, states); break;
+		case CMD_INJECT_MOVE:           handleInjectMove(msg, states); break;
+		case CMD_PURGE_MOVE:            handlePurgeMove(msg, states); break;
+		case CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(states); break;
+		case CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(msg, states); break;
+		case CMD_PAUSE_OPERATION:       handlePauseOperation(states); break;
+		case CMD_RESUME_OPERATION:      handleResumeOperation(states); break;
+		case CMD_CANCEL_OPERATION:      handleCancelOperation(states); break;
 
 		case CMD_UNKNOWN:
 		default:
 		char unknownCmdMsg[128];
 		int msg_len = strlen(msg);
-		int max_len_to_copy = (sizeof(unknownCmdMsg) - strlen("Unknown cmd: ''") - 1);
+		int max_len_to_copy = (sizeof(unknownCmdMsg) - strlen("Unknown cmd: ''") - 2);
 		if (max_len_to_copy < 0) max_len_to_copy = 0;
 		if (msg_len > max_len_to_copy) msg_len = max_len_to_copy;
 		snprintf(unknownCmdMsg, sizeof(unknownCmdMsg), "Unknown cmd: '%.*s'", msg_len, msg);
@@ -605,96 +640,83 @@ void handleCartridgeHomeMove(const char *msg, SystemStates *states) {
 }
 
 void handleInjectMove(const char *msg, SystemStates *states) {
-	if (states->mainState != FEED_MODE) {
-		sendToPC("INJECT_MOVE ignored: Not in FEED_MODE.");
-		return;
-	}
-	float volume_ml, speed_ml_s, acceleration, steps_per_ml_val, torque_percent;
-	// Format: <CMD_STR> <volume_ml> <speed_ml_s> <steps_per_ml_calc> <torque_%>
+	if (states->mainState != FEED_MODE) { /* ... */ return; }
+	if (checkMoving()){ sendToPC("Error: Motors busy. Cannot start inject."); return; }
+
+	resetActiveDispenseOp(states); // Reset before starting new operation
+
+	float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
 	if (sscanf(msg + strlen(CMD_STR_INJECT_MOVE), "%f %f %f %f %f",
-	&volume_ml, &speed_ml_s, &acceleration, &steps_per_ml_val, &torque_percent) == 5) {
+	&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
 		
+		// ... (Parameter validation from your previous version) ...
+		if (!motorsAreEnabled) { sendToPC("Inject blocked: Motors disabled."); return; }
+		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive for Inject."); return;}
+		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 15.0f; // Default
+		if (volume_ml <= 0) { sendToPC("Error: Inject volume must be positive."); return; }
+
+
 		states->feedState = FEED_INJECT;
 		states->feedingDone = false;
-
-		char response[200];
-		snprintf(response, sizeof(response), "INJECT_MOVE RX: Vol:%.3fml, Speed:%.3fml/s, Steps/ml:%.2f, Tq:%.1f%%",
-		volume_ml, speed_ml_s, steps_per_ml_val, torque_percent);
-		sendToPC(response);
-
-		if (!motorsAreEnabled) {
-			sendToPC("INJECT_MOVE blocked: Motors disabled.");
-			states->feedState = FEED_STANDBY; return;
-		}
-		if (steps_per_ml_val <= 0) {
-			sendToPC("Error: Steps/ml must be positive for INJECT_MOVE.");
-			states->feedState = FEED_STANDBY; return;
-		}
-		if (torque_percent <= 0 || torque_percent > 100) {
-			sendToPC("Warning: Invalid torque for Inject. Using default 15%.");
-			torque_percent = 15.0f;
-		}
-
+		states->active_dispense_operation_ongoing = true;
+		states->active_operation_target_ml = volume_ml;
+		states->active_operation_steps_per_ml = steps_per_ml_val;
+		states->active_operation_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+		states->active_operation_dispensed_ml_rt = 0.0f; // Initialize real-time display
+		states->last_completed_dispense_ml = 0.0f; // Clear last completed for this new op
 
 		long total_steps = (long)(volume_ml * steps_per_ml_val);
 		int feed_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
-		if (feed_velocity_sps <=0) {
-			sendToPC("Warning: Calculated feed velocity is zero or negative. Using default 100sps.");
-			feed_velocity_sps = 100;
-		}
+		if (feed_velocity_sps <= 0) feed_velocity_sps = 100; // Default if calculated is invalid
 		
+		char response[200];
+		snprintf(response, sizeof(response), "INJECT_MOVE RX: Vol:%.3fml, Speed:%.3fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
+		volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
+		sendToPC(response);
 		sendToPC("Initiating Inject move...");
-		// Assuming inject moves both motors symmetrically
-		moveMotors(total_steps, total_steps, (int)torque_percent, feed_velocity_sps, acceleration);
-		// Main loop should monitor for completion and call states->onFeedingDone()
-		// and then transition states->feedState back to FEED_STANDBY.
-
+		moveMotors(total_steps, total_steps, (int)torque_percent, feed_velocity_sps, (int)acceleration_sps2);
 		} else {
-		sendToPC("Invalid INJECT_MOVE format. Expected 4 parameters.");
+		sendToPC("Invalid INJECT_MOVE format.");
 	}
 }
 
 void handlePurgeMove(const char *msg, SystemStates *states) {
-	if (states->mainState != FEED_MODE) {
-		sendToPC("PURGE_MOVE ignored: Not in FEED_MODE.");
-		return;
-	}
-	float volume_ml, speed_ml_s, acceleration, steps_per_ml_val, torque_percent;
+	if (states->mainState != FEED_MODE) { /* ... */ return; }
+	if (checkMoving()){ sendToPC("Error: Motors busy. Cannot start purge."); return; }
+
+	resetActiveDispenseOp(states); // Reset before starting
+
+	float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
 	if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
-	&volume_ml, &speed_ml_s, &acceleration, &steps_per_ml_val, &torque_percent) == 5) {
+	&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
+
+		// ... (Parameter validation) ...
+		if (!motorsAreEnabled) { sendToPC("Purge blocked: Motors disabled."); return; }
+		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive for Purge."); return;}
+		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 15.0f;
+		if (volume_ml <= 0) { sendToPC("Error: Purge volume must be positive."); return; }
 
 		states->feedState = FEED_PURGE;
 		states->feedingDone = false;
-
-		char response[200];
-		snprintf(response, sizeof(response), "PURGE_MOVE RX: Vol:%.3fml, Speed:%.3fml/s, Steps/ml:%.2f, Tq:%.1f%%",
-		volume_ml, speed_ml_s, steps_per_ml_val, torque_percent);
-		sendToPC(response);
-		
-		if (!motorsAreEnabled) {
-			sendToPC("PURGE_MOVE blocked: Motors disabled.");
-			states->feedState = FEED_STANDBY; return;
-		}
-		if (steps_per_ml_val <= 0) {
-			sendToPC("Error: Steps/ml must be positive for PURGE_MOVE.");
-			states->feedState = FEED_STANDBY; return;
-		}
-		if (torque_percent <= 0 || torque_percent > 100) {
-			sendToPC("Warning: Invalid torque for Purge. Using default 15%.");
-			torque_percent = 15.0f;
-		}
+		states->active_dispense_operation_ongoing = true;
+		states->active_operation_target_ml = volume_ml;
+		states->active_operation_steps_per_ml = steps_per_ml_val;
+		states->active_operation_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+		states->active_operation_dispensed_ml_rt = 0.0f;
+		states->last_completed_dispense_ml = 0.0f;
 
 		long total_steps = (long)(volume_ml * steps_per_ml_val);
 		int purge_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
-		if (purge_velocity_sps <=0) {
-			sendToPC("Warning: Calculated purge velocity is zero or negative. Using default 200sps.");
-			purge_velocity_sps = 200;
-		}
+		if (purge_velocity_sps <=0) purge_velocity_sps = 200;
 
+		char response[200];
+		snprintf(response, sizeof(response), "PURGE_MOVE RX: Vol:%.3fml, Speed:%.3fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
+		volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
+		sendToPC(response);
 		sendToPC("Initiating Purge move...");
-		moveMotors(total_steps, total_steps, (int)torque_percent, purge_velocity_sps, acceleration);
+		moveMotors(total_steps, total_steps, (int)torque_percent, purge_velocity_sps, (int)acceleration_sps2);
 		} else {
-		sendToPC("Invalid PURGE_MOVE format. Expected 4 parameters.");
+		sendToPC("Invalid PURGE_MOVE format.");
 	}
 }
 
@@ -742,86 +764,242 @@ void handleRetractMove(const char *msg, SystemStates *states) {
 	}
 }
 
+void resetActiveDispenseOp(SystemStates *states) {
+	states->active_operation_target_ml = 0.0f;
+	states->active_operation_dispensed_ml_rt = 0.0f;
+	// last_completed_dispense_ml is preserved until a new op successfully completes or is aborted
+	states->active_operation_initial_axis_steps = ConnectorM0.PositionRefCommanded(); // Reset base for next calc
+	states->active_operation_steps_per_ml = 0.0f;
+	states->active_dispense_operation_ongoing = false;
+}
+
+void handleClearErrors(SystemStates *states) {
+	if (states->errorState != ERROR_NONE) {
+		states->errorState = ERROR_NONE;
+		sendToPC("Errors cleared.");
+		// If an error interrupted an operation, that operation should already be stopped/reset.
+		// Consider if returning to STANDBY_MODE is appropriate if not in an active state.
+		// For now, just clearing the error flag.
+		} else {
+		sendToPC("No active errors to clear.");
+	}
+}
+
 void handleMoveToCartridgeHome(SystemStates *states) {
-	if (states->mainState != FEED_MODE) {
-		sendToPC("MOVE_TO_CARTRIDGE_HOME ignored: Not in FEED_MODE.");
-		return;
-	}
-	if (!states->homingCartridgeDone) { // Make sure cartridge home reference is valid
-		sendToPC("Error: Cartridge has not been homed. Cannot move to cartridge home.");
-		states->errorState = ERROR_NO_CARTRIDGE_HOME;
-		return;
-	}
-	if (!motorsAreEnabled) {
-		sendToPC("Error: Motors are disabled. Cannot move to cartridge home.");
-		return;
+	if (states->mainState != FEED_MODE) { /* ... */ return; }
+	if (!states->homingCartridgeDone) { states->errorState = ERROR_NO_CARTRIDGE_HOME; sendToPC("Err: Cartridge not homed."); return; }
+	if (!motorsAreEnabled) { sendToPC("Err: Motors disabled."); return; }
+	if (checkMoving() || states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE) {
+		sendToPC("Err: Busy. Cannot move to cart home now.");
+		states->errorState = ERROR_INVALID_OPERATION; return;
 	}
 
-	sendToPC("Moving to Cartridge Home position...");
+	sendToPC("Cmd: Move to Cartridge Home...");
+	fullyResetActiveDispenseOperation(states); // Reset any prior dispense op
+	states->feedState = FEED_MOVING_TO_HOME;
+	states->feedingDone = false;
 	
-	// Get current position of the axis (e.g., from M0)
 	long current_axis_pos = ConnectorM0.PositionRefCommanded();
-	
-	// Calculate steps needed to move the single axis to the cartridgeHomeReferenceSteps
 	long steps_to_move_axis = cartridgeHomeReferenceSteps - current_axis_pos;
 
-	// Move both motors by the same amount to drive the single axis
-	// Parameters for moveMotors: (stepsM0, stepsM1, torque_limit_percent, velocity_sps, accel_sps2)
 	moveMotors((int)steps_to_move_axis, (int)steps_to_move_axis,
-	FEED_GOTO_TORQUE_PERCENT,
-	FEED_GOTO_VELOCITY_SPS,
-	FEED_GOTO_ACCEL_SPS2);
-	
-	// Optional: Set a sub-state within FEED_MODE if tracking completion, as discussed before.
-	// states->feedState = FEED_MOVING_TO_POS; states->feedingDone = false;
+	FEED_GOTO_TORQUE_PERCENT, FEED_GOTO_VELOCITY_SPS, FEED_GOTO_ACCEL_SPS2);
 }
 
 void handleMoveToCartridgeRetract(const char *msg, SystemStates *states) {
-	if (states->mainState != FEED_MODE) {
-		sendToPC("MOVE_TO_CARTRIDGE_RETRACT ignored: Not in FEED_MODE.");
-		return;
-	}
-	if (!states->homingCartridgeDone) { // Make sure cartridge home reference is valid
-		sendToPC("Error: Cartridge has not been homed. Cannot move to cartridge retract position.");
-		states->errorState = ERROR_NO_CARTRIDGE_HOME;
-		return;
-	}
-	if (!motorsAreEnabled) {
-		sendToPC("Error: Motors are disabled. Cannot move to cartridge retract position.");
-		return;
+	if (states->mainState != FEED_MODE) { /* ... */ return; }
+	if (!states->homingCartridgeDone) { /* ... */ states->errorState = ERROR_NO_CARTRIDGE_HOME; sendToPC("Err: Cartridge not homed."); return; }
+	if (!motorsAreEnabled) { /* ... */ sendToPC("Err: Motors disabled."); return; }
+	if (checkMoving() || states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE) {
+		sendToPC("Err: Busy. Cannot move to cart retract now.");
+		states->errorState = ERROR_INVALID_OPERATION; return;
 	}
 
 	float offset_mm = 0.0f;
-	// CMD_STR_MOVE_TO_CARTRIDGE_RETRACT should end with a space for sscanf
-	int parsed_count = sscanf(msg + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT), "%f", &offset_mm);
-
-	if (parsed_count != 1 || offset_mm < 0) { // Offset is a distance, should be positive
-		sendToPC("Error: Invalid or missing offset_mm for MOVE_TO_CARTRIDGE_RETRACT. Must be a positive value.");
-		return;
+	if (sscanf(msg + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT), "%f", &offset_mm) != 1 || offset_mm < 0) {
+		sendToPC("Err: Invalid offset for MOVE_TO_CARTRIDGE_RETRACT."); return;
 	}
 	
-	const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV_CONST; // Ensure this is correct
-	long offset_steps = (long)(offset_mm * current_steps_per_mm);
+	fullyResetActiveDispenseOperation(states);
+	states->feedState = FEED_MOVING_TO_RETRACT;
+	states->feedingDone = false;
 
-	// Positive steps are downward. "50mm below cartridge home" means adding offset_steps
-	// to the cartridgeHomeReferenceSteps (which is an absolute position).
+	const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV_CONST;
+	long offset_steps = (long)(offset_mm * current_steps_per_mm);
 	long target_absolute_axis_position = cartridgeHomeReferenceSteps + offset_steps;
 
 	char response[150];
-	snprintf(response, sizeof(response), "Moving to Cartridge Retract (Offset: %.2fmm, TargetAbsSteps: %ld)", offset_mm, target_absolute_axis_position);
+	snprintf(response, sizeof(response), "Cmd: Move to Cart Retract (Offset: %.1fmm, Target: %ld steps)", offset_mm, target_absolute_axis_position);
 	sendToPC(response);
 
-	long current_axis_pos = ConnectorM0.PositionRefCommanded(); // Get current position
+	long current_axis_pos = ConnectorM0.PositionRefCommanded();
 	long steps_to_move_axis = target_absolute_axis_position - current_axis_pos;
 
-	// Move both motors by the same amount
 	moveMotors((int)steps_to_move_axis, (int)steps_to_move_axis,
-	FEED_GOTO_TORQUE_PERCENT,
-	FEED_GOTO_VELOCITY_SPS,
-	FEED_GOTO_ACCEL_SPS2);
-
-	// Optional: Set a sub-state for tracking completion.
+	FEED_GOTO_TORQUE_PERCENT, FEED_GOTO_VELOCITY_SPS, FEED_GOTO_ACCEL_SPS2);
 }
+
+
+void handleInjectMove(const char *msg, SystemStates *states) { // This is effectively START_INJECT
+	if (states->mainState != FEED_MODE) { sendToPC("INJECT ignored: Not in FEED_MODE."); return; }
+	if (checkMoving() || states->active_dispense_operation_ongoing) { sendToPC("Error: Operation already in progress or motors busy."); return; }
+
+	float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
+	if (sscanf(msg + strlen(CMD_STR_INJECT_MOVE), "%f %f %f %f %f",
+	&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
+		
+		if (!motorsAreEnabled) { sendToPC("INJECT blocked: Motors disabled."); return; }
+		if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive."); return;}
+		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f; // Default
+		if (volume_ml <= 0) { sendToPC("Error: Inject volume must be positive."); return; }
+		if (speed_ml_s <= 0) { sendToPC("Error: Inject speed must be positive."); return; }
+		if (acceleration_sps2 <= 0) { sendToPC("Error: Inject acceleration must be positive."); return; }
+
+		states->feedState = FEED_INJECT_STARTING; // Transition state
+		states->feedingDone = false;
+		states->active_dispense_operation_ongoing = true;
+		states->active_op_target_ml = volume_ml;
+		states->active_op_steps_per_ml = steps_per_ml_val;
+		states->active_op_total_target_steps = (long)(volume_ml * steps_per_ml_val);
+		states->active_op_remaining_steps = states->active_op_total_target_steps;
+		states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+		states->active_op_total_dispensed_ml = 0.0f; // Reset total for this new operation
+
+		// Store params for potential resume
+		states->active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
+		states->active_op_accel_sps2 = (int)acceleration_sps2;
+		states->active_op_torque_percent = (int)torque_percent;
+
+		if (states->active_op_velocity_sps <= 0) states->active_op_velocity_sps = 100; // Default
+
+		char response[200];
+		snprintf(response, sizeof(response), "RX INJECT: Vol:%.2fml, Speed:%.2fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
+		volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
+		sendToPC(response);
+		sendToPC("Starting Inject operation...");
+		
+		moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
+		states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
+		states->feedState = FEED_INJECT_ACTIVE; // Update state after move command
+		} else { sendToPC("Invalid INJECT_MOVE format."); }
+	}
+
+	void handlePurgeMove(const char *msg, SystemStates *states) { // This is effectively START_PURGE
+		// Similar logic to handleInjectMove
+		if (states->mainState != FEED_MODE) { sendToPC("PURGE ignored: Not in FEED_MODE."); return; }
+		if (checkMoving() || states->active_dispense_operation_ongoing) { sendToPC("Error: Operation already in progress or motors busy."); return; }
+
+		float volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent;
+		if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
+		&volume_ml, &speed_ml_s, &acceleration_sps2, &steps_per_ml_val, &torque_percent) == 5) {
+			
+			if (!motorsAreEnabled) { sendToPC("PURGE blocked: Motors disabled."); return; }
+			if (steps_per_ml_val <= 0) { sendToPC("Error: Steps/ml must be positive."); return;}
+			if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f;
+			if (volume_ml <= 0) { sendToPC("Error: Purge volume must be positive."); return; }
+			if (speed_ml_s <= 0) { sendToPC("Error: Purge speed must be positive."); return; }
+			if (acceleration_sps2 <= 0) { sendToPC("Error: Purge acceleration must be positive."); return; }
+
+			states->feedState = FEED_PURGE_STARTING;
+			states->feedingDone = false;
+			states->active_dispense_operation_ongoing = true;
+			states->active_op_target_ml = volume_ml;
+			states->active_op_steps_per_ml = steps_per_ml_val;
+			states->active_op_total_target_steps = (long)(volume_ml * steps_per_ml_val);
+			states->active_op_remaining_steps = states->active_op_total_target_steps;
+			states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+			states->active_op_total_dispensed_ml = 0.0f;
+
+			states->active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml_val);
+			states->active_op_accel_sps2 = (int)acceleration_sps2;
+			states->active_op_torque_percent = (int)torque_percent;
+			if (states->active_op_velocity_sps <= 0) states->active_op_velocity_sps = 200;
+
+			char response[200];
+			snprintf(response, sizeof(response), "RX PURGE: Vol:%.2fml, Speed:%.2fml/s, Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
+			volume_ml, speed_ml_s, acceleration_sps2, steps_per_ml_val, torque_percent);
+			sendToPC(response);
+			sendToPC("Starting Purge operation...");
+			moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
+			states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
+			states->feedState = FEED_PURGE_ACTIVE;
+			} else { sendToPC("Invalid PURGE_MOVE format."); }
+		}
+
+		void handlePauseOperation(SystemStates *states) {
+			if (!states->active_dispense_operation_ongoing) {
+				sendToPC("PAUSE ignored: No active inject/purge operation.");
+				return;
+			}
+			if (states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE) {
+				sendToPC("Cmd: Pausing operation...");
+				ConnectorM0.MoveStopDecel(); // Use decelerated stop
+				ConnectorM1.MoveStopDecel();
+				// The actual calculation of remaining steps and state change to PAUSED
+				// will happen in main.cpp once motors confirm they've stopped.
+				// For now, we just signal the intent.
+				// We need a way for main.cpp to know a pause was requested.
+				if(states->feedState == FEED_INJECT_ACTIVE) states->feedState = FEED_INJECT_PAUSED; // Tentative state
+				if(states->feedState == FEED_PURGE_ACTIVE) states->feedState = FEED_PURGE_PAUSED;   // Tentative state
+				// The main loop will see motors stopping and then finalize the pause.
+				} else {
+				sendToPC("PAUSE ignored: Not in an active inject/purge state.");
+			}
+		}
+
+		void handleResumeOperation(SystemStates *states) {
+			if (!states->active_dispense_operation_ongoing) {
+				sendToPC("RESUME ignored: No operation was ongoing or paused.");
+				return;
+			}
+			if (states->feedState == FEED_INJECT_PAUSED || states->feedState == FEED_PURGE_PAUSED) {
+				if (states->active_op_remaining_steps <= 0) {
+					sendToPC("RESUME ignored: No remaining volume/steps to dispense.");
+					fullyResetActiveDispenseOperation(states);
+					states->feedState = FEED_STANDBY;
+					return;
+				}
+				sendToPC("Cmd: Resuming operation...");
+				states->active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded(); // Update base for this segment
+				states->feedingDone = false; // New segment starting
+
+				moveMotors(states->active_op_remaining_steps, states->active_op_remaining_steps,
+				states->active_op_torque_percent, states->active_op_velocity_sps, states->active_op_accel_sps2);
+				
+				if(states->feedState == FEED_INJECT_PAUSED) states->feedState = FEED_INJECT_RESUMING; // Or directly to _ACTIVE
+				if(states->feedState == FEED_PURGE_PAUSED) states->feedState = FEED_PURGE_RESUMING;  // Or directly to _ACTIVE
+				// main.cpp will transition from RESUMING to ACTIVE once motors are moving, or directly here.
+				// For simplicity let's assume it goes active if move command is successful.
+				if(states->feedState == FEED_INJECT_RESUMING) states->feedState = FEED_INJECT_ACTIVE;
+				if(states->feedState == FEED_PURGE_RESUMING) states->feedState = FEED_PURGE_ACTIVE;
+
+
+				} else {
+				sendToPC("RESUME ignored: Operation not paused.");
+			}
+		}
+
+		void handleCancelOperation(SystemStates *states) {
+			if (!states->active_dispense_operation_ongoing) {
+				sendToPC("CANCEL ignored: No active operation to cancel.");
+				return;
+			}
+			sendToPC("Cmd: Cancelling operation...");
+			abortMove(); // Stop motors abruptly
+			
+			// Calculate final dispensed amount before resetting
+			if (states->active_dispense_operation_ongoing && states->active_op_steps_per_ml > 0.0001f) {
+				long steps_moved_on_axis = ConnectorM0.PositionRefCommanded() - states->active_op_segment_initial_axis_steps;
+				float segment_dispensed_ml = (float)fabs(steps_moved_on_axis) / states->active_op_steps_per_ml;
+				states->active_op_total_dispensed_ml += segment_dispensed_ml; // Add last segment's dispense
+			}
+			states->last_completed_dispense_ml = states->active_op_total_dispensed_ml; // Store total dispensed before cancel
+
+			fullyResetActiveDispenseOperation(states);
+			states->feedState = FEED_OPERATION_CANCELLED; // Or directly to FEED_STANDBY
+			states->feedingDone = true; // Mark as "done" via cancellation
+			sendToPC("Operation cancelled.");
+		}
 
 
 

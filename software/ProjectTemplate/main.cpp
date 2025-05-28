@@ -1,61 +1,58 @@
 #include "ClearCore.h"
-#include "states.h"
-#include "motor.h"
-#include "messages.h"
-#include <math.h>
+#include "states.h"    // For SystemStates and enums
+#include "motor.h"     // For motor control functions and home reference externs
+#include "messages.h"  // For sendToPC, communication handling, and potentially finalizeAndReset...
+#include <math.h>      // For fabs
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 
-// Define a timeout for the entire homing operation
 #define MAX_HOMING_DURATION_MS 30000 // 30 seconds, adjust as needed
 
-// These should be defined in motor.cpp and externed in motor.h or states.h
-// int32_t machineHomeReferenceSteps = 0; // Example definition, actual should be in motor.cpp
-// int32_t cartridgeHomeReferenceSteps = 0; // Example definition, actual should be in motor.cpp
+// These are defined in motor.cpp and externed in motor.h
+// extern int32_t machineHomeReferenceSteps; // Accessed in messages.cpp
+// extern int32_t cartridgeHomeReferenceSteps; // Accessed in messages.cpp
+
 
 int main(void)
 {
 	SystemStates states;
 
-	// --- Hardware and protocol initialization ---
 	SetupEthernet();
-	SetupMotors(); // This should initialize motors and motor-related globals
+	SetupMotors();
 	
 	uint32_t now = Milliseconds();
-	uint32_t lastMotorTime = now; // For TEST_MODE
-	uint32_t motorInterval = 2000; // For TEST_MODE
-	int motorFlip = 1; // For TEST_MODE
+	uint32_t lastMotorTime = now;
+	uint32_t motorInterval = 2000;
+	int motorFlip = 1;
 
-	// --- Main application loop ---
 	while (true)
 	{
 		checkUdpBuffer(&states);
-		sendTelem(&states); // Sends current states including calculated steps from home
 		now = Milliseconds();
-
+		sendTelem(&states);
+		
 		switch (states.mainState)
 		{
 			case STANDBY_MODE:
-			// Idle, do nothing
+			// If transitioning to STANDBY and an operation was active, it should have been finalized by its handler.
+			// No active operations expected here.
 			break;
 			
 			case TEST_MODE:
-			if (checkTorqueLimit()) { // checkTorqueLimit calls abortMove()
+			if (checkTorqueLimit()) {
 				states.mainState = STANDBY_MODE;
 				states.errorState = ERROR_TORQUE_ABORT;
-				sendToPC("TEST_MODE: Torque limit reached, stopping test and returning to STANDBY.");
+				sendToPC("TEST_MODE: Torque limit, returning to STANDBY.");
 			}
 			if (now - lastMotorTime > motorInterval) {
-				// Ensure moveMotors updates the actual motor positions that get read for telemetry
 				moveMotors(motorFlip * 800, motorFlip * 800, 20, 800, 5000);
 				motorFlip *= -1;
 				lastMotorTime = now;
 			}
 			break;
 
-			case HOMING_MODE: { // Scope for local variables
-
+			case HOMING_MODE: {
 				if (states.currentHomingPhase == HOMING_PHASE_COMPLETE || states.currentHomingPhase == HOMING_PHASE_ERROR) {
 					if (states.currentHomingPhase == HOMING_PHASE_COMPLETE) {
 						sendToPC("Homing sequence complete. Returning to STANDBY_MODE.");
@@ -65,6 +62,7 @@ int main(void)
 					states.mainState = STANDBY_MODE;
 					states.homingState = HOMING_NONE;
 					states.currentHomingPhase = HOMING_PHASE_IDLE;
+					// homingMachineDone/homingCartridgeDone set by onHomingMachineDone/onHomingCartridgeDone
 					break;
 				}
 
@@ -73,13 +71,10 @@ int main(void)
 				}
 
 				if ((states.homingState == HOMING_MACHINE || states.homingState == HOMING_CARTRIDGE) &&
-				(states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE ||
-				states.currentHomingPhase == HOMING_PHASE_BACK_OFF ||
-				states.currentHomingPhase == HOMING_PHASE_TOUCH_OFF ||
-				states.currentHomingPhase == HOMING_PHASE_RETRACT)) {
+				(states.currentHomingPhase >= HOMING_PHASE_RAPID_MOVE && states.currentHomingPhase < HOMING_PHASE_COMPLETE)) {
 
 					if (now - states.homingStartTime > MAX_HOMING_DURATION_MS) {
-						sendToPC("Homing Error: Timeout during active sequence. Aborting.");
+						sendToPC("Homing Error: Timeout. Aborting.");
 						abortMove();
 						states.errorState = ERROR_HOMING_TIMEOUT;
 						states.currentHomingPhase = HOMING_PHASE_ERROR;
@@ -93,34 +88,28 @@ int main(void)
 						if (checkTorqueLimit()) {
 							if (states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE) {
 								{
-									sendToPC(is_machine_homing ? "Machine Homing: Torque detected (RAPID_MOVE). Transitioning to BACK_OFF."
-									: "Cartridge Homing: Torque detected (RAPID_MOVE). Transitioning to BACK_OFF.");
+									sendToPC(is_machine_homing ? "Machine Homing: Torque (RAPID). Backing off."
+									: "Cartridge Homing: Torque (RAPID). Backing off.");
 									states.currentHomingPhase = HOMING_PHASE_BACK_OFF;
 									long back_off_s = -direction * SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS;
-									moveMotors(back_off_s, back_off_s,
-									(int)states.homing_torque_percent_param,
-									states.homing_actual_touch_sps,
-									states.homing_actual_accel_sps2);
+									moveMotors(back_off_s, back_off_s, (int)states.homing_torque_percent_param,
+									states.homing_actual_touch_sps, states.homing_actual_accel_sps2);
 								}
 								} else { // Torque hit during HOMING_PHASE_TOUCH_OFF
 								{
-									sendToPC(is_machine_homing ? "Machine Homing: Torque detected (TOUCH_OFF). Zeroing reference and transitioning to RETRACT."
-									: "Cartridge Homing: Torque detected (TOUCH_OFF). Zeroing reference and transitioning to RETRACT.");
+									sendToPC(is_machine_homing ? "Machine Homing: Torque (TOUCH_OFF). Zeroing & Retracting."
+									: "Cartridge Homing: Torque (TOUCH_OFF). Zeroing & Retracting.");
 									if (is_machine_homing) {
-										// SET THE HOME REFERENCE POINT
-										machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded(); // Assuming M0 for machine
+										machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
 										sendToPC("Machine home reference point set.");
-										} else { // Cartridge Homing
-										// SET THE HOME REFERENCE POINT
-										cartridgeHomeReferenceSteps = ConnectorM1.PositionRefCommanded(); // Assuming M1 for cartridge
+										} else {
+										cartridgeHomeReferenceSteps = ConnectorM0.PositionRefCommanded(); // Single axis
 										sendToPC("Cartridge home reference point set.");
 									}
 									states.currentHomingPhase = HOMING_PHASE_RETRACT;
 									long retract_s = -direction * states.homing_actual_retract_steps;
-									moveMotors(retract_s, retract_s,
-									(int)states.homing_torque_percent_param,
-									states.homing_actual_rapid_sps,
-									states.homing_actual_accel_sps2);
+									moveMotors(retract_s, retract_s, (int)states.homing_torque_percent_param,
+									states.homing_actual_rapid_sps, states.homing_actual_accel_sps2);
 								}
 							}
 							break;
@@ -130,23 +119,22 @@ int main(void)
 					if (!checkMoving()) {
 						switch (states.currentHomingPhase) {
 							case HOMING_PHASE_RAPID_MOVE: {
-								sendToPC(is_machine_homing ? "Machine Homing Error: RAPID_MOVE completed full stroke without torque."
-								: "Cartridge Homing Error: RAPID_MOVE completed full stroke without torque.");
+								sendToPC(is_machine_homing ? "Machine Homing Err: No torque in RAPID."
+								: "Cartridge Homing Err: No torque in RAPID.");
 								states.errorState = ERROR_HOMING_NO_TORQUE_RAPID;
 								states.currentHomingPhase = HOMING_PHASE_ERROR;
 							} break;
-
 							case HOMING_PHASE_BACK_OFF: {
-								sendToPC(is_machine_homing ? "Machine Homing: BACK_OFF complete. Starting TOUCH_OFF."
-								: "Cartridge Homing: BACK_OFF complete. Starting TOUCH_OFF.");
+								sendToPC(is_machine_homing ? "Machine Homing: Back-off done. Touching off."
+								: "Cartridge Homing: Back-off done. Touching off.");
 								states.currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
 								long touch_off_move_length = SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS * 2;
 								if (SystemStates::HOMING_DEFAULT_BACK_OFF_STEPS == 0) {
 									touch_off_move_length = 200;
-									sendToPC("Homing Warning: HOMING_DEFAULT_BACK_OFF_STEPS is 0! Using fallback touch-off travel.");
+									sendToPC("Homing Wrn: Default back_off_steps is 0. Using fallback.");
 									} else if (touch_off_move_length == 0) {
 									touch_off_move_length = 10;
-									sendToPC("Homing Warning: Calculated touch_off_move_length is 0, using minimal travel.");
+									sendToPC("Homing Wrn: Calculated touch_off_move_length is 0. Using minimal.");
 								}
 								long final_touch_off_move_steps = direction * touch_off_move_length;
 								char log_msg[100];
@@ -154,20 +142,17 @@ int main(void)
 								sendToPC(log_msg);
 								moveMotors(final_touch_off_move_steps, final_touch_off_move_steps,
 								(int)states.homing_torque_percent_param,
-								states.homing_actual_touch_sps,
-								states.homing_actual_accel_sps2);
+								states.homing_actual_touch_sps, states.homing_actual_accel_sps2);
 							} break;
-
 							case HOMING_PHASE_TOUCH_OFF: {
-								sendToPC(is_machine_homing ? "Machine Homing Error: TOUCH_OFF completed without torque."
-								: "Cartridge Homing Error: TOUCH_OFF completed without torque.");
+								sendToPC(is_machine_homing ? "Machine Homing Err: No torque in TOUCH_OFF."
+								: "Cartridge Homing Err: No torque in TOUCH_OFF.");
 								states.errorState = ERROR_HOMING_NO_TORQUE_TOUCH;
 								states.currentHomingPhase = HOMING_PHASE_ERROR;
 							} break;
-
 							case HOMING_PHASE_RETRACT: {
-								sendToPC(is_machine_homing ? "Machine Homing: RETRACT complete. Homing successful."
-								: "Cartridge Homing: RETRACT complete. Homing successful.");
+								sendToPC(is_machine_homing ? "Machine Homing: RETRACT complete. Success."
+								: "Cartridge Homing: RETRACT complete. Success.");
 								if (is_machine_homing) {
 									states.onHomingMachineDone();
 									} else {
@@ -176,10 +161,9 @@ int main(void)
 								states.errorState = ERROR_NONE;
 								states.currentHomingPhase = HOMING_PHASE_COMPLETE;
 							} break;
-
 							default:
-							sendToPC("Homing Warning: Unexpected phase with stopped motors during active sequence. Erroring out.");
-							states.errorState = ERROR_MANUAL_ABORT;
+							sendToPC("Homing Wrn: Unexpected phase with stopped motors.");
+							states.errorState = ERROR_INVALID_OPERATION; // Changed from MANUAL_ABORT
 							states.currentHomingPhase = HOMING_PHASE_ERROR;
 							break;
 						}
@@ -188,33 +172,115 @@ int main(void)
 			}
 			break;
 			
-			case FEED_MODE:
-			if (states.feedState == FEED_INJECT || states.feedState == FEED_PURGE || states.feedState == FEED_RETRACT) {
-				if (checkTorqueLimit()) {
-					states.errorState = ERROR_TORQUE_ABORT;
-					states.feedState = FEED_STANDBY;
-					sendToPC("FEED_MODE: Torque limit reached during feed operation. Feed stopped.");
-					} else if (!checkMoving() && !states.feedingDone) {
-					sendToPC("FEED_MODE: Feed operation move completed.");
-					states.feedingDone = true;
+			case FEED_MODE: {
+				// Torque check during active feed operations
+				if (states.feedState == FEED_INJECT_ACTIVE || states.feedState == FEED_PURGE_ACTIVE ||
+				states.feedState == FEED_MOVING_TO_HOME || states.feedState == FEED_MOVING_TO_RETRACT ||
+				states.feedState == FEED_INJECT_RESUMING || states.feedState == FEED_PURGE_RESUMING ) {
+					if (checkTorqueLimit()) {
+						// abortMove() is called by checkTorqueLimit
+						states.errorState = ERROR_TORQUE_ABORT;
+						sendToPC("FEED_MODE: Torque limit! Operation stopped.");
+						finalizeAndResetActiveDispenseOperation(&states, false); // false = not successful completion
+						states.feedState = FEED_STANDBY;
+						states.feedingDone = true;
+					}
+				}
+
+				// Handling completion of non-blocking feed operations or state transitions
+				if (!checkMoving()) { // If motors are confirmed stopped
+					if (!states.feedingDone) { // And the current operation segment isn't marked as done yet
+						
+						// Finalize dispense calculation for INJECT/PURGE if they just stopped
+						if (states.feedState == FEED_INJECT_ACTIVE || states.feedState == FEED_PURGE_ACTIVE) {
+							if (states.active_dispense_operation_ongoing) {
+								if (states.active_op_steps_per_ml > 0.0001f) {
+									long steps_moved_this_segment = ConnectorM0.PositionRefCommanded() - states.active_op_segment_initial_axis_steps;
+									float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / states.active_op_steps_per_ml;
+									states.active_op_total_dispensed_ml += segment_dispensed_ml;
+								}
+								// Check if total target steps/volume met (active_op_remaining_steps should be 0 or close)
+								states.last_completed_dispense_ml = states.active_op_total_dispensed_ml;
+								// fullyResetActiveDispenseOperation will be called below by FEED_OPERATION_COMPLETED
+							}
+							sendToPC("Feed Op: Inject/Purge segment/operation completed.");
+							states.feedState = FEED_OPERATION_COMPLETED; // Transition to completed
+							// feedingDone will be set below
+						}
+						else if (states.feedState == FEED_MOVING_TO_HOME || states.feedState == FEED_MOVING_TO_RETRACT) {
+							sendToPC("Feed Op: Positioning move completed.");
+							states.feedState = FEED_OPERATION_COMPLETED; // Transition to completed
+							// feedingDone will be set below
+						}
+						// For PAUSED states, they only transition out via RESUME or CANCEL commands, not !checkMoving() alone
+						
+						// If any operation that sets feedingDone=false has completed:
+						if (states.feedState == FEED_OPERATION_COMPLETED) {
+							states.feedingDone = true; // Mark the overarching operation as done
+							states.onFeedingDone();    // Call the handler if it does anything
+							finalizeAndResetActiveDispenseOperation(&states, true); // true = successful completion
+							states.feedState = FEED_STANDBY; // Finally, return to standby
+							sendToPC("Feed Op: Finalized. Returning to Feed Standby.");
+						}
+					}
+					} else { // Motors are moving
+					// Transition from STARTING/RESUMING to ACTIVE once motion has begun
+					if (states.feedState == FEED_INJECT_STARTING) {
+						states.feedState = FEED_INJECT_ACTIVE;
+						states.active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+						sendToPC("Feed Op: Inject Active.");
+						} else if (states.feedState == FEED_PURGE_STARTING) {
+						states.feedState = FEED_PURGE_ACTIVE;
+						states.active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+						sendToPC("Feed Op: Purge Active.");
+						} else if (states.feedState == FEED_INJECT_RESUMING) {
+						states.feedState = FEED_INJECT_ACTIVE;
+						states.active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded(); // Re-baseline for resumed segment
+						sendToPC("Feed Op: Inject Resumed, Active.");
+						} else if (states.feedState == FEED_PURGE_RESUMING) {
+						states.feedState = FEED_PURGE_ACTIVE;
+						states.active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+						sendToPC("Feed Op: Purge Resumed, Active.");
+					}
+				}
+
+				// Handle transitions from states set by command handlers (like PAUSED or CANCELLED)
+				if (states.feedState == FEED_INJECT_PAUSED || states.feedState == FEED_PURGE_PAUSED) {
+					// System is waiting for RESUME or CANCEL. Motors should be stopped.
+					// The dispense calculation up to the point of pause is done in handlePauseOperation or here when !checkMoving after pause cmd.
+					if (!checkMoving() && states.active_dispense_operation_ongoing) { // Ensure motors are actually stopped to finalize pause calcs
+						if (states.active_op_steps_per_ml > 0.0001f) {
+							long steps_moved_this_segment = ConnectorM0.PositionRefCommanded() - states.active_op_segment_initial_axis_steps;
+							float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / states.active_op_steps_per_ml;
+							states.active_op_total_dispensed_ml += segment_dispensed_ml; // Accumulate before pause
+							// Calculate remaining steps based on total dispensed
+							states.active_op_remaining_steps = states.active_op_total_target_steps - (long)(states.active_op_total_dispensed_ml * states.active_op_steps_per_ml);
+							if(states.active_op_remaining_steps < 0) states.active_op_remaining_steps = 0;
+						}
+						// active_dispense_operation_ongoing remains true
+						sendToPC("Feed Op: Operation Paused. Waiting for Resume/Cancel.");
+					}
+					} else if (states.feedState == FEED_OPERATION_CANCELLED) {
+					sendToPC("Feed Op: Cancelled. Returning to Feed Standby.");
+					// fullyResetActiveDispenseOperation was called by handleCancelOperation
 					states.feedState = FEED_STANDBY;
 				}
-			}
-			break;
+			} break;
 
 			case JOG_MODE:
 			if (checkTorqueLimit()) {
 				states.mainState = STANDBY_MODE;
 				states.errorState = ERROR_TORQUE_ABORT;
-				sendToPC("JOG_MODE: Torque limit reached, jog aborted. Returning to STANDBY.");
-				} else if (!checkMoving() && !states.jogDone) {
-				// jogDone state management could be added if needed
+				sendToPC("JOG_MODE: Torque limit, returning to STANDBY.");
+				} else if (!checkMoving() && !states.jogDone) { // Assuming jogDone is set to false on jog start
+				// states.jogDone = true; // Optional: mark jog as complete if needed
+				// states.onJogDone();
 			}
 			break;
 
 			case DISABLED_MODE:
 			// Only ENABLE command should change state from here
 			break;
-		} // end switch (states.mainState)
-	} // end while(true)
+		} // end switch
+	} // end while
 } // end main
