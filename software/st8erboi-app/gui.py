@@ -7,6 +7,7 @@ import time
 
 MOTOR_STEPS_PER_REV = 800  # Consistent with firmware's pulsesPerRev
 
+
 def build_gui(send_udp, discover):
     root = tk.Tk()
     root.title("st8erboi app v2")
@@ -26,7 +27,7 @@ def build_gui(send_udp, discover):
 
     style.configure('Blue.TButton', background='#0069d9', foreground='white');
     style.map('Blue.TButton', background=[('active', '#3399ff')])
-    style.configure('Yellow.TButton', background='#fbbd08', foreground='black');  # For Clear Errors
+    style.configure('Yellow.TButton', background='#fbbd08', foreground='black');
     style.map('Yellow.TButton', background=[('active', '#ffe277')])
     style.configure('Orange.TButton', background='#f2711c', foreground='white');
     style.map('Orange.TButton', background=[('active', '#ff8000')])
@@ -36,18 +37,31 @@ def build_gui(send_udp, discover):
     style.map('Purple.TButton', background=[('active', '#7D3F9D')])
     style.configure('Cyan.TButton', background='#008080', foreground='white');
     style.map('Cyan.TButton', background=[('active', '#00AAAA')])
-    style.configure('Green.TButton', background='#21ba45', foreground='white');
+    style.configure('Green.TButton', background='#21ba45', foreground='white');  # General Green
     style.map('Green.TButton', background=[('active', '#33cc66')])
     style.configure('Red.TButton', background='#C00000', foreground='white');
     style.map('Red.TButton', background=[('active', '#E00000')])
 
-    # Styles for Pause/Resume
+    # Styles for Pause/Resume/Start/Cancel
     style.configure('Pause.TButton', background='#f2c037', foreground='black',
                     font=('Segoe UI', 9, 'bold'))  # Yellowish
-    style.map('Pause.TButton', background=[('active', '#f5d061')])
+    style.map('Pause.TButton',
+              background=[('active', '#f5d061'), ('disabled', '#b0a040')],  # Darker yellow for disabled
+              foreground=[('disabled', '#777777')])
     style.configure('Resume.TButton', background='#38A85C', foreground='white',
                     font=('Segoe UI', 9, 'bold'))  # Greenish
-    style.map('Resume.TButton', background=[('active', '#4BC876')])
+    style.map('Resume.TButton',
+              background=[('active', '#4BC876'), ('disabled', '#226839')],  # Darker green for disabled
+              foreground=[('disabled', '#cccccc')])
+
+    style.configure('Start.TButton', background='#38A85C', foreground='white', font=('Segoe UI', 9, 'bold'))
+    style.map('Start.TButton',
+              background=[('active', '#4BC876'), ('disabled', '#226839')],  # Darker green for disabled
+              foreground=[('disabled', '#cccccc')])
+    style.configure('Cancel.TButton', background='#db2828', foreground='white', font=('Segoe UI', 9, 'bold'))
+    style.map('Cancel.TButton',
+              background=[('active', '#e55050'), ('disabled', '#881a1a')],  # Darker red for disabled
+              foreground=[('disabled', '#cccccc')])
 
     style.configure('ActiveBlue.TButton', background='#3399ff', foreground='white', relief=tk.SUNKEN)
     style.configure('ActiveOrange.TButton', background='#ff8000', foreground='white', relief=tk.SUNKEN)
@@ -65,7 +79,7 @@ def build_gui(send_udp, discover):
     prominent_firmware_state_var = tk.StringVar(value="---")
     homing_state_var = tk.StringVar(value="---")
     homing_phase_var = tk.StringVar(value="---")
-    feed_state_var = tk.StringVar(value="---")
+    feed_state_var = tk.StringVar(value="IDLE")  # Changed to IDLE for clarity, main.py updates it
     error_state_var = tk.StringVar(value="---")
 
     motor_state1 = tk.StringVar(value="N/A");
@@ -96,7 +110,6 @@ def build_gui(send_udp, discover):
     homing_retract_dist_var = tk.StringVar(value="20")
     homing_torque_percent_var = tk.StringVar(value="5")
 
-    # Feed variables
     feed_cyl1_dia_var = tk.StringVar(value="75.0")
     feed_cyl2_dia_var = tk.StringVar(value="33.0")
     feed_ballscrew_pitch_var = tk.StringVar(value="5.0")
@@ -106,17 +119,15 @@ def build_gui(send_udp, discover):
     feed_torque_percent_var = tk.StringVar(value="50")
     cartridge_retract_offset_mm_var = tk.StringVar(value="50.0")
 
-    # Inject
     inject_amount_ml_var = tk.StringVar(value="10.0");
     inject_speed_ml_s_var = tk.StringVar(value="0.1")
     inject_time_var = tk.StringVar(value="N/A s")
-    inject_dispensed_ml_var = tk.StringVar(value="0.00 ml")  # New
+    inject_dispensed_ml_var = tk.StringVar(value="0.00 ml")
 
-    # Purge
     purge_amount_ml_var = tk.StringVar(value="0.5");
     purge_speed_ml_s_var = tk.StringVar(value="0.5")
-    purge_time_var = tk.StringVar(value="N/A s")  # New
-    purge_dispensed_ml_var = tk.StringVar(value="0.00 ml")  # New
+    purge_time_var = tk.StringVar(value="N/A s")
+    purge_dispensed_ml_var = tk.StringVar(value="0.00 ml")
 
     set_torque_offset_val_var = tk.StringVar(value="-2.4")
 
@@ -140,7 +151,8 @@ def build_gui(send_udp, discover):
         status_var.set(text)
 
     def update_position_cmd(pos1, pos2):
-        position_cmd1_var.set(str(pos1)); position_cmd2_var.set(str(pos2))
+        position_cmd1_var.set(str(pos1));
+        position_cmd2_var.set(str(pos2))
 
     def terminal_cb(msg):
         if 'terminal' in ui_elements and ui_elements['terminal'].winfo_exists():
@@ -152,8 +164,10 @@ def build_gui(send_udp, discover):
             dia1_mm = float(feed_cyl1_dia_var.get());
             dia2_mm = float(feed_cyl2_dia_var.get());
             pitch_mm_per_rev = float(feed_ballscrew_pitch_var.get())
-            if dia1_mm <= 0 or dia2_mm <= 0 or pitch_mm_per_rev <= 0: feed_ml_per_rev_var.set(
-                "Invalid dims"); feed_steps_per_ml_var.set(0.0); return
+            if dia1_mm <= 0 or dia2_mm <= 0 or pitch_mm_per_rev <= 0:
+                feed_ml_per_rev_var.set("Invalid dims");
+                feed_steps_per_ml_var.set(0.0);
+                return
             area1_mm2 = math.pi * (dia1_mm / 2) ** 2;
             area2_mm2 = math.pi * (dia2_mm / 2) ** 2;
             total_area_mm2 = area1_mm2 + area2_mm2
@@ -165,10 +179,12 @@ def build_gui(send_udp, discover):
             else:
                 feed_steps_per_ml_var.set(0.0)
         except ValueError:
-            feed_ml_per_rev_var.set("Input Error"); feed_steps_per_ml_var.set(0.0)
+            feed_ml_per_rev_var.set("Input Error");
+            feed_steps_per_ml_var.set(0.0)
         except Exception as e:
-            feed_ml_per_rev_var.set("Calc Error"); feed_steps_per_ml_var.set(0.0); print(
-                f"Error in update_ml_per_rev: {e}")
+            feed_ml_per_rev_var.set("Calc Error");
+            feed_steps_per_ml_var.set(0.0);
+            print(f"Error in update_ml_per_rev: {e}")
 
     feed_cyl1_dia_var.trace_add('write', update_ml_per_rev);
     feed_cyl2_dia_var.trace_add('write', update_ml_per_rev);
@@ -190,7 +206,7 @@ def build_gui(send_udp, discover):
     inject_amount_ml_var.trace_add('write', update_inject_time);
     inject_speed_ml_s_var.trace_add('write', update_inject_time)
 
-    def update_purge_time(*args):  # NEW function for purge time
+    def update_purge_time(*args):
         try:
             amount_ml = float(purge_amount_ml_var.get());
             speed_ml_s = float(purge_speed_ml_s_var.get())
@@ -206,8 +222,8 @@ def build_gui(send_udp, discover):
     purge_amount_ml_var.trace_add('write', update_purge_time);
     purge_speed_ml_s_var.trace_add('write', update_purge_time)
 
-    def update_state(new_main_state_from_firmware):  # Includes debug prints from previous step
-        print(f"GUI_DEBUG: update_state CALLED with: '{new_main_state_from_firmware}'")  # DEBUG
+    def update_state(new_main_state_from_firmware):
+        # print(f"GUI_DEBUG: update_state CALLED with: '{new_main_state_from_firmware}'")
         main_state_var.set(new_main_state_from_firmware)
         update_jog_button_state(new_main_state_from_firmware)
         active_map = {"STANDBY_MODE": ('standby_mode_btn', 'ActiveBlue.TButton', 'Blue.TButton'),
@@ -220,53 +236,44 @@ def build_gui(send_udp, discover):
             is_active = (new_main_state_from_firmware == fw_state)
             if btn_key in ui_elements and ui_elements[btn_key].winfo_exists():
                 ui_elements[btn_key].config(style=act_style if is_active else norm_style)
-            if is_active:
+            if is_active:  # Simplified current_ui_mode determination
                 if fw_state == "STANDBY_MODE":
                     current_ui_mode = "Standby"
                 elif fw_state == "TEST_MODE":
-                    current_ui_mode = "Test Mode"
+                    current_ui_mode = "Test"
                 elif fw_state == "JOG_MODE":
                     current_ui_mode = "Jog"
                 elif fw_state == "HOMING_MODE":
-                    current_ui_mode = "Homing Mode"
+                    current_ui_mode = "Homing"  # Shortened for brevity
                 elif fw_state == "FEED_MODE":
-                    current_ui_mode = "Feed Mode"
-        print(f"GUI_DEBUG: current_ui_mode determined as: '{current_ui_mode}'")  # DEBUG
+                    current_ui_mode = "Feed"
+
+        # print(f"GUI_DEBUG: current_ui_mode determined as: '{current_ui_mode}'")
         context_frames = ['jog_controls_frame', 'homing_controls_frame', 'feed_controls_frame',
                           'settings_controls_frame']
         for fk in context_frames:
             if fk in ui_elements and ui_elements[fk].winfo_exists(): ui_elements[fk].pack_forget()
-        print(f"GUI_DEBUG: Attempting to pack panel for '{current_ui_mode}'")  # DEBUG
-        panel_packed_flag = False
+
+        # print(f"GUI_DEBUG: Attempting to pack panel for '{current_ui_mode}'")
         if current_ui_mode == "Jog" and 'jog_controls_frame' in ui_elements:
-            print("GUI_DEBUG: Packing JOG controls")  # DEBUG
-            ui_elements['jog_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5);
-            panel_packed_flag = True
-        elif current_ui_mode == "Homing Mode" and 'homing_controls_frame' in ui_elements:
-            print("GUI_DEBUG: Packing HOMING controls")  # DEBUG
-            if ui_elements['homing_controls_frame'].winfo_exists():
-                ui_elements['homing_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-                print("GUI_DEBUG: homing_controls_frame pack() called.")  # DEBUG
-                panel_packed_flag = True
-            else:
-                print(
-                    "GUI_DEBUG: ERROR - homing_controls_frame does not exist or was destroyed before packing!")  # DEBUG
-        elif current_ui_mode == "Feed Mode" and 'feed_controls_frame' in ui_elements:
-            print("GUI_DEBUG: Packing FEED controls")  # DEBUG
-            ui_elements['feed_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5);
-            panel_packed_flag = True
-        if not panel_packed_flag: print(
-            f"GUI_DEBUG: No specific contextual panel was packed for current_ui_mode: '{current_ui_mode}'")  # DEBUG
+            ui_elements['jog_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        elif current_ui_mode == "Homing" and 'homing_controls_frame' in ui_elements:
+            ui_elements['homing_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        elif current_ui_mode == "Feed" and 'feed_controls_frame' in ui_elements:
+            ui_elements['feed_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # else:
+        # print(f"GUI_DEBUG: No specific contextual panel was packed for current_ui_mode: '{current_ui_mode}'")
+
         if 'settings_controls_frame' in ui_elements and ui_elements['settings_controls_frame'].winfo_exists():
             ui_elements['settings_controls_frame'].pack(fill=tk.X, expand=False, padx=5, pady=(10, 5))
 
-    def update_motor_status(motor, text, color="#ffffff"):  # motor is 1 for M0, 2 for M1
+    def update_motor_status(motor, text, color="#ffffff"):
         lbl_k = f'motor_status_label{motor}';
         var = motor_state1 if motor == 1 else motor_state2;
         var.set(text)
         if lbl_k in ui_elements and ui_elements[lbl_k].winfo_exists(): ui_elements[lbl_k].config(fg=color)
 
-    def update_enabled_status(motor, text, color="#ffffff"):  # motor is 1 for M0, 2 for M1
+    def update_enabled_status(motor, text, color="#ffffff"):
         lbl_k = f'enabled_status_label{motor}';
         var = enabled_state1 if motor == 1 else enabled_state2;
         var.set(text)
@@ -320,7 +327,7 @@ def build_gui(send_udp, discover):
                                          relief="raised", bd=3, padx=10, pady=5)
     ui_elements['abort_btn'].pack(side=tk.LEFT, padx=(0, 5))
     ui_elements['clear_errors_btn'] = ttk.Button(action_buttons_frame, text="⚠️ Clear Errors", style='Yellow.TButton',
-                                                 command=lambda: send_udp("CLEAR_ERRORS"))  # NEW BUTTON
+                                                 command=lambda: send_udp("CLEAR_ERRORS"))
     ui_elements['clear_errors_btn'].pack(side=tk.LEFT, padx=(5, 0))
 
     tk.Label(top_row_frame, textvariable=status_var, bg="#21232b", fg="white", font=("Segoe UI", 12)).pack(side=tk.LEFT,
@@ -428,6 +435,7 @@ def build_gui(send_udp, discover):
     ui_elements['disable_btn'].pack(side=tk.LEFT, padx=(1, 0));
     enable_disable_var.trace_add('write', update_enable_button_appearance);
     update_enable_button_appearance()
+
     always_on_motor_info_frame = tk.Frame(right_of_modes_area, bg="#21232b");
     always_on_motor_info_frame.pack(side=tk.TOP, fill=tk.X, expand=False, pady=(5, 0))
     m1_display_section = tk.LabelFrame(always_on_motor_info_frame, text="Motor 0 Status", bg="#1b2432", fg="#00bfff",
@@ -547,6 +555,7 @@ def build_gui(send_udp, discover):
                                                command=lambda: send_udp(
                                                    f"JOG_MOVE -{jog_steps_var.get()} -{jog_steps_var.get()} {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
     ui_elements['jog_both_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
+
     homing_controls_frame = tk.LabelFrame(contextual_display_master_frame,
                                           text="Homing Controls (Active in HOMING_MODE)", bg="#2b1e34", fg="#D8BFD8",
                                           font=("Segoe UI", 10, "bold"), bd=2, relief="ridge");
@@ -591,136 +600,141 @@ def build_gui(send_udp, discover):
         f"CARTRIDGE_HOME_MOVE {homing_stroke_len_var.get()} {homing_rapid_vel_var.get()} {homing_touch_vel_var.get()} {homing_acceleration_var.get()} 0 {homing_torque_percent_var.get()}")).pack(
         side=tk.LEFT, fill=tk.X, expand=True, padx=2)
 
-    # --- UPDATED Feed Controls Frame ---
     feed_controls_frame = tk.LabelFrame(contextual_display_master_frame, text="Feed Controls (Active in FEED_MODE)",
-                                        bg="#1e3434", fg="#AFEEEE", font=("Segoe UI", 10, "bold"), bd=2, relief="ridge")
+                                        bg="#1e3434", fg="#AFEEEE", font=("Segoe UI", 10, "bold"), bd=2,
+                                        relief="ridge");
     ui_elements['feed_controls_frame'] = feed_controls_frame
     feed_controls_frame.grid_columnconfigure(1, weight=1);
-    feed_controls_frame.grid_columnconfigure(3, weight=1)
+    feed_controls_frame.grid_columnconfigure(3, weight=1);
     f_row = 0;
-    field_width_feed = 8
-
+    field_width_feed = 8;
     tk.Label(feed_controls_frame, text="Cyl 1 Dia (mm):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=feed_cyl1_dia_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2)
+        row=f_row, column=1, sticky="ew", padx=2, pady=2);
     tk.Label(feed_controls_frame, text="Cyl 2 Dia (mm):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=feed_cyl2_dia_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=3, sticky="ew", padx=2, pady=2)
+        row=f_row, column=3, sticky="ew", padx=2, pady=2);
     f_row += 1
     tk.Label(feed_controls_frame, text="Pitch (mm/rev):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=feed_ballscrew_pitch_var, width=field_width_feed, font=font_small).grid(
         row=f_row, column=1, sticky="ew", padx=2, pady=2);
     tk.Label(feed_controls_frame, text="Calc ml/rev:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(
-        row=f_row, column=2, sticky="w", padx=2, pady=2)
+        row=f_row, column=2, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, textvariable=feed_ml_per_rev_var, bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);
     f_row += 1
     tk.Label(feed_controls_frame, text="Calc Steps/ml:", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, textvariable=feed_steps_per_ml_var, bg=feed_controls_frame['bg'], fg='cyan',
              font=font_small).grid(row=f_row, column=1, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, text="Feed Accel (sps²):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=feed_acceleration_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=3, sticky="ew", padx=2, pady=2)
+        row=f_row, column=3, sticky="ew", padx=2, pady=2);
     f_row += 1
     tk.Label(feed_controls_frame, text="Torque Limit (%):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=feed_torque_percent_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2)
+        row=f_row, column=1, sticky="ew", padx=2, pady=2);
     f_row += 1
     ttk.Separator(feed_controls_frame, orient='horizontal').grid(row=f_row, column=0, columnspan=4, sticky='ew',
                                                                  pady=5);
     f_row += 1
-
     tk.Label(feed_controls_frame, text="Retract Offset (mm):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, columnspan=2, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, columnspan=2, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=cartridge_retract_offset_mm_var, width=field_width_feed,
-              font=font_small).grid(row=f_row, column=2, sticky="ew", padx=2, pady=2)
+              font=font_small).grid(row=f_row, column=2, sticky="ew", padx=2, pady=2);
     f_row += 1
-    positioning_btn_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg'])
+    positioning_btn_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg']);
     positioning_btn_frame.grid(row=f_row, column=0, columnspan=4, pady=(5, 2), sticky="ew")
     ttk.Button(positioning_btn_frame, text="Go to Cartridge Home", style='Green.TButton',
                command=lambda: send_udp("MOVE_TO_CARTRIDGE_HOME")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
     ttk.Button(positioning_btn_frame, text="Go to Cartridge Retract", style='Green.TButton',
                command=lambda: send_udp(f"MOVE_TO_CARTRIDGE_RETRACT {cartridge_retract_offset_mm_var.get()}")).pack(
-        side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        side=tk.LEFT, fill=tk.X, expand=True, padx=2);
     f_row += 1
     ttk.Separator(feed_controls_frame, orient='horizontal').grid(row=f_row, column=0, columnspan=4, sticky='ew',
                                                                  pady=5);
     f_row += 1
 
-    # Inject Section
+    # --- Inject Section ---
     tk.Label(feed_controls_frame, text="Inject Vol (ml):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=inject_amount_ml_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2)
+        row=f_row, column=1, sticky="ew", padx=2, pady=2);
     tk.Label(feed_controls_frame, text="Inject Vel (ml/s):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=inject_speed_ml_s_var, width=field_width_feed, font=font_small).grid(
         row=f_row, column=3, sticky="ew", padx=2, pady=2);
     f_row += 1
     tk.Label(feed_controls_frame, text="Est. Inject Time:", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, textvariable=inject_time_var, bg=feed_controls_frame['bg'], fg='cyan',
              font=font_small).grid(row=f_row, column=1, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, text="Dispensed:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(
-        row=f_row, column=2, sticky="w", padx=2, pady=2)  # New Dispensed Label
+        row=f_row, column=2, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, textvariable=inject_dispensed_ml_var, bg=feed_controls_frame['bg'], fg='lightgreen',
-             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);  # New Dispensed Value
+             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);
     f_row += 1
 
     inject_op_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg'])
     inject_op_frame.grid(row=f_row, column=0, columnspan=4, pady=(2, 5), sticky="ew")
-    ui_elements['start_inject_btn'] = ttk.Button(inject_op_frame, text="Start Inject", style='Small.TButton',
-                                                 command=lambda: send_udp(
-                                                     f"INJECT_MOVE {inject_amount_ml_var.get()} {inject_speed_ml_s_var.get()} {feed_acceleration_var.get()} {feed_steps_per_ml_var.get()} {feed_torque_percent_var.get()}"))
-    ui_elements['start_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 2))
-    ui_elements['pause_inject_btn'] = ttk.Button(inject_op_frame, text="Pause", style='Pause.TButton',
+    ui_elements['start_inject_btn'] = ttk.Button(inject_op_frame, text="Start Inject", style='Start.TButton',
+                                                 state='normal', command=lambda: send_udp(
+            f"INJECT_MOVE {inject_amount_ml_var.get()} {inject_speed_ml_s_var.get()} {feed_acceleration_var.get()} {feed_steps_per_ml_var.get()} {feed_torque_percent_var.get()}"))
+    ui_elements['start_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 2))
+    ui_elements['pause_inject_btn'] = ttk.Button(inject_op_frame, text="Pause", style='Pause.TButton', state='disabled',
                                                  command=lambda: send_udp("PAUSE_OPERATION"))
     ui_elements['pause_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
     ui_elements['resume_inject_btn'] = ttk.Button(inject_op_frame, text="Resume", style='Resume.TButton',
-                                                  command=lambda: send_udp("RESUME_OPERATION"))
-    ui_elements['resume_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 20))
+                                                  state='disabled', command=lambda: send_udp("RESUME_OPERATION"))
+    ui_elements['resume_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+    ui_elements['cancel_inject_btn'] = ttk.Button(inject_op_frame, text="Cancel", style='Cancel.TButton',
+                                                  state='disabled', command=lambda: send_udp("CANCEL_OPERATION"))
+    ui_elements['cancel_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 10))
     f_row += 1
     ttk.Separator(feed_controls_frame, orient='horizontal').grid(row=f_row, column=0, columnspan=4, sticky='ew',
                                                                  pady=5);
     f_row += 1
 
-    # Purge Section
+    # --- Purge Section ---
     tk.Label(feed_controls_frame, text="Purge Vol (ml):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=purge_amount_ml_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2)
+        row=f_row, column=1, sticky="ew", padx=2, pady=2);
     tk.Label(feed_controls_frame, text="Purge Vel (ml/s):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2)
+             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
     ttk.Entry(feed_controls_frame, textvariable=purge_speed_ml_s_var, width=field_width_feed, font=font_small).grid(
         row=f_row, column=3, sticky="ew", padx=2, pady=2);
     f_row += 1
     tk.Label(feed_controls_frame, text="Est. Purge Time:", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2)  # New
+             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, textvariable=purge_time_var, bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).grid(row=f_row, column=1, sticky="w", padx=2, pady=2);  # New
+             font=font_small).grid(row=f_row, column=1, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, text="Dispensed:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(
-        row=f_row, column=2, sticky="w", padx=2, pady=2)  # New Dispensed Label
+        row=f_row, column=2, sticky="w", padx=2, pady=2);
     tk.Label(feed_controls_frame, textvariable=purge_dispensed_ml_var, bg=feed_controls_frame['bg'], fg='lightgreen',
-             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);  # New Dispensed Value
+             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);
     f_row += 1
+
     purge_op_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg'])
     purge_op_frame.grid(row=f_row, column=0, columnspan=4, pady=(2, 5), sticky="ew")
-    ui_elements['start_purge_btn'] = ttk.Button(purge_op_frame, text="Start Purge", style='Small.TButton',
-                                                command=lambda: send_udp(
-                                                    f"PURGE_MOVE {purge_amount_ml_var.get()} {purge_speed_ml_s_var.get()} {feed_acceleration_var.get()} {feed_steps_per_ml_var.get()} {feed_torque_percent_var.get()}"))
-    ui_elements['start_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 2))
-    ui_elements['pause_purge_btn'] = ttk.Button(purge_op_frame, text="Pause", style='Pause.TButton',
-                                                command=lambda: send_udp("PAUSE_PURGE"), state=tk.DISABLED)
+    ui_elements['start_purge_btn'] = ttk.Button(purge_op_frame, text="Start Purge", style='Start.TButton',
+                                                state='normal', command=lambda: send_udp(
+            f"PURGE_MOVE {purge_amount_ml_var.get()} {purge_speed_ml_s_var.get()} {feed_acceleration_var.get()} {feed_steps_per_ml_var.get()} {feed_torque_percent_var.get()}"))
+    ui_elements['start_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 2))
+    ui_elements['pause_purge_btn'] = ttk.Button(purge_op_frame, text="Pause", style='Pause.TButton', state='disabled',
+                                                command=lambda: send_udp("PAUSE_OPERATION"))
     ui_elements['pause_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
     ui_elements['resume_purge_btn'] = ttk.Button(purge_op_frame, text="Resume", style='Resume.TButton',
-                                                 command=lambda: send_udp("RESUME_PURGE"), state=tk.DISABLED)
-    ui_elements['resume_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 20))
+                                                 state='disabled', command=lambda: send_udp("RESUME_OPERATION"))
+    ui_elements['resume_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+    ui_elements['cancel_purge_btn'] = ttk.Button(purge_op_frame, text="Cancel", style='Cancel.TButton',
+                                                 state='disabled', command=lambda: send_udp("CANCEL_OPERATION"))
+    ui_elements['cancel_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 10))
 
     update_ml_per_rev();
     update_inject_time();
@@ -740,6 +754,7 @@ def build_gui(send_udp, discover):
                                                                                                       column=2,
                                                                                                       padx=(5, 2),
                                                                                                       pady=2)
+
     right_column_frame = tk.Frame(content_frame, bg="#21232b");
     right_column_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 10))
     chart_frame = tk.Frame(right_column_frame, bg="#21232b");
@@ -773,33 +788,96 @@ def build_gui(send_udp, discover):
         'enabled_status_label2': ui_elements['enabled_status_label2'],
         'motor_status_label1': ui_elements['motor_status_label1'],
         'motor_status_label2': ui_elements['motor_status_label2'],
-        'inject_dispensed_ml_var': inject_dispensed_ml_var,
-        'purge_dispensed_ml_var': purge_dispensed_ml_var,
+        'inject_dispensed_ml_var': inject_dispensed_ml_var, 'purge_dispensed_ml_var': purge_dispensed_ml_var,
+        # Ensure all new and existing feed buttons are in ui_elements for main.py
         'start_inject_btn': ui_elements['start_inject_btn'], 'pause_inject_btn': ui_elements['pause_inject_btn'],
-        'resume_inject_btn': ui_elements['resume_inject_btn'],
+        'resume_inject_btn': ui_elements['resume_inject_btn'], 'cancel_inject_btn': ui_elements['cancel_inject_btn'],
         'start_purge_btn': ui_elements['start_purge_btn'], 'pause_purge_btn': ui_elements['pause_purge_btn'],
-        'resume_purge_btn': ui_elements['resume_purge_btn'],
+        'resume_purge_btn': ui_elements['resume_purge_btn'], 'cancel_purge_btn': ui_elements['cancel_purge_btn'],
     })
+
+    # Initial call to update_state to set up panels based on initial main_state_var
     root.after(20, lambda: update_state(main_state_var.get()))
+    # The button states for inject/purge will be set by main.py upon receiving the first telemetry.
     return ui_elements
 
 
 if __name__ == '__main__':
+    # This is for standalone testing of gui.py, your main.py will handle the actual app.
     mock_send_udp = lambda msg: print(f"GUI SEND: {msg}")
     mock_discover = lambda: print("GUI DISCOVER")
     gui = build_gui(mock_send_udp, mock_discover)
 
 
-    def mock_update_telemetry():
-        if gui['root'].winfo_exists():
-            gui['inject_dispensed_ml_var'].set(f"{(time.time() % 5):.2f} ml")
-            gui['purge_dispensed_ml_var'].set(f"{(time.time() % 2):.2f} ml")
-            gui['root'].after(100, mock_update_telemetry)
+    # Example of how main.py might simulate state changes for testing buttons
+    # In a real scenario, this would come from telemetry processing in main.py
+    def cycle_feed_states_for_testing():
+        if not gui['root'].winfo_exists(): return
+
+        states_to_test = [
+            ("IDLE", "---"),
+            ("INJECT_RUNNING", "INJECT_ACTIVE: Some params"),
+            ("INJECT_PAUSED", "INJECT_ACTIVE_PAUSED: Some params"),
+            ("IDLE", "---"),  # Back to idle
+            ("PURGE_RUNNING", "PURGE_ACTIVE: Some params"),
+            ("PURGE_PAUSED", "PURGE_ACTIVE_PAUSED: Some params"),
+            ("IDLE", "---")  # Back to idle
+        ]
+
+        current_main_state = gui['main_state_var'].get()
+        if current_main_state != "FEED_MODE":  # Ensure we are in feed mode to see the controls
+            print("Mock: Setting MAIN_STATE to FEED_MODE for testing feed buttons")
+            gui['main_state_var'].set("FEED_MODE")  # Simulate being in feed mode
+            gui['update_state']("FEED_MODE")  # Update panels
+            time.sleep(0.1)  # Give GUI time to update
+
+        if not hasattr(cycle_feed_states_for_testing, "counter"):
+            cycle_feed_states_for_testing.counter = 0
+
+        # Simulate the logic from main.py's parse_telemetry for button updates
+        state_key, actual_feed_state_val = states_to_test[cycle_feed_states_for_testing.counter]
+        print(f"\nMock: Simulating FEED_STATE from telemetry: '{actual_feed_state_val}' (Interpreted as: {state_key})")
+        gui['feed_state_var'].set(actual_feed_state_val)  # Update the display variable
+
+        # --- This is the logic from your main.py's parse_telemetry ---
+        injecting = "INJECT_ACTIVE" in actual_feed_state_val and not "PAUSED" in actual_feed_state_val
+        purging = "PURGE_ACTIVE" in actual_feed_state_val and not "PAUSED" in actual_feed_state_val
+        inject_paused = "INJECT_ACTIVE_PAUSED" in actual_feed_state_val
+        purge_paused = "PURGE_ACTIVE_PAUSED" in actual_feed_state_val
+
+        # Overall paused state (generic)
+        paused = "PAUSED" in actual_feed_state_val  # Generic check for paused
+
+        print(
+            f"Interpreted flags: injecting={injecting}, purging={purging}, inject_paused={inject_paused}, purge_paused={purge_paused}, generic_paused={paused}")
+
+        # Inject buttons:
+        # When an operation is active (injecting or inject_paused), its start button is disabled.
+        # Also, if any operation is purging or purge_paused, inject start is disabled.
+        gui['start_inject_btn'].config(
+            state='disabled' if injecting or inject_paused or purging or purge_paused else 'normal')
+        gui['pause_inject_btn'].config(state='normal' if injecting else 'disabled')
+        gui['resume_inject_btn'].config(state='normal' if inject_paused else 'disabled')
+        gui['cancel_inject_btn'].config(state='normal' if injecting or inject_paused else 'disabled')
+
+        # Purge buttons:
+        # Similar logic: disable start if purge is active/paused, or if inject is active/paused.
+        gui['start_purge_btn'].config(
+            state='disabled' if purging or purge_paused or injecting or inject_paused else 'normal')
+        gui['pause_purge_btn'].config(state='normal' if purging else 'disabled')
+        gui['resume_purge_btn'].config(state='normal' if purge_paused else 'disabled')
+        gui['cancel_purge_btn'].config(state='normal' if purging or purge_paused else 'disabled')
+        # --- End of logic from main.py ---
+
+        cycle_feed_states_for_testing.counter = (cycle_feed_states_for_testing.counter + 1) % len(states_to_test)
+        gui['root'].after(3000, cycle_feed_states_for_testing)
 
 
     if gui['root'].winfo_exists():
-        gui['update_ml_per_rev']();
-        gui['update_inject_time']();
+        gui['update_ml_per_rev']()
+        gui['update_inject_time']()
         gui['update_purge_time']()
-        # gui['root'].after(100, mock_update_telemetry)
+        # To test the button states as main.py would control them:
+        # print("Starting mock feed state cycling for button testing in 3s...")
+        # gui['root'].after(3000, cycle_feed_states_for_testing) # Uncomment to test
     gui['root'].mainloop()

@@ -212,16 +212,12 @@ void fullyResetActiveDispenseOperation(SystemStates *states) {
 void sendTelem(SystemStates *states) {
 	static uint32_t lastTelemTime = 0;
 	uint32_t now = Milliseconds();
-	
-	char dbgBuffer[100];
-	snprintf(dbgBuffer, sizeof(dbgBuffer), "sendTelem check: discovered=%d, port=%u\r\n", terminalDiscovered, terminalPort);
-	//ConnectorUsb.SendLine(dbgBuffer);
 
 	if (!terminalDiscovered || terminalPort == 0) return;
 	if (now - lastTelemTime < telemInterval && lastTelemTime != 0) return;
 	lastTelemTime = now;
 
-	// ... (motor data fetching: torque, hlfb, pos_cmd) ...
+	// Motor data fetching: torque, hlfb, pos_cmd
 	float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue1, &firstTorqueReading1);
 	float displayTorque2 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue2, &firstTorqueReading2);
 	int hlfb1_val = (int)ConnectorM0.HlfbState();
@@ -231,37 +227,31 @@ void sendTelem(SystemStates *states) {
 
 	long machine_pos_from_home = current_pos_m0 - machineHomeReferenceSteps;
 	long cartridge_pos_from_home = current_pos_m0 - cartridgeHomeReferenceSteps; // Single axis system
-	
+
 	int machine_is_homed_flag = states->homingMachineDone ? 1 : 0;
 	int cartridge_is_homed_flag = states->homingCartridgeDone ? 1 : 0;
 
 	float current_dispensed_for_telemetry = 0.0f;
 	float current_target_for_telemetry = 0.0f;
 
-	if (states->active_dispense_operation_ongoing &&
-	(states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE ||
-	states->feedState == FEED_INJECT_RESUMING || states->feedState == FEED_PURGE_RESUMING) ) {
-		if (states->active_op_steps_per_ml > 0.0001f) {
-			long steps_moved_this_segment = current_pos_m0 - states->active_op_segment_initial_axis_steps;
-			float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / states->active_op_steps_per_ml;
-			// active_op_total_dispensed_ml should be updated when PAUSING or COMPLETING a segment/operation.
-			// For real-time display, it's total_dispensed_so_far + current_segment_dispense.
-			// Let's simplify: sendTelem calculates based on initial start of the whole operation for ongoing.
-			long total_steps_moved_for_op = current_pos_m0 - states->active_op_initial_axis_steps; // initial_axis_steps set at START of op
-			current_dispensed_for_telemetry = (float)fabs(total_steps_moved_for_op) / states->active_op_steps_per_ml;
+	// Corrected and complete logic for dispensed_ml
+	if (states->active_dispense_operation_ongoing) {
+		if (states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE ||
+		states->feedState == FEED_INJECT_RESUMING || states->feedState == FEED_PURGE_RESUMING) {
 
+			long total_steps_moved_for_op = current_pos_m0 - states->active_op_initial_axis_steps;
+			current_dispensed_for_telemetry = fabs(total_steps_moved_for_op) / states->active_op_steps_per_ml;
+			current_target_for_telemetry = states->active_op_target_ml;
+
+			} else if (states->feedState == FEED_INJECT_PAUSED || states->feedState == FEED_PURGE_PAUSED) {
+			// Critical correction: explicitly use total dispensed calculated at pause
+			current_dispensed_for_telemetry = states->active_op_total_dispensed_ml;
+			current_target_for_telemetry = states->active_op_target_ml;
 		}
-		current_target_for_telemetry = states->active_op_target_ml;
-		} else if (states->feedState == FEED_INJECT_PAUSED || states->feedState == FEED_PURGE_PAUSED) {
-		// Show the total dispensed so far when paused
-		current_dispensed_for_telemetry = states->active_op_total_dispensed_ml;
-		current_target_for_telemetry = states->active_op_target_ml;
-	}
-	else { // Not actively dispensing or paused, show last completed op's info
+		} else {
 		current_dispensed_for_telemetry = states->last_completed_dispense_ml;
-		current_target_for_telemetry = 0.0f; // Or last target, depends on desired display
+		current_target_for_telemetry = 0.0f;
 	}
-
 
 	char torque1Str[16], torque2Str[16];
 	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "---"); }
@@ -276,7 +266,7 @@ void sendTelem(SystemStates *states) {
 	"torque2: %s, hlfb2: %d, enabled2: %d, pos_cmd2: %ld, "
 	"machine_steps: %ld, machine_homed: %d, "
 	"cartridge_steps: %ld, cartridge_homed: %d, "
-	"dispensed_ml:%.2f, target_ml:%.2f", // New fields
+	"dispensed_ml:%.2f, target_ml:%.2f",
 	states->mainStateStr(), states->homingStateStr(), states->homingPhaseStr(),
 	states->feedStateStr(), states->errorStateStr(),
 	torque1Str, hlfb1_val, motorsAreEnabled ? 1 : 0, current_pos_m0,
@@ -285,8 +275,12 @@ void sendTelem(SystemStates *states) {
 	cartridge_pos_from_home, cartridge_is_homed_flag,
 	current_dispensed_for_telemetry,
 	current_target_for_telemetry);
+
 	sendToPC(msg);
 }
+
+
+
 
 MessageCommand parseMessageCommand(const char *msg) {
 	if (strncmp(msg, CMD_STR_DISCOVER_TELEM, strlen(CMD_STR_DISCOVER_TELEM)) == 0) return CMD_DISCOVER_TELEM;
@@ -391,25 +385,29 @@ void handleDisable(SystemStates *states)
 }
 
 void handleAbort(SystemStates *states) {
-	// This function is mostly from your uploaded messages.cpp, updated for new state model
-	// Abort should work in most operational states, not just a generic "MOVING"
 	if (states->mainState == JOG_MODE || states->mainState == HOMING_MODE ||
 	states->mainState == FEED_MODE || states->mainState == TEST_MODE) {
 		
-		abortMove(); // Your function from motor.cpp
+		abortMove(); // Stops motors
 		Delay_ms(200);
-		// Log the specific operation that was aborted if possible
-		// For example, if (states->mainState == HOMING_MODE) { log sub-state }
-
+		
 		sendToPC("ABORT command received: All motion stopped.");
-		states->errorState = ERROR_MANUAL_ABORT;
-		states->mainState = STANDBY_MODE; // Or a specific ERROR_MAIN_STATE if you add one
+		
+		// Reset ALL relevant state variables clearly
+		states->mainState = STANDBY_MODE;
 		states->homingState = HOMING_NONE;
 		states->feedState = FEED_NONE;
+		states->errorState = ERROR_MANUAL_ABORT;
+
+		// Explicitly reset active dispense operations
+		fullyResetActiveDispenseOperation(states);
+		states->feedingDone = true;
+
 		} else {
 		sendToPC("ABORT command ignored: System not in an abortable state.");
 	}
 }
+
 
 void handleStandbyMode(SystemStates *states) {
 	// This function is mostly from your uploaded messages.cpp (handleStandby), updated
@@ -890,21 +888,20 @@ void handlePauseOperation(SystemStates *states) {
 		sendToPC("PAUSE ignored: No active inject/purge operation.");
 		return;
 	}
+
 	if (states->feedState == FEED_INJECT_ACTIVE || states->feedState == FEED_PURGE_ACTIVE) {
 		sendToPC("Cmd: Pausing operation...");
-		ConnectorM0.MoveStopDecel(); // Use decelerated stop
+		ConnectorM0.MoveStopDecel();
 		ConnectorM1.MoveStopDecel();
-		// The actual calculation of remaining steps and state change to PAUSED
-		// will happen in main.cpp once motors confirm they've stopped.
-		// For now, we just signal the intent.
-		// We need a way for main.cpp to know a pause was requested.
-		if(states->feedState == FEED_INJECT_ACTIVE) states->feedState = FEED_INJECT_PAUSED; // Tentative state
-		if(states->feedState == FEED_PURGE_ACTIVE) states->feedState = FEED_PURGE_PAUSED;   // Tentative state
-		// The main loop will see motors stopping and then finalize the pause.
+
+		// Immediately set paused state, main loop will finalize steps
+		if (states->feedState == FEED_INJECT_ACTIVE) states->feedState = FEED_INJECT_PAUSED;
+		if (states->feedState == FEED_PURGE_ACTIVE) states->feedState = FEED_PURGE_PAUSED;
 		} else {
 		sendToPC("PAUSE ignored: Not in an active inject/purge state.");
 	}
 }
+
 
 void handleResumeOperation(SystemStates *states) {
 	if (!states->active_dispense_operation_ongoing) {

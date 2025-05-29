@@ -250,25 +250,32 @@ int main(void)
 				}
 
 				// Handle transitions from states set by command handlers (like PAUSED or CANCELLED)
-				if (states.feedState == FEED_INJECT_PAUSED || states.feedState == FEED_PURGE_PAUSED) {
-					// System is waiting for RESUME or CANCEL. Motors should be stopped.
-					// The dispense calculation up to the point of pause is done in handlePauseOperation or here when !checkMoving after pause cmd.
-					if (!checkMoving() && states.active_dispense_operation_ongoing) { // Ensure motors are actually stopped to finalize pause calcs
-						if (states.active_op_steps_per_ml > 0.0001f) {
-							long steps_moved_this_segment = ConnectorM0.PositionRefCommanded() - states.active_op_segment_initial_axis_steps;
-							float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / states.active_op_steps_per_ml;
-							states.active_op_total_dispensed_ml += segment_dispensed_ml; // Accumulate before pause
-							// Calculate remaining steps based on total dispensed
-							states.active_op_remaining_steps = states.active_op_total_target_steps - (long)(states.active_op_total_dispensed_ml * states.active_op_steps_per_ml);
-							if(states.active_op_remaining_steps < 0) states.active_op_remaining_steps = 0;
-						}
-						// active_dispense_operation_ongoing remains true
-						sendToPC("Feed Op: Operation Paused. Waiting for Resume/Cancel.");
+				if ((states.feedState == FEED_INJECT_PAUSED || states.feedState == FEED_PURGE_PAUSED) &&
+				!states.feedingDone && !checkMoving()) {
+
+					long current_pos = ConnectorM0.PositionRefCommanded();
+					long steps_moved_this_segment = current_pos - states.active_op_segment_initial_axis_steps;
+
+					// Ensure steps_per_ml is valid
+					if (states.active_op_steps_per_ml > 0.0001f) {
+						float segment_dispensed_ml = fabs(steps_moved_this_segment) / states.active_op_steps_per_ml;
+						states.active_op_total_dispensed_ml += segment_dispensed_ml;
+
+						long total_steps_dispensed = (long)(states.active_op_total_dispensed_ml * states.active_op_steps_per_ml);
+						states.active_op_remaining_steps = states.active_op_total_target_steps - total_steps_dispensed;
+
+						if (states.active_op_remaining_steps < 0) states.active_op_remaining_steps = 0;
+
+						char debugMsg[200];
+						snprintf(debugMsg, sizeof(debugMsg),
+						"Paused Calculation: stepsMoved=%ld, totalDispensed=%.3fml, remainingSteps=%ld",
+						steps_moved_this_segment, states.active_op_total_dispensed_ml,
+						states.active_op_remaining_steps);
+						sendToPC(debugMsg);
 					}
-					} else if (states.feedState == FEED_OPERATION_CANCELLED) {
-					sendToPC("Feed Op: Cancelled. Returning to Feed Standby.");
-					// fullyResetActiveDispenseOperation was called by handleCancelOperation
-					states.feedState = FEED_STANDBY;
+
+					states.feedingDone = true;  // Mark segment calculation complete
+					sendToPC("Feed Op: Operation Paused. Waiting for Resume/Cancel.");
 				}
 			} break;
 

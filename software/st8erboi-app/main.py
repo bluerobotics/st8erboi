@@ -120,126 +120,78 @@ def parse_telemetry(msg, gui_refs):
     global last_fw_main_state_for_gui_update
     try:
         parts = {}
-        normalized_msg = msg # Assuming message is clean
-        for item in normalized_msg.split(','):
+        for item in msg.split(','):
             if ':' in item:
                 key, value = item.split(':', 1)
                 parts[key.strip()] = value.strip()
 
-        # Extract all relevant states from telemetry
-        fw_main_state = parts.get("MAIN_STATE", "N/A")
-        fw_homing_state = parts.get("HOMING_STATE", "N/A")
-        # Ensure your gui_refs dictionary in main() includes 'homing_phase_var'
-        # if you want to use it from gui.py (it was added to ui_elements there)
-        fw_homing_phase = parts.get("HOMING_PHASE", "N/A")
-        fw_feed_state = parts.get("FEED_STATE", "N/A")
-        fw_error_state = parts.get("ERROR_STATE", "N/A")
+        # Update GUI vars directly
+        gui_refs['main_state_var'].set(parts.get("MAIN_STATE", "---"))
+        gui_refs['homing_state_var'].set(parts.get("HOMING_STATE", "---"))
+        gui_refs['homing_phase_var'].set(parts.get("HOMING_PHASE", "---"))
+        gui_refs['feed_state_var'].set(parts.get("FEED_STATE", "---"))
+        gui_refs['error_state_var'].set(parts.get("ERROR_STATE", "No Error"))
 
-        # Update basic state displays in GUI
-        gui_refs['main_state_var'].set(fw_main_state)
-        gui_refs['homing_state_var'].set(fw_homing_state)
-        if 'homing_phase_var' in gui_refs: # Check if the var was added to gui_refs
-             gui_refs['homing_phase_var'].set(fw_homing_phase)
-        gui_refs['feed_state_var'].set(fw_feed_state)
-        gui_refs['error_state_var'].set(fw_error_state if fw_error_state != "ERROR_NONE" else "No Error")
+        # Motor values
+        gui_refs['torque_value1_var'].set(parts.get("torque1", "--- %"))
+        gui_refs['position_cmd1_var'].set(parts.get("pos_cmd1", "0"))
+        gui_refs['torque_value2_var'].set(parts.get("torque2", "--- %"))
+        gui_refs['position_cmd2_var'].set(parts.get("pos_cmd2", "0"))
 
-        # Update prominent status display and color (this logic can be complex)
-        prominent_text = "---"; bg_color = "#444444"; fg_color = "white" # Defaults
-        if fw_error_state != "ERROR_NONE" and fw_error_state != "N/A":
-            prominent_text = fw_error_state.replace("ERROR_", "").replace("_ABORT", " ABORT"); bg_color = "#8B0000" # Dark Red
-        elif fw_main_state == "DISABLED_MODE": prominent_text = "SYSTEM DISABLED"; bg_color = "#333333" # Darker Grey
-        elif fw_main_state == "TEST_MODE": prominent_text = "TEST MODE ACTIVE"; bg_color = "#E07000" # Orange
-        elif fw_main_state == "HOMING_MODE": prominent_text = f"HOMING: {fw_homing_state.replace('HOMING_', '')} ({fw_homing_phase})"; bg_color = "#582A72" # Purple
-        elif fw_main_state == "FEED_MODE": prominent_text = f"FEED: {fw_feed_state.replace('FEED_', '')}"; bg_color = "#008080" # Cyan
-        elif fw_main_state == "JOG_MODE": prominent_text = "JOG MODE ACTIVE"; bg_color = "#767676" # Grey
-        elif fw_main_state == "STANDBY_MODE": prominent_text = "STANDBY"; bg_color = "#005000" # Dark Green
-        else: prominent_text = fw_main_state # Fallback
-        gui_refs['prominent_firmware_state_var'].set(prominent_text)
-        if gui_refs['prominent_state_display_frame'].winfo_exists(): gui_refs['prominent_state_display_frame'].config(bg=bg_color)
-        if gui_refs['prominent_state_label'].winfo_exists(): gui_refs['prominent_state_label'].config(bg=bg_color, fg=fg_color)
+        gui_refs['machine_steps_var'].set(parts.get("machine_steps", "N/A"))
+        gui_refs['cartridge_steps_var'].set(parts.get("cartridge_steps", "N/A"))
 
-        # Update GUI contextual panels if MAIN_STATE has changed
+        motors_enabled = parts.get("enabled1", "0") == "1"
+        gui_refs['enable_disable_var'].set("Enabled" if motors_enabled else "Disabled")
+
+        gui_refs['motor_state1_var'].set("Ready" if parts.get("hlfb1", "0") == "1" else "Busy")
+        gui_refs['motor_state2_var'].set("Ready" if parts.get("hlfb2", "0") == "1" else "Busy")
+
+        # Update torque plot
+        current_time = time.time()
+        torque1 = float(parts.get("torque1", "0.0").replace("---", "0"))
+        torque2 = float(parts.get("torque2", "0.0").replace("---", "0"))
+        gui_refs['torque_history1'].append(torque1)
+        gui_refs['torque_history2'].append(torque2)
+        gui_refs['torque_times'].append(current_time)
+        gui_refs['update_torque_plot'](torque1, torque2, gui_refs['torque_times'],
+                                        gui_refs['torque_history1'], gui_refs['torque_history2'])
+
+        # Inject/Purge dispensed amount:
+        dispensed_ml = parts.get("dispensed_ml", "0.00")
+        current_feed_state = parts.get("FEED_STATE", "---")
+
+        if "INJECT" in current_feed_state:
+            gui_refs['inject_dispensed_ml_var'].set(f"{float(dispensed_ml):.2f} ml")
+        elif "PURGE" in current_feed_state:
+            gui_refs['purge_dispensed_ml_var'].set(f"{float(dispensed_ml):.2f} ml")
+
+        # Update button states dynamically:
+        injecting = "INJECT_ACTIVE" in current_feed_state or "INJECT_RESUMING" in current_feed_state
+        purging = "PURGE_ACTIVE" in current_feed_state or "PURGE_RESUMING" in current_feed_state
+        paused = "PAUSED" in current_feed_state
+
+        # Inject buttons:
+        gui_refs['start_inject_btn'].config(state='disabled' if injecting or paused else 'normal')
+        gui_refs['pause_inject_btn'].config(state='normal' if injecting else 'disabled')
+        gui_refs['resume_inject_btn'].config(state='normal' if paused and 'INJECT' in current_feed_state else 'disabled')
+        gui_refs['cancel_inject_btn'].config(state='normal' if injecting or (paused and 'INJECT' in current_feed_state) else 'disabled')
+
+        # Purge buttons:
+        gui_refs['start_purge_btn'].config(state='disabled' if purging or paused else 'normal')
+        gui_refs['pause_purge_btn'].config(state='normal' if purging else 'disabled')
+        gui_refs['resume_purge_btn'].config(state='normal' if paused and 'PURGE' in current_feed_state else 'disabled')
+        gui_refs['cancel_purge_btn'].config(state='normal' if purging or (paused and 'PURGE' in current_feed_state) else 'disabled')
+
+        # Trigger GUI update if state changed:
+        fw_main_state = parts.get("MAIN_STATE", "---")
         if fw_main_state != last_fw_main_state_for_gui_update:
-            # log_to_terminal(f"MAIN_STATE changed from '{last_fw_main_state_for_gui_update}' to '{fw_main_state}'. Updating GUI panels.", gui_refs['terminal_cb'])
             gui_refs['update_state'](fw_main_state)
             last_fw_main_state_for_gui_update = fw_main_state
 
-        # Motor data (raw values)
-        t1_str = parts.get("torque1", "---")
-        hlfb1 = int(parts.get("hlfb1", "0"))
-        enabled1_fw = int(parts.get("enabled1", "0"))
-        pos_cmd1 = int(parts.get("pos_cmd1", "0")) # Raw absolute position for M0
-
-        t2_str = parts.get("torque2", "---")
-        hlfb2 = int(parts.get("hlfb2", "0"))
-        # enabled2_fw is same as enabled1_fw
-        pos_cmd2 = int(parts.get("pos_cmd2", "0")) # Raw absolute position for M1
-
-        # --- Updated parsing for "steps from home" and their validity flags ---
-        m_steps_val_from_home = parts.get("machine_steps", "0") # This is now (pos_cmd1 - machineHomeRef)
-        m_is_homed_flag = int(parts.get("machine_homed", "0"))  # Validity flag for machine_steps
-
-        c_steps_val_from_home = parts.get("cartridge_steps", "0") # This is now (pos_cmd2 - cartridgeHomeRef)
-        c_is_homed_flag = int(parts.get("cartridge_homed", "0"))  # Validity flag for cartridge_steps
-
-        if m_is_homed_flag == 1:
-            gui_refs['machine_steps_var'].set(str(m_steps_val_from_home))
-        else:
-            gui_refs['machine_steps_var'].set("N/A (Not Homed)")
-
-        if c_is_homed_flag == 1:
-            gui_refs['cartridge_steps_var'].set(str(c_steps_val_from_home))
-        else:
-            gui_refs['cartridge_steps_var'].set("N/A (Not Homed)")
-        # --- End of updated "steps from home" parsing ---
-
-        # Update torque plot
-        ct = time.time()
-        if not gui_refs['torque_times'] or ct > gui_refs['torque_times'][-1]:
-            gui_refs['torque_history1'].append(float(t1_str) if t1_str != "---" else 0.0)
-            gui_refs['torque_history2'].append(float(t2_str) if t2_str != "---" else 0.0)
-            gui_refs['torque_times'].append(ct)
-            while len(gui_refs['torque_history1']) > TORQUE_HISTORY_LENGTH:
-                gui_refs['torque_history1'].pop(0)
-                gui_refs['torque_history2'].pop(0)
-                gui_refs['torque_times'].pop(0)
-        if gui_refs['torque_times']:
-            gui_refs['update_torque_plot'](t1_str, t2_str, gui_refs['torque_times'],
-                                           gui_refs['torque_history1'], gui_refs['torque_history2'])
-
-        # Update raw absolute commanded positions display for individual motors
-        gui_refs['update_position_cmd'](pos_cmd1, pos_cmd2)
-
-        # Update motor enable status display and the Enable/Disable button toggle
-        actual_motors_enabled = (enabled1_fw == 1)
-        gui_refs['enable_disable_var'].set("Enabled" if actual_motors_enabled else "Disabled")
-        en_txt_fw, en_clr_fw = ("Enabled", "#00cc66") if actual_motors_enabled else ("Disabled", "#ff4444")
-        gui_refs['enabled_state1_var'].set(en_txt_fw) # For Motor 0
-        if 'enabled_status_label1' in gui_refs and gui_refs['enabled_status_label1'].winfo_exists():
-            gui_refs['enabled_status_label1'].config(fg=en_clr_fw)
-        gui_refs['enabled_state2_var'].set(en_txt_fw) # For Motor 1 (same global status)
-        if 'enabled_status_label2' in gui_refs and gui_refs['enabled_status_label2'].winfo_exists():
-            gui_refs['enabled_status_label2'].config(fg=en_clr_fw)
-
-        # Update HLFB status for individual motors
-        motor_off_txt, motor_off_clr = ("N/A (Dis.)", "#808080")
-        if actual_motors_enabled:
-            gui_refs['motor_state1_var'].set("Ready/At Pos" if hlfb1 == 1 else "Moving/Busy")
-            if 'motor_status_label1' in gui_refs and gui_refs['motor_status_label1'].winfo_exists():
-                gui_refs['motor_status_label1'].config(fg="#00bfff")
-            gui_refs['motor_state2_var'].set("Ready/At Pos" if hlfb2 == 1 else "Moving/Busy")
-            if 'motor_status_label2' in gui_refs and gui_refs['motor_status_label2'].winfo_exists():
-                gui_refs['motor_status_label2'].config(fg="yellow")
-        else:
-            gui_refs['motor_state1_var'].set(motor_off_txt)
-            if 'motor_status_label1' in gui_refs and gui_refs['motor_status_label1'].winfo_exists():
-                gui_refs['motor_status_label1'].config(fg=motor_off_clr)
-            gui_refs['motor_state2_var'].set(motor_off_txt)
-            if 'motor_status_label2' in gui_refs and gui_refs['motor_status_label2'].winfo_exists():
-                gui_refs['motor_status_label2'].config(fg=motor_off_clr)
-
     except Exception as e:
-        log_to_terminal(f"Telemetry parse error: {e} in '{msg}'", gui_refs['terminal_cb'])
+        gui_refs['terminal_cb'](f"Telemetry parse error: {e}\n")
+
 
 
 def recv_loop(gui_refs):
