@@ -388,27 +388,12 @@ void handleDisable(SystemStates *states)
 }
 
 void handleAbort(SystemStates *states) {
-	if (states->mainState == JOG_MODE || states->mainState == HOMING_MODE ||
-	states->mainState == FEED_MODE || states->mainState == TEST_MODE) {
-		
-		abortMove(); // Stops motors
-		Delay_ms(200);
-		
-		sendToPC("ABORT command received: All motion stopped.");
-		
-		// Reset ALL relevant state variables clearly
-		states->mainState = STANDBY_MODE;
-		states->homingState = HOMING_NONE;
-		states->feedState = FEED_NONE;
-		states->errorState = ERROR_MANUAL_ABORT;
+	sendToPC("ABORT received. Stopping motion and resetting...");
 
-		// Explicitly reset active dispense operations
-		fullyResetActiveDispenseOperation(states);
-		states->feedingDone = true;
+	abortMove();  // Stop motors
+	Delay_ms(200);
 
-		} else {
-		sendToPC("ABORT command ignored: System not in an abortable state.");
-	}
+	handleStandbyMode(states);  // Fully resets system
 }
 
 
@@ -419,10 +404,7 @@ void handleStandbyMode(SystemStates *states) {
 	if (states->mainState != STANDBY_MODE) { // Only log/act if changing state
 		abortMove(); // Good practice to stop motion when changing to standby
 		Delay_ms(200);
-		states->mainState = STANDBY_MODE;
-		states->homingState = HOMING_NONE;
-		states->feedState = FEED_NONE;
-		states->errorState = ERROR_NONE; // Clear errors when explicitly going to standby
+		states->reset(); 
 
 		if (wasError) {
 			sendToPC("Exited previous state: State set to STANDBY_MODE and error cleared.");
@@ -635,7 +617,7 @@ void handleMachineHomeMove(const char *msg, SystemStates *states) {
 
 		sendToPC("Initiating Machine Homing: RAPID_MOVE phase.");
 		// Machine homing is typically in the negative direction
-		long initial_move_steps = states->homing_actual_stroke_steps;
+		long initial_move_steps = -1 * states->homing_actual_stroke_steps;
 		moveMotors(initial_move_steps, initial_move_steps, (int)states->homing_torque_percent_param, states->homing_actual_rapid_sps, states->homing_actual_accel_sps2);
 		
 		} else {
@@ -706,7 +688,7 @@ void handleCartridgeHomeMove(const char *msg, SystemStates *states) {
 
 		sendToPC("Initiating Cartridge Homing: RAPID_MOVE phase.");
 		// Cartridge homing is typically in the positive direction
-		long initial_move_steps = -1 * states->homing_actual_stroke_steps;
+		long initial_move_steps = 1 * states->homing_actual_stroke_steps;
 		moveMotors(initial_move_steps, initial_move_steps, (int)states->homing_torque_percent_param, states->homing_actual_rapid_sps, states->homing_actual_accel_sps2);
 
 		} else {
@@ -725,15 +707,8 @@ void resetActiveDispenseOp(SystemStates *states) {
 }
 
 void handleClearErrors(SystemStates *states) {
-	if (states->errorState != ERROR_NONE) {
-		states->errorState = ERROR_NONE;
-		sendToPC("Errors cleared.");
-		// If an error interrupted an operation, that operation should already be stopped/reset.
-		// Consider if returning to STANDBY_MODE is appropriate if not in an active state.
-		// For now, just clearing the error flag.
-		} else {
-		sendToPC("No active errors to clear.");
-	}
+	sendToPC("CLEAR_ERRORS received. Resetting system...");
+	handleStandbyMode(states);  // Goes to standby and clears errors
 }
 
 void handleMoveToCartridgeHome(SystemStates *states) {

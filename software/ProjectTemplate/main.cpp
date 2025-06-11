@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define MAX_HOMING_DURATION_MS 30000 // 30 seconds, adjust as needed
+#define MAX_HOMING_DURATION_MS 2000000 // 30 seconds, adjust as needed
 
 // These are defined in motor.cpp and externed in motor.h
 // extern int32_t machineHomeReferenceSteps; // Accessed in messages.cpp
@@ -18,9 +18,9 @@ int main(void)
 {
 	SystemStates states;
 
-	SetupUsbSerial();
-	Delay_ms(5000);
-	ConnectorUsb.SendLine("main: Delay finished. Proceeding with setup...");
+	//SetupUsbSerial();
+	//Delay_ms(5000);
+	//ConnectorUsb.SendLine("main: Delay finished. Proceeding with setup...");
 
 	SetupEthernet();
 	SetupMotors();
@@ -45,16 +45,6 @@ int main(void)
 			break;
 			
 			case TEST_MODE:
-			if (checkTorqueLimit()) {
-				states.mainState = STANDBY_MODE;
-				states.errorState = ERROR_TORQUE_ABORT;
-				sendToPC("TEST_MODE: Torque limit, returning to STANDBY.");
-			}
-			if (now - lastMotorTime > motorInterval) {
-				moveMotors(motorFlip * 800, motorFlip * 800, 20, 800, 5000);
-				motorFlip *= -1;
-				lastMotorTime = now;
-			}
 			break;
 
 			case HOMING_MODE: {
@@ -87,7 +77,7 @@ int main(void)
 					}
 
 					bool is_machine_homing = (states.homingState == HOMING_MACHINE);
-					int direction = is_machine_homing ? 1 : -1;
+					int direction = is_machine_homing ? -1 : 1;
 
 					if (states.currentHomingPhase == HOMING_PHASE_RAPID_MOVE || states.currentHomingPhase == HOMING_PHASE_TOUCH_OFF) {
 						if (checkTorqueLimit()) {

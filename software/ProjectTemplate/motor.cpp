@@ -42,9 +42,8 @@ void SetupMotors(void)
 	ConnectorM1.AccelMax(accelerationLimit);
 	ConnectorM1.EnableRequest(true);
 
-	motorsAreEnabled = true;
-	while (ConnectorM0.HlfbState() != MotorDriver::HLFB_ASSERTED ||
-	ConnectorM1.HlfbState() != MotorDriver::HLFB_ASSERTED)
+	Delay_ms(100);
+	if(ConnectorM0.HlfbState() == MotorDriver::HLFB_ASSERTED || ConnectorM1.HlfbState() == MotorDriver::HLFB_ASSERTED) motorsAreEnabled = true;
 	Delay_ms(100);
 }
 
