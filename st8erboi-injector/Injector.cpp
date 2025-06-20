@@ -16,9 +16,9 @@
 // ============================================================================
 
 #include "injector.h"
-#include <math.h>
+#include <cmath>
 
-const char *MainStateNames[MAIN_STATE_COUNT] = {
+const char* MAIN_STATE_NAMES[] = {
 	"STANDBY_MODE",
 	"TEST_MODE",
 	"JOG_MODE",
@@ -27,23 +27,23 @@ const char *MainStateNames[MAIN_STATE_COUNT] = {
 	"DISABLED_MODE"
 };
 
-const char *HomingStateNames[HOMING_STATE_COUNT] = {
+const char* HOMING_STATE_NAMES[] = {
 	"HOMING_NONE",
-	"HOMING_MACHINE_ACTIVE",
-	"HOMING_CARTRIDGE_ACTIVE"
+	"HOMING_MACHINE",
+	"HOMING_CARTRIDGE"
 };
 
-const char *HomingPhaseNames[HOMING_PHASE_COUNT] = {
-	"IDLE",
-	"RAPID_MOVE",
-	"BACK_OFF",
-	"TOUCH_OFF",
-	"RETRACT",
-	"COMPLETE",
-	"ERROR"
+const char* HOMING_PHASE_NAMES[] = {
+	"HOMING_PHASE_IDLE",
+	"HOMING_PHASE_RAPID_MOVE",
+	"HOMING_PHASE_BACK_OFF",
+	"HOMING_PHASE_TOUCH_OFF",
+	"HOMING_PHASE_RETRACT",
+	"HOMING_PHASE_COMPLETE",
+	"HOMING_PHASE_ERROR"
 };
 
-const char *FeedStateNames[FEED_STATE_COUNT] = {
+const char* FEED_STATE_NAMES[] = {
 	"FEED_NONE",
 	"FEED_STANDBY",
 	"FEED_INJECT_STARTING",
@@ -56,11 +56,11 @@ const char *FeedStateNames[FEED_STATE_COUNT] = {
 	"FEED_PURGE_RESUMING",
 	"FEED_MOVING_TO_HOME",
 	"FEED_MOVING_TO_RETRACT",
-	"FEED_OP_CANCELLED",
-	"FEED_OP_COMPLETED"
+	"FEED_INJECTION_CANCELLED",
+	"FEED_INJECTION_COMPLETED"
 };
 
-const char *ErrorStateNames[ERROR_STATE_COUNT] = {
+const char* ERROR_STATE_NAMES[] = {
 	"ERROR_NONE",
 	"ERROR_MANUAL_ABORT",
 	"ERROR_TORQUE_ABORT",
@@ -74,98 +74,102 @@ const char *ErrorStateNames[ERROR_STATE_COUNT] = {
 	"ERROR_NOT_HOMED"
 };
 
-Injector::Injector(){
+Injector::Injector() {
 	reset();
 }
 
 void Injector::reset() {
-	setupEthernet();
-	setupInjectorMotors();
-	//setupUsbSerial();
-	//Delay_ms(5000);
-	//ConnectorUsb.SendLine("main: Delay finished. Proceeding with setup...");
-	
-	//--- State Variables ---//
 	mainState = STANDBY_MODE;
 	homingState = HOMING_NONE;
-	currentHomingPhase = HOMING_PHASE_IDLE;
+	homingPhase = HOMING_PHASE_IDLE;
 	feedState = FEED_STANDBY;
 	errorState = ERROR_NONE;
+
 	homingMachineDone = false;
 	homingCartridgeDone = false;
 	feedingDone = false;
 	jogDone = false;
-	homingStartTime = 0;
-	
-	//--- Ethernet Variables ---//
-	MAX_PACKET_LENGTH = 100;
-	LOCAL_PORT = 8888;
-	EthernetUdp Udp;
-	unsigned char packetBuffer[MAX_PACKET_LENGTH];
-	IpAddress terminalIp;
-	uint16_t terminalPort = 0;
-	bool terminalDiscovered = false;
-	const uint32_t telemInterval = 50; // ms
-	
-	// Motor Variables
-	float injectorMotorsTorqueLimit		= 2.0f;   // Default overall limit, overridden by moveInjectorMotors's param
-	float injectorMotorsTorqueOffset	= -2.4f;  // Global offset, settable by USER_CMD_SET_TORQUE_OFFSET
-	float smoothedTorqueValue1			= 0.0f;
-	float smoothedTorqueValue2			= 0.0f;
-	float smoothedTorqueValue3			= 0.0f;
-	bool firstTorqueReading1			= true;
-	bool firstTorqueReading2			= true;
-	bool firstTorqueReading3			= true;
-	bool motorsAreEnabled				= false;
-	uint32_t pulsesPerRev				= 800;
-	int32_t machineStepCounter			= 0;
-	int32_t cartridgeStepCounter		= 0;
-	int32_t velocityLimit				= 10000;  // pulses/sec
-	int32_t accelerationLimit			= 100000; // pulses/sec^2
 
-	int32_t machineHomeReferenceSteps = 0;
-	int32_t cartridgeHomeReferenceSteps = 0;
+	terminalDiscovered = false;
+	terminalPort = 0;
 
+	motorsEnabled = false;
 
-	// Homing params
-	homing_stroke_mm_param = 0.0f; homing_rapid_vel_mm_s_param = 0.0f; homing_touch_vel_mm_s_param = 0.0f;
-	homing_acceleration_param = 0.0f; homing_retract_mm_param = 0.0f; homing_torque_percent_param = 0.0f;
-	homing_actual_stroke_steps = 0; homing_actual_retract_steps = 0; homing_actual_rapid_sps = 0;
-	homing_actual_touch_sps = 0; homing_actual_accel_sps2 = 0;
+	torqueLimit = 2.0f;
+	torqueOffset = -2.4f;
+	smoothedTorque1 = 0.0f;
+	smoothedTorque2 = 0.0f;
+	firstTorque1 = true;
+	firstTorque2 = true;
 
-	// Dispensing / Feed Operation Tracking
-	active_op_target_ml = 0.0f;
-	active_op_total_dispensed_ml = 0.0f;
-	active_op_total_target_steps = 0;
-	active_op_remaining_steps = 0;
-	active_op_segment_initial_axis_steps = 0;
-	active_op_steps_per_ml = 0.0f;
-	active_dispense_INJECTION_ongoing = false;
-	active_op_velocity_sps = 0;
-	active_op_accel_sps2 = 0;
-	active_op_torque_percent = 0;
-	active_op_initial_axis_steps = 0;
-	last_completed_dispense_ml = 0;
+	pulsesPerRev = 800;
+	stepCounterMachine = 0;
+	stepCounterCartridge = 0;
+	machineHomeSteps = 0;
+	cartridgeHomeSteps = 0;
+
+	velocityLimit = 10000;
+	accelerationLimit = 100000;
+
+	homingStrokeMm = 0.0f;
+	homingRapidVel = 0.0f;
+	homingTouchVel = 0.0f;
+	homingAccel = 0.0f;
+	homingRetractMm = 0.0f;
+	homingTorquePercent = 0.0f;
+
+	homingStrokeSteps = 0;
+	homingRetractSteps = 0;
+	homingRapidSps = 0;
+	homingTouchSps = 0;
+	homingAccelSps2 = 0;
+
+	activeTargetMl = 0.0f;
+	activeDispensedMl = 0.0f;
+	activeTargetSteps = 0;
+	activeRemainingSteps = 0;
+	activeSegmentStartSteps = 0;
+	stepsPerMl = 0.0f;
+	injectionOngoing = false;
+	activeVelocitySps = 0;
+	activeAccelSps2 = 0;
+	activeTorquePercent = 0;
+	activeInitialSteps = 0;
+	lastDispensedMl = 0.0f;
 }
 
-void Injector::onHomingMachineDone(){
+void Injector::onHomingMachineDone() {
 	homingMachineDone = true;
 }
 
-void Injector::onHomingCartridgeDone(){
+void Injector::onHomingCartridgeDone() {
 	homingCartridgeDone = true;
 }
 
-void Injector::onFeedingDone(){
+void Injector::onFeedingDone() {
 	feedingDone = true;
 }
 
-void Injector::onJogDone(){
+void Injector::onJogDone() {
 	jogDone = true;
 }
 
-const char* Injector::maininjectortr()   const { return MainStateNames[mainState]; }
-const char* Injector::hominginjectortr() const { return HomingStateNames[homingState]; }
-const char* Injector::homingPhaseStr() const { return HomingPhaseNames[currentHomingPhase]; }
-const char* Injector::feedinjectortr()   const { return FeedStateNames[feedState]; }
-const char* Injector::errorinjectortr()  const { return ErrorStateNames[errorState]; }
+const char* Injector::mainStateStr() const {
+	return MAIN_STATE_NAMES[mainState];
+}
+
+const char* Injector::homingStateStr() const {
+	return HOMING_STATE_NAMES[homingState];
+}
+
+const char* Injector::homingPhaseStr() const {
+	return HOMING_PHASE_NAMES[homingPhase];
+}
+
+const char* Injector::feedStateStr() const {
+	return FEED_STATE_NAMES[feedState];
+}
+
+const char* Injector::errorStateStr() const {
+	return ERROR_STATE_NAMES[errorState];
+}
