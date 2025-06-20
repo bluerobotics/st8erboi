@@ -10,7 +10,7 @@
 // Exposes methods for external communication (UDP), motor control,
 // operational state transitions (e.g., homing, jog, feed), and runtime telemetry.
 //
-// All logic implementations reside in the injector_*.cpp source files.
+// All logic implementations reside in the `injector_*.cpp` source files.
 //
 // Copyright 2025 Blue Robotics Inc.
 // Author: Eldin Miller-Stead <eldin@bluerobotics.com>
@@ -22,24 +22,53 @@
 #include "ClearCore.h"
 #include "EthernetUdp.h"
 #include "IpAddress.h"
-#include <cstring>
-#include <cstdlib>
-#include <cstdio>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#define USER_CMD_STR_DISCOVER_TELEM					"DISCOVER_TELEM"
+#define USER_CMD_STR_ENABLE							"ENABLE"
+#define USER_CMD_STR_DISABLE						"DISABLE"
+#define USER_CMD_STR_ABORT							"ABORT"
+#define USER_CMD_STR_CLEAR_ERRORS					"CLEAR_ERRORS"
+#define USER_CMD_STR_STANDBY_MODE					"STANDBY_MODE"
+#define USER_CMD_STR_JOG_MODE						"JOG_MODE"
+#define USER_CMD_STR_HOMING_MODE					"HOMING_MODE"
+#define USER_CMD_STR_FEED_MODE						"FEED_MODE"
+#define USER_CMD_STR_SET_INJECTOR_TORQUE_OFFSET		"SET_INJECTOR_TORQUE_OFFSET "
+#define USER_CMD_STR_SET_PINCH_TORQUE_OFFSET		"SET_PINCH_TORQUE_OFFSET "
+#define USER_CMD_STR_JOG_MOVE						"JOG_MOVE "
+#define USER_CMD_STR_MACHINE_HOME_MOVE				"MACHINE_HOME_MOVE "
+#define USER_CMD_STR_CARTRIDGE_HOME_MOVE			"CARTRIDGE_HOME_MOVE "
+#define USER_CMD_STR_PINCH_HOME_MOVE				"PINCH_HOME_MOVE "
+#define USER_CMD_STR_INJECT_MOVE					"INJECT_MOVE "
+#define USER_CMD_STR_PURGE_MOVE						"PURGE_MOVE "
+#define USER_CMD_STR_PINCH_OPEN						"PINCH_OPEN"
+#define USER_CMD_STR_PINCH_CLOSE					"PINCH_CLOSE"
+#define USER_CMD_STR_MOVE_TO_CARTRIDGE_HOME			"MOVE_TO_CARTRIDGE_HOME"
+#define USER_CMD_STR_MOVE_TO_CARTRIDGE_RETRACT		"MOVE_TO_CARTRIDGE_RETRACT "
+#define USER_CMD_STR_PAUSE_INJECTION				"PAUSE_INJECTION"
+#define USER_CMD_STR_RESUME_INJECTION				"RESUME_INJECTION"
+#define USER_CMD_STR_CANCEL_INJECTION				"CANCEL_INJECTION"
+
+#define EWMA_ALPHA 0.2f
+#define TORQUE_SENTINEL_INVALID_VALUE -9999.0f
 
 // --- State Enums ---
 enum MainState : uint8_t {
 	STANDBY_MODE,
-	TEST_MODE,
 	JOG_MODE,
 	HOMING_MODE,
 	FEED_MODE,
-	DISABLED_MODE
+	DISABLED_MODE,
+	MAIN_STATE_COUNT
 };
 
 enum HomingState : uint8_t {
 	HOMING_NONE,
 	HOMING_MACHINE,
-	HOMING_CARTRIDGE
+	HOMING_CARTRIDGE,
+	HOMING_STATE_COUNT
 };
 
 enum HomingPhase : uint8_t {
@@ -49,24 +78,26 @@ enum HomingPhase : uint8_t {
 	HOMING_PHASE_TOUCH_OFF,
 	HOMING_PHASE_RETRACT,
 	HOMING_PHASE_COMPLETE,
-	HOMING_PHASE_ERROR
+	HOMING_PHASE_ERROR,
+	HOMING_PHASE_COUNT
 };
 
 enum FeedState : uint8_t {
 	FEED_NONE,
 	FEED_STANDBY,
-	FEED_INJECT_STARTING,
-	FEED_INJECT_ACTIVE,
-	FEED_INJECT_PAUSED,
-	FEED_INJECT_RESUMING,
-	FEED_PURGE_STARTING,
-	FEED_PURGE_ACTIVE,
-	FEED_PURGE_PAUSED,
-	FEED_PURGE_RESUMING,
+	FEED_INJECT_STARTING,   // Brief state while initiating inject
+	FEED_INJECT_ACTIVE,     // Actively injecting
+	FEED_INJECT_PAUSED,     // Injection is paused
+	FEED_INJECT_RESUMING,   // Brief state while initiating resume
+	FEED_PURGE_STARTING,    // Brief state while initiating purge
+	FEED_PURGE_ACTIVE,      // Actively purging
+	FEED_PURGE_PAUSED,      // Purge is paused
+	FEED_PURGE_RESUMING,    // Brief state while initiating resume
 	FEED_MOVING_TO_HOME,
 	FEED_MOVING_TO_RETRACT,
 	FEED_INJECTION_CANCELLED,
-	FEED_INJECTION_COMPLETED
+	FEED_INJECTION_COMPLETED, // Intermediate state before going to STANDBY
+	FEED_STATE_COUNT
 };
 
 enum ErrorState : uint8_t {
@@ -80,88 +111,212 @@ enum ErrorState : uint8_t {
 	ERROR_HOMING_NO_TORQUE_RAPID,
 	ERROR_HOMING_NO_TORQUE_TOUCH,
 	ERROR_INVALID_INJECTION,
-	ERROR_NOT_HOMED
+	ERROR_NOT_HOMED,
+	ERROR_STATE_COUNT
 };
 
-// --- Constant Arrays (extern in .h) ---
-extern const char* MAIN_STATE_NAMES[];
-extern const char* HOMING_STATE_NAMES[];
-extern const char* HOMING_PHASE_NAMES[];
-extern const char* FEED_STATE_NAMES[];
-extern const char* ERROR_STATE_NAMES[];
+//--- User Command Enum---//
+typedef enum {
+	USER_CMD_UNKNOWN = 0,
+	USER_CMD_DISCOVER_TELEM,
+	USER_CMD_ENABLE,
+	USER_CMD_DISABLE,
+	USER_CMD_ABORT,
+	USER_CMD_CLEAR_ERRORS,
+	USER_CMD_STANDBY_MODE,
+	USER_CMD_JOG_MODE,
+	USER_CMD_HOMING_MODE,
+	USER_CMD_FEED_MODE,
+	USER_CMD_SET_TORQUE_OFFSET,
+	USER_CMD_JOG_MOVE,
+	USER_CMD_MACHINE_HOME_MOVE,
+	USER_CMD_CARTRIDGE_HOME_MOVE,
+	USER_CMD_INJECT_MOVE,
+	USER_CMD_PURGE_MOVE,
+	USER_CMD_MOVE_TO_CARTRIDGE_HOME,
+	USER_CMD_MOVE_TO_CARTRIDGE_RETRACT,
+	USER_CMD_PAUSE_INJECTION,
+	USER_CMD_RESUME_INJECTION,
+	USER_CMD_CANCEL_INJECTION,
+	USER_CMD_PINCH_HOME_MOVE,
+	USER_CMD_PINCH_OPEN,
+	USER_CMD_PINCH_CLOSE,
+	USER_CMD_HOME_X,
+	USER_CMD_HOME_Y,
+	USER_CMD_HOME_Z,
+	USER_CMD_START_CYCLE,
+	USER_CMD_PAUSE_CYCLE,
+	USER_CMD_RESUME_CYCLE,
+	USER_CMD_CANCEL_CYCLE,
+	USER_CMD_COUNT
+} UserCommand;
+
+//--- Fillhead Command Enum---//
+typedef enum {
+	FILLHEAD_CMD_UNKNOWN = 0,
+	FILLHEAD_CMD_HOME_X,
+	FILLHEAD_CMD_HOME_Y,
+	FILLHEAD_CMD_HOME_Z,
+	FILLHEAD_CMD_MOVE_X,
+	FILLHEAD_CMD_MOVE_Y,
+	FILLHEAD_CMD_MOVE_Z,
+	FILLHEAD_CMD_COUNT
+} FillheadCommand;
+
+
 
 class Injector {
 	public:
-	Injector();
-	void reset();
+	
+	// State Variables
+	MainState mainState;
+	HomingState homingState;
+	HomingPhase currentHomingPhase;
+	FeedState feedState;
+	ErrorState errorState;
+	
+	//--- Ethernet Variables ---//
+	EthernetUdp Udp;
+	const int MAX_PACKET_LENGTH = 100;
+	const int LOCAL_PORT = 8888;
+	IpAddress terminalIp;
+	uint16_t terminalPort;
+	bool terminalDiscovered;
 
-	void onHomingMachineDone();
-	void onHomingCartridgeDone();
-	void onFeedingDone();
-	void onJogDone();
+	//--- System Flags ---//
+	bool homingMachineDone;
+	bool homingCartridgeDone;
+	bool feedingDone;
+	bool jogDone;
+	bool pinchPosition; // 0 = open, 1 = close
+	uint32_t homingStartTime;
+	
+	//--- Motor Variables ---//
+	int velocityLimit;
+	int accelerationLimit;
+	float injectorMotorsTorqueLimit;    
+	float injectorMotorsTorqueOffset;
+	float smoothedTorqueValue1;
+	float smoothedTorqueValue2;
+	float smoothedTorqueValue3;
+	bool firstTorqueReading1;
+	bool firstTorqueReading2;
+	bool firstTorqueReading3;
+	bool motorsAreEnabled;
+	uint32_t pulsesPerRev;
+	int32_t machineStepCounter;
+	int32_t cartridgeStepCounter;
+	int32_t machineHomeReferenceSteps;
+	int32_t cartridgeHomeReferenceSteps;
+	float PITCH_MM_PER_REV;
+	float STEPS_PER_MM = (float)pulsesPerRev / PITCH_MM_PER_REV;
+	int feedDefaultTorquePercent;
+	int feedDefaultVelocitySPS;
+	int feedDefaultAccelSPS2;
+	uint32_t telemInterval;
+
+	//--- Feed Operation Parameters ---//
+	float homing_stroke_mm_param;
+	float homing_rapid_vel_mm_s_param;
+	float homing_touch_vel_mm_s_param;
+	float homing_acceleration_param;
+	float homing_retract_mm_param;
+	float homing_torque_percent_param;
+	long homing_actual_stroke_steps;
+	long homing_actual_retract_steps;
+	int homing_actual_rapid_sps;
+	int homing_actual_touch_sps;
+	int homing_actual_accel_sps2;
+	long homingDefaultBackoffSteps;
+
+	//--- Feed Operation Variables ---//
+	float active_op_target_ml;
+	float active_op_total_dispensed_ml; // Total dispensed for the current multi-segment operation
+	long active_op_total_target_steps;  // Original total steps for the operation
+	long active_op_remaining_steps;     // Remaining steps when paused
+	long active_op_segment_initial_axis_steps; // Motor steps at start of current segment (after resume)
+	float active_op_steps_per_ml;
+	bool active_dispense_INJECTION_ongoing; // Overall flag for inject/purge sequence
+	long active_op_initial_axis_steps;
+	float last_completed_dispense_ml;
+	int active_op_velocity_sps;
+	int active_op_accel_sps2;
+	int active_op_torque_percent;
+
+
+	Injector();
+	void reset(void);
+	
+	//--- Ethernet Functions ---//
+	UserCommand parseUserCommand(const char *msg);
+	void setupEthernet(void);
+	void setupUsbSerial(void);
+	void checkUdpBuffer(void);
+	void sendToPC(const char *msg);
+	void handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp);
+	void sendTelem(void);
+	void handleMessage(const char *msg);
+	
+	//--- State Trigger Functions ---//	
+	void onHomingMachineDone(void);
+	void onHomingCartridgeDone(void);
+	void onFeedingDone(void);
+	void onJogDone(void);
+	
+	//--- Motor Functions ---//	
+	void setupInjectorMotors(void); 																	// Initializes and enables both motors for use
+	void enableInjectorMotors(const char* reason_message); 												// Enables both motors and waits for HLFB asserted
+	void disableInjectorMotors(const char* reason_message); 											// Disables both motors and resets torque smoothing
+	void moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel); 		// The 'torque_limit' parameter will set the injectorMotorsTorqueLimit for checkInjectorTorqueLimit.
+	void movePinchMotor(int stepsM3, int torque_limit, int velocity, int accel);
+	bool checkInjectorMoving(void); 																	// Returns true if either motor is currently moving or not in-position
+	float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);				// Returns smoothed, offset torque value (EWMA filter)
+	bool checkInjectorTorqueLimit(void);																// Checks if the output of getSmoothedTorqueEWMA exceeds injectorMotorsTorqueLimit
+	void abortInjectorMove(void);																		// Abruptly stops all motor motion
+	
+	//--- Message Handler Functions ---//
+	void handleEnable(void);
+	void handleDisable(void);
+	void handleAbort(void); // Will call finalizeAndResetActiveDispenseOperation
+	void handleClearErrors(void);
+	void handleStandbyMode(void);
+	void handleJogMode(void);
+	void handleHomingMode(void);
+	void handleFeedMode(void);
+	void handleSetinjectorMotorsTorqueOffset(const char *msg);
+	void handleJogMove(const char *msg);
+	void handleMachineHomeMove(const char *msg);
+	void handleCartridgeHomeMove(const char *msg);
+	void handleInjectMove(const char *msg);
+	void handlePurgeMove(const char *msg);
+	void handleMoveToCartridgeHome();
+	void handleMoveToCartridgeRetract(const char *msg);
+	void handlePauseOperation(void);
+	void handleResumeOperation(void);
+	void handleCancelOperation(void);
+	
+	//--- Reset Functions ---//
+	void resetMotors(void); 	// Disables, clears alerts, resets counters, and re-enables both motors
+	void finalizeAndResetActiveDispenseOperation(bool operationCompletedSuccessfully);
+	void fullyResetActiveDispenseOperation(void);
+	void resetActiveDispenseOp(void);
+
+	//--- Pinch Valve ---//
+	void handlePinchHomeMove(void);
+	void handlePinchOpen(void);
+	void handlePinchClose(void);
+	
+	const char *MainStateNames[MAIN_STATE_COUNT];
+	const char *HomingStateNames[HOMING_STATE_COUNT];
+	const char *HomingPhaseNames[HOMING_PHASE_COUNT];
+	const char *FeedStateNames[FEED_STATE_COUNT];
+	const char *ErrorStateNames[ERROR_STATE_COUNT];
 
 	const char* mainStateStr() const;
 	const char* homingStateStr() const;
 	const char* homingPhaseStr() const;
 	const char* feedStateStr() const;
 	const char* errorStateStr() const;
-
-	// Public variables (lowerCamelCase)
-	MainState mainState;
-	HomingState homingState;
-	HomingPhase homingPhase;
-	FeedState feedState;
-	ErrorState errorState;
-
-	bool homingMachineDone;
-	bool homingCartridgeDone;
-	bool feedingDone;
-	bool jogDone;
-
-	bool terminalDiscovered;
-	uint16_t terminalPort;
-
-	bool motorsEnabled;
-
-	float torqueLimit;
-	float torqueOffset;
-	float smoothedTorque1;
-	float smoothedTorque2;
-	bool firstTorque1;
-	bool firstTorque2;
-
-	uint32_t pulsesPerRev;
-	int32_t stepCounterMachine;
-	int32_t stepCounterCartridge;
-	int32_t machineHomeSteps;
-	int32_t cartridgeHomeSteps;
-
-	int32_t velocityLimit;
-	int32_t accelerationLimit;
-
-	float homingStrokeMm;
-	float homingRapidVel;
-	float homingTouchVel;
-	float homingAccel;
-	float homingRetractMm;
-	float homingTorquePercent;
-
-	int32_t homingStrokeSteps;
-	int32_t homingRetractSteps;
-	int32_t homingRapidSps;
-	int32_t homingTouchSps;
-	int32_t homingAccelSps2;
-
-	float activeTargetMl;
-	float activeDispensedMl;
-	int32_t activeTargetSteps;
-	int32_t activeRemainingSteps;
-	int32_t activeSegmentStartSteps;
-	float stepsPerMl;
-	bool injectionOngoing;
-	int32_t activeVelocitySps;
-	int32_t activeAccelSps2;
-	int32_t activeTorquePercent;
-	int32_t activeInitialSteps;
-	float lastDispensedMl;
+	
+	unsigned char packetBuffer[];
 };

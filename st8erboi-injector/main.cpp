@@ -21,11 +21,7 @@
 // ============================================================================
 
 #include "ClearCore.h"               // Core hardware abstraction (I/O, connectors, timing)
-#include "Ethernet.h"                // UDP telemetry, discovery, PC comms
-#include "injector_states.h"         // Injector class, state enums, state machine variables
-#include "injector_motors.h"         // Motor setup, torque checks, move primitives
-#include "injector_messages.h"       // Command parsing, message dispatch, sendToPC()
-#include "injector_handlers.h"       // Mode transitions, command handler logic
+#include "injector.h"         // Injector class, state enums, state machine variables
 #include <math.h>                    // fabsf(), powf()
 #include <string.h>                  // memset, strcmp, strncmp, strstr
 #include <stdlib.h>                  // atoi, atof, malloc
@@ -42,8 +38,8 @@ int main(void)
 	while (true)
 	{
 		now = Milliseconds();
-		injector.checkUdpBuffer(&injector);
-		injector.sendTelem(&injector);
+		injector.checkUdpBuffer();
+		injector.sendTelem();
 		
 		switch (injector.mainState)
 		{
@@ -91,7 +87,7 @@ int main(void)
 									injector.sendToPC(is_machine_homing ? "Machine Homing: Torque (RAPID). Backing off."
 									: "Cartridge Homing: Torque (RAPID). Backing off.");
 									injector.currentHomingPhase = HOMING_PHASE_BACK_OFF;
-									long back_off_s = -direction * Injector::HOMING_DEFAULT_BACK_OFF_STEPS;
+									long back_off_s = -direction * injector.homingDefaultBackoffSteps;
 									injector.moveInjectorMotors(back_off_s, back_off_s, (int)injector.homing_torque_percent_param,
 									injector.homing_actual_touch_sps, injector.homing_actual_accel_sps2);
 								}
@@ -100,10 +96,10 @@ int main(void)
 									injector.sendToPC(is_machine_homing ? "Machine Homing: Torque (TOUCH_OFF). Zeroing & Retracting."
 									: "Cartridge Homing: Torque (TOUCH_OFF). Zeroing & Retracting.");
 									if (is_machine_homing) {
-										machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
+										injector.machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
 										injector.sendToPC("Machine home reference point set.");
 										} else {
-										cartridgeHomeReferenceSteps = ConnectorM0.PositionRefCommanded(); // Single axis
+										injector.cartridgeHomeReferenceSteps = ConnectorM0.PositionRefCommanded(); // Single axis
 										injector.sendToPC("Cartridge home reference point set.");
 									}
 									injector.currentHomingPhase = HOMING_PHASE_RETRACT;
@@ -128,14 +124,7 @@ int main(void)
 								injector.sendToPC(is_machine_homing ? "Machine Homing: Back-off done. Touching off."
 								: "Cartridge Homing: Back-off done. Touching off.");
 								injector.currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
-								long touch_off_move_length = Injector::HOMING_DEFAULT_BACK_OFF_STEPS * 2;
-								if (Injector::HOMING_DEFAULT_BACK_OFF_STEPS == 0) {
-									touch_off_move_length = 200;
-									sendToPC("Homing Wrn: Default back_off_steps is 0. Using fallback.");
-									} else if (touch_off_move_length == 0) {
-									touch_off_move_length = 10;
-									sendToPC("Homing Wrn: Calculated touch_off_move_length is 0. Using minimal.");
-								}
+								long touch_off_move_length = injector.homingDefaultBackoffSteps * 2;
 								long final_touch_off_move_steps = direction * touch_off_move_length;
 								char log_msg[100];
 								snprintf(log_msg, sizeof(log_msg), "Homing: Touch-off approach (steps): %ld", final_touch_off_move_steps);
@@ -181,7 +170,7 @@ int main(void)
 						// abortInjectorMove() is called by checkInjectorTorqueLimit
 						injector.errorState = ERROR_TORQUE_ABORT;
 						injector.sendToPC("FEED_MODE: Torque limit! Operation stopped.");
-						injector.finalizeAndResetActiveDispenseOperation(&injector, false); // false = not successful completion
+						injector.finalizeAndResetActiveDispenseOperation(false); // false = not successful completion
 						injector.feedState = FEED_STANDBY;
 						injector.feedingDone = true;
 					}
@@ -218,7 +207,7 @@ int main(void)
 						if (injector.feedState == FEED_INJECTION_COMPLETED) {
 							injector.feedingDone = true; // Mark the overarching operation as done
 							injector.onFeedingDone();    // Call the handler if it does anything
-							injector.finalizeAndResetActiveDispenseOperation(&injector, true); // true = successful completion
+							injector.finalizeAndResetActiveDispenseOperation(true); // true = successful completion
 							injector.feedState = FEED_STANDBY; // Finally, return to standby
 							injector.sendToPC("Feed Op: Finalized. Returning to Feed Standby.");
 						}
@@ -266,7 +255,7 @@ int main(void)
 						"Paused Calculation: stepsMoved=%ld, totalDispensed=%.3fml, remainingSteps=%ld",
 						steps_moved_this_segment, injector.active_op_total_dispensed_ml,
 						injector.active_op_remaining_steps);
-						sendToPC(debugMsg);
+						injector.sendToPC(debugMsg);
 					}
 
 					injector.feedingDone = true;  // Mark segment calculation complete

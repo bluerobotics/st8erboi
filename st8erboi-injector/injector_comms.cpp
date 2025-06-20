@@ -18,32 +18,6 @@
 
 #include "injector.h"
 
-#define USER_CMD_STR_DISCOVER_TELEM					"DISCOVER_TELEM"
-#define USER_CMD_STR_ENABLE							"ENABLE"
-#define USER_CMD_STR_DISABLE						"DISABLE"
-#define USER_CMD_STR_ABORT							"ABORT"
-#define USER_CMD_STR_CLEAR_ERRORS					"CLEAR_ERRORS"
-#define USER_CMD_STR_STANDBY_MODE					"STANDBY_MODE"
-#define USER_CMD_STR_TEST_MODE						"TEST_MODE"
-#define USER_CMD_STR_JOG_MODE						"JOG_MODE"
-#define USER_CMD_STR_HOMING_MODE					"HOMING_MODE"
-#define USER_CMD_STR_FEED_MODE						"FEED_MODE"
-#define USER_CMD_STR_SET_INJECTOR_TORQUE_OFFSET		"SET_INJECTOR_TORQUE_OFFSET "
-#define USER_CMD_STR_SET_PINCH_TORQUE_OFFSET		"SET_PINCH_TORQUE_OFFSET "
-#define USER_CMD_STR_JOG_MOVE						"JOG_MOVE "
-#define USER_CMD_STR_MACHINE_HOME_MOVE				"MACHINE_HOME_MOVE "
-#define USER_CMD_STR_CARTRIDGE_HOME_MOVE			"CARTRIDGE_HOME_MOVE "
-#define USER_CMD_STR_PINCH_HOME_MOVE				"PINCH_HOME_MOVE "
-#define USER_CMD_STR_INJECT_MOVE					"INJECT_MOVE "
-#define USER_CMD_STR_PURGE_MOVE						"PURGE_MOVE "
-#define USER_CMD_STR_PINCH_OPEN						"PINCH_OPEN"
-#define USER_CMD_STR_PINCH_CLOSE					"PINCH_CLOSE"
-#define USER_CMD_STR_MOVE_TO_CARTRIDGE_HOME			"MOVE_TO_CARTRIDGE_HOME"
-#define USER_CMD_STR_MOVE_TO_CARTRIDGE_RETRACT		"MOVE_TO_CARTRIDGE_RETRACT "
-#define USER_CMD_STR_PAUSE_INJECTION				"PAUSE_INJECTION"
-#define USER_CMD_STR_RESUME_INJECTION				"RESUME_INJECTION"
-#define USER_CMD_STR_CANCEL_INJECTION				"CANCEL_INJECTION"
-
 void Injector::sendToPC(const char *msg)
 {
 	if (!terminalDiscovered) return;
@@ -89,22 +63,21 @@ void Injector::setupEthernet(void)
 	ConnectorUsb.SendLine("SetupEthernet: Udp.Begin() called for port 8888. Setup Complete.");
 }
 
-void Injector::handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp)
-{
+void Injector::handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp) {
 	char dbgBuffer[256];
-	// CORRECTED LINE: Using StringValue() for senderIp
 	snprintf(dbgBuffer, sizeof(dbgBuffer), "Discovery: RX from %s:%u, Msg: '%.*s'",
-	senderIp.StringValue(), Udp.RemotePort(), MAX_PACKET_LENGTH-1, msg);
+	senderIp.StringValue(), Udp.RemotePort(), MAX_PACKET_LENGTH - 1, msg);
 	ConnectorUsb.SendLine(dbgBuffer);
 
 	char *portStr = strstr(msg, "PORT=");
 	if (portStr) {
 		ConnectorUsb.SendLine("Discovery: Found 'PORT=' in message.");
 		terminalPort = atoi(portStr + 5);
-		terminalIp = senderIp; // terminalIp is also an IpAddress object
+		terminalIp = senderIp;
 		terminalDiscovered = true;
-		// CORRECTED LINE: Using StringValue() for terminalIp
-		snprintf(dbgBuffer, sizeof(dbgBuffer), "Discovery: Set terminalPort=%u, terminalIp=%s, terminalDiscovered=true",
+
+		snprintf(dbgBuffer, sizeof(dbgBuffer),
+		"Discovery: Set terminalPort=%u, terminalIp=%s, terminalDiscovered=true",
 		terminalPort, terminalIp.StringValue());
 		ConnectorUsb.SendLine(dbgBuffer);
 		} else {
@@ -113,14 +86,15 @@ void Injector::handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp)
 
 	ConnectorUsb.SendLine("Discovery: Attempting to send telemetry reply...");
 	ConnectorUsb.SendLine("Discovery: Called sendTelem.");
-	
-	char msg[500]; // Ensure this buffer is large enough
-	snprintf(msg, sizeof(msg),
-	"DISCOVERED: Set terminalPort=%u, terminalIp=%s, terminalDiscovered=true", terminalPort, terminalIp.StringValue());
-	sendToPC(msg);
+
+	char replyMsg[500];
+	snprintf(replyMsg, sizeof(replyMsg),
+	"DISCOVERED: Set terminalPort=%u, terminalIp=%s, terminalDiscovered=true",
+	terminalPort, terminalIp.StringValue());
+	sendToPC(replyMsg);
 }
 
-void Injector::checkUdpBuffer()
+void Injector::checkUdpBuffer(void)
 {
     memset(packetBuffer, 0, MAX_PACKET_LENGTH);
     uint16_t packetSize = Udp.PacketParse();
@@ -138,7 +112,7 @@ void Injector::checkUdpBuffer()
         if (bytesRead > 0) {
             packetBuffer[bytesRead] = '\0'; // Null-terminate the received data
             snprintf(dbgBuffer, sizeof(dbgBuffer), "checkUdpBuffer: Udp.PacketRead() %ld bytes. Msg: '%s'", bytesRead, (char*)packetBuffer);
-            handleMessage((char *)packetBuffer, injector);
+            handleMessage((char *)packetBuffer);
         } else if (bytesRead == 0) {
         } else {
             // bytesRead < 0 usually indicates an error
@@ -147,7 +121,7 @@ void Injector::checkUdpBuffer()
 }
 
 
-void Injector::sendTelem(Injector *injector) {
+void Injector::sendTelem(void) {
 	static uint32_t lastTelemTime = 0;
 	uint32_t now = Milliseconds();
 
@@ -165,29 +139,29 @@ void Injector::sendTelem(Injector *injector) {
 	long machine_pos_from_home = current_pos_m0 - machineHomeReferenceSteps;
 	long cartridge_pos_from_home = current_pos_m0 - cartridgeHomeReferenceSteps;
 
-	int machine_is_homed_flag = injector->homingMachineDone ? 1 : 0;
-	int cartridge_is_homed_flag = injector->homingCartridgeDone ? 1 : 0;
+	int machine_is_homed_flag = homingMachineDone ? 1 : 0;
+	int cartridge_is_homed_flag = homingCartridgeDone ? 1 : 0;
 
 	float current_dispensed_for_telemetry = 0.0f;
 	float current_target_for_telemetry = 0.0f;
 
-	if (injector->active_dispense_INJECTION_ongoing) {
-		current_target_for_telemetry = injector->active_op_target_ml;
-		if (injector->feedState == FEED_INJECT_ACTIVE || injector->feedState == FEED_PURGE_ACTIVE ||
-		injector->feedState == FEED_INJECT_RESUMING || injector->feedState == FEED_PURGE_RESUMING ) {
+	if (active_dispense_INJECTION_ongoing) {
+		current_target_for_telemetry = active_op_target_ml;
+		if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE ||
+		feedState == FEED_INJECT_RESUMING || feedState == FEED_PURGE_RESUMING ) {
 			// Live calculation based on initial position of the entire operation
-			if (injector->active_op_steps_per_ml > 0.0001f) {
-				long total_steps_moved_for_op = current_pos_m0 - injector->active_op_initial_axis_steps;
-				current_dispensed_for_telemetry = fabs(total_steps_moved_for_op) / injector->active_op_steps_per_ml;
+			if (active_op_steps_per_ml > 0.0001f) {
+				long total_steps_moved_for_op = current_pos_m0 - active_op_initial_axis_steps;
+				current_dispensed_for_telemetry = fabs(total_steps_moved_for_op) / active_op_steps_per_ml;
 			}
-			} else if (injector->feedState == FEED_INJECT_PAUSED || injector->feedState == FEED_PURGE_PAUSED) {
+			} else if (feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) {
 			// When paused, use the accumulated total from before pausing
-			current_dispensed_for_telemetry = injector->active_op_total_dispensed_ml;
+			current_dispensed_for_telemetry = active_op_total_dispensed_ml;
 		}
 		// For STARTING injector, current_dispensed_for_telemetry will be 0 as active_op_total_dispensed_ml is 0
 		// and active_op_initial_axis_steps equals current_pos_m0.
 		} else { // Not active_dispense_INJECTION_ongoing (i.e., idle, completed, or cancelled)
-		current_dispensed_for_telemetry = injector->last_completed_dispense_ml;
+		current_dispensed_for_telemetry = last_completed_dispense_ml;
 		current_target_for_telemetry = 0.0f; // No active target
 	}
 
@@ -205,8 +179,8 @@ void Injector::sendTelem(Injector *injector) {
 	"machine_steps:%ld,machine_homed:%d,"
 	"cartridge_steps:%ld,cartridge_homed:%d,"
 	"dispensed_ml:%.2f,target_ml:%.2f", // Changed to : for easier parsing
-	injector->maininjectortr(), injector->hominginjectortr(), injector->homingPhaseStr(),
-	injector->feedinjectortr(), injector->errorinjectortr(),
+	mainStateStr(), homingStateStr(), homingPhaseStr(),
+	feedStateStr(), errorStateStr(),
 	torque1Str, hlfb1_val, motorsAreEnabled ? 1 : 0, current_pos_m0,
 	torque2Str, hlfb2_val, motorsAreEnabled ? 1 : 0, current_pos_m1,
 	machine_pos_from_home, machine_is_homed_flag,
@@ -226,7 +200,6 @@ UserCommand Injector::parseUserCommand(const char *msg) {
 	if (strcmp(msg, USER_CMD_STR_CLEAR_ERRORS) == 0) return USER_CMD_CLEAR_ERRORS; // New
 
 	if (strcmp(msg, USER_CMD_STR_STANDBY_MODE) == 0) return USER_CMD_STANDBY_MODE;
-	if (strcmp(msg, USER_CMD_STR_TEST_MODE) == 0) return USER_CMD_TEST_MODE;
 	if (strcmp(msg, USER_CMD_STR_JOG_MODE) == 0) return USER_CMD_JOG_MODE;
 	if (strcmp(msg, USER_CMD_STR_HOMING_MODE) == 0) return USER_CMD_HOMING_MODE;
 	if (strcmp(msg, USER_CMD_STR_FEED_MODE) == 0) return USER_CMD_FEED_MODE;
@@ -253,34 +226,33 @@ UserCommand Injector::parseUserCommand(const char *msg) {
 	return USER_CMD_UNKNOWN;
 }
 
-void Injector::handleMessage(const char *msg, Injector *injector) {
+void Injector::handleMessage(const char *msg) {
 	UserCommand command = parseUserCommand(msg);
 
 	switch (command) {
 		case USER_CMD_DISCOVER_TELEM:        handleDiscoveryTelemPacket(msg, Udp.RemoteIp()); break;
-		case USER_CMD_ENABLE:                handleEnable(injector); break;
-		case USER_CMD_DISABLE:               handleDisable(injector); break;
-		case USER_CMD_ABORT:                 handleAbort(injector); break;
-		case USER_CMD_CLEAR_ERRORS:          handleClearErrors(injector); break;
-		case USER_CMD_STANDBY_MODE:          handleStandbyMode(injector); break;
-		case USER_CMD_TEST_MODE:             handleTestMode(injector); break;
-		case USER_CMD_JOG_MODE:              handleJogMode(injector); break;
-		case USER_CMD_HOMING_MODE:           handleHomingMode(injector); break;
-		case USER_CMD_FEED_MODE:             handleFeedMode(injector); break;
+		case USER_CMD_ENABLE:                handleEnable(); break;
+		case USER_CMD_DISABLE:               handleDisable(); break;
+		case USER_CMD_ABORT:                 handleAbort(); break;
+		case USER_CMD_CLEAR_ERRORS:          handleClearErrors(); break;
+		case USER_CMD_STANDBY_MODE:          handleStandbyMode(); break;
+		case USER_CMD_JOG_MODE:              handleJogMode(); break;
+		case USER_CMD_HOMING_MODE:           handleHomingMode(); break;
+		case USER_CMD_FEED_MODE:             handleFeedMode(); break;
 		case USER_CMD_SET_TORQUE_OFFSET:     handleSetinjectorMotorsTorqueOffset(msg); break;
-		case USER_CMD_JOG_MOVE:              handleJogMove(msg, injector); break;
-		case USER_CMD_MACHINE_HOME_MOVE:     handleMachineHomeMove(msg, injector); break;
-		case USER_CMD_CARTRIDGE_HOME_MOVE:   handleCartridgeHomeMove(msg, injector); break;
-		case USER_CMD_INJECT_MOVE:           handleInjectMove(msg, injector); break;
-		case USER_CMD_PURGE_MOVE:            handlePurgeMove(msg, injector); break;
-		case USER_CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(injector); break;
-		case USER_CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(msg, injector); break;
-		case USER_CMD_PAUSE_INJECTION:       handlePauseOperation(injector); break;
-		case USER_CMD_RESUME_INJECTION:      handleResumeOperation(injector); break;
-		case USER_CMD_CANCEL_INJECTION:      handleCancelOperation(injector); break;
-		case USER_CMD_PINCH_HOME_MOVE:       handlePinchHomeMove(injector); break;
-		case USER_CMD_PINCH_OPEN:			handlePinchOpen(injector); break;
-		case USER_CMD_PINCH_CLOSE:			handlePinchClose(injector); break;
+		case USER_CMD_JOG_MOVE:              handleJogMove(msg); break;
+		case USER_CMD_MACHINE_HOME_MOVE:     handleMachineHomeMove(msg); break;
+		case USER_CMD_CARTRIDGE_HOME_MOVE:   handleCartridgeHomeMove(msg); break;
+		case USER_CMD_INJECT_MOVE:           handleInjectMove(msg); break;
+		case USER_CMD_PURGE_MOVE:            handlePurgeMove(msg); break;
+		case USER_CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(); break;
+		case USER_CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(msg); break;
+		case USER_CMD_PAUSE_INJECTION:       handlePauseOperation(); break;
+		case USER_CMD_RESUME_INJECTION:      handleResumeOperation(); break;
+		case USER_CMD_CANCEL_INJECTION:      handleCancelOperation(); break;
+		case USER_CMD_PINCH_HOME_MOVE:       handlePinchHomeMove(); break;
+		case USER_CMD_PINCH_OPEN:			handlePinchOpen(); break;
+		case USER_CMD_PINCH_CLOSE:			handlePinchClose(); break;
 
 		case USER_CMD_UNKNOWN:
 		default:

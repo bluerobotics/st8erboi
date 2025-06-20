@@ -81,20 +81,6 @@ void Injector::handleStandbyMode() {
 	}
 }
 
-void Injector::handleTestMode() {
-	// This function is from your uploaded messages.cpp (handleTestState)
-	if (mainState != TEST_MODE) {
-		abortInjectorMove(); // Stop other activities
-		mainState = TEST_MODE;
-		homingState = HOMING_NONE; // Reset other mode sub-injector
-		feedState = FEED_NONE;
-		errorState = ERROR_NONE;   // Clear errors
-		sendToPC("Entered TEST_MODE.");
-		} else {
-		sendToPC("Already in TEST_MODE.");
-	}
-}
-
 void Injector::handleJogMode() {
 	// Your uploaded messages.cpp handleJogMode uses an old 'MOVING' and 'MOVING_JOG' concept.
 	// This should now simply set the main state. Actual jog moves are handled by USER_CMD_JOG_MOVE.
@@ -147,7 +133,7 @@ void Injector::handleSetinjectorMotorsTorqueOffset(const char *msg) {
 	sendToPC(response);
 }
 
-void Injector::handleJogMove(const char *msg, Injector *injector) {
+void Injector::handleJogMove(const char *msg) {
 	if (mainState != JOG_MODE) {
 		sendToPC("JOG_MOVE ignored: Not in JOG_MODE.");
 		return;
@@ -208,7 +194,7 @@ void Injector::handleJogMove(const char *msg, Injector *injector) {
 	}
 }
 
-void Injector::handleMachineHomeMove(const char *msg, Injector *injector) {
+void Injector::handleMachineHomeMove(const char *msg) {
 	if (mainState != HOMING_MODE) {
 		sendToPC("MACHINE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
@@ -284,7 +270,7 @@ void Injector::handleMachineHomeMove(const char *msg, Injector *injector) {
 	}
 }
 
-void Injector::handleCartridgeHomeMove(const char *msg, Injector *injector) {
+void Injector::handleCartridgeHomeMove(const char *msg) {
 	if (mainState != HOMING_MODE) {
 		sendToPC("CARTRIDGE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
@@ -383,15 +369,8 @@ void Injector::handlePinchHomeMove() {
 	homingStartTime = Milliseconds(); // For timeout tracking
 	errorState = ERROR_NONE; // Clear previous errors
 
-	sendToPC("Initiating Machine Homing: RAPID_MOVE phase.");
-	// Machine homing is typically in the negative direction
-	long initial_move_steps = -1 * homing_actual_stroke_steps;
-	movePinchMotor(800, initial_move_steps, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
-	
-	} else {
-	sendToPC("Invalid MACHINE_HOME_MOVE format. Expected 6 parameters.");
-	homingState = HOMING_MACHINE; // Indicate it was attempted
-	currentHomingPhase = HOMING_PHASE_ERROR;
+	sendToPC("Initiating Pinch Homing");
+	movePinchMotor(800, torque_percent, velocity, acceleration);
 }
 
 void Injector::handlePinchOpen(){
@@ -433,10 +412,10 @@ void Injector::handleMoveToCartridgeHome() {
 	long steps_to_move_axis = cartridgeHomeReferenceSteps - current_axis_pos;
 
 	moveInjectorMotors((int)steps_to_move_axis, (int)steps_to_move_axis,
-	FEED_GOTO_TORQUE_PERCENT, FEED_GOTO_VELOCITY_SPS, FEED_GOTO_ACCEL_SPS2);
+	feedDefaultTorquePercent, feedDefaultVelocitySPS, feedDefaultAccelSPS2);
 }
 
-void Injector::handleMoveToCartridgeRetract(const char *msg, Injector *injector) {
+void Injector::handleMoveToCartridgeRetract(const char *msg) {
 	if (mainState != FEED_MODE) { /* ... */ return; }
 	if (!homingCartridgeDone) { /* ... */ errorState = ERROR_NO_CARTRIDGE_HOME; sendToPC("Err: Cartridge not homed."); return; }
 	if (!motorsAreEnabled) { /* ... */ sendToPC("Err: Motors disabled."); return; }
@@ -466,11 +445,11 @@ void Injector::handleMoveToCartridgeRetract(const char *msg, Injector *injector)
 	long steps_to_move_axis = target_absolute_axis_position - current_axis_pos;
 
 	moveInjectorMotors((int)steps_to_move_axis, (int)steps_to_move_axis,
-	FEED_GOTO_TORQUE_PERCENT, FEED_GOTO_VELOCITY_SPS, FEED_GOTO_ACCEL_SPS2);
+	feedDefaultTorquePercent, feedDefaultVelocitySPS, feedDefaultAccelSPS2);
 }
 
 
-void Injector::handleInjectMove(const char *msg, Injector *injector) {
+void Injector::handleInjectMove(const char *msg) {
 	if (mainState != FEED_MODE) {
 		sendToPC("INJECT ignored: Not in FEED_MODE.");
 		return;
@@ -494,7 +473,7 @@ void Injector::handleInjectMove(const char *msg, Injector *injector) {
 		if (acceleration_sps2_param <= 0) { sendToPC("Error: Inject acceleration must be positive."); return; }
 
 		// Clear previous operation's trackers and set last completed to 0 for this new context
-		fullyResetActiveDispenseOperation(injector);
+		fullyResetActiveDispenseOperation();
 		last_completed_dispense_ml = 0.0f;
 
 		feedState = FEED_INJECT_STARTING; // Will transition to ACTIVE in main loop
@@ -532,7 +511,7 @@ void Injector::handleInjectMove(const char *msg, Injector *injector) {
 	}
 }
 
-void Injector::handlePurgeMove(const char *msg, Injector *injector) {
+void Injector::handlePurgeMove(const char *msg) {
 	if (mainState != FEED_MODE) { sendToPC("PURGE ignored: Not in FEED_MODE."); return; }
 	if (checkInjectorMoving() || active_dispense_INJECTION_ongoing) {
 		sendToPC("Error: Operation already in progress or motors busy.");
@@ -553,7 +532,7 @@ void Injector::handlePurgeMove(const char *msg, Injector *injector) {
 		if (acceleration_sps2_param <= 0) { sendToPC("Error: Purge acceleration must be positive."); return; }
 
 		// Clear previous operation's trackers and set last completed to 0 for this new context
-		fullyResetActiveDispenseOperation(injector);
+		fullyResetActiveDispenseOperation();
 		last_completed_dispense_ml = 0.0f;
 
 		feedState = FEED_PURGE_STARTING; // Will transition to ACTIVE in main loop
@@ -588,7 +567,7 @@ void Injector::handlePurgeMove(const char *msg, Injector *injector) {
 	}
 }
 
-void Injector::handlePauseOperation(Injector *injector) {
+void Injector::handlePauseOperation() {
 	if (!active_dispense_INJECTION_ongoing) {
 		sendToPC("PAUSE ignored: No active inject/purge operation.");
 		return;
@@ -608,7 +587,7 @@ void Injector::handlePauseOperation(Injector *injector) {
 }
 
 
-void Injector::handleResumeOperation(Injector *injector) {
+void Injector::handleResumeOperation() {
 	if (!active_dispense_INJECTION_ongoing) {
 		sendToPC("RESUME ignored: No operation was ongoing or paused.");
 		return;
@@ -616,7 +595,7 @@ void Injector::handleResumeOperation(Injector *injector) {
 	if (feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) {
 		if (active_op_remaining_steps <= 0) {
 			sendToPC("RESUME ignored: No remaining volume/steps to dispense.");
-			fullyResetActiveDispenseOperation(injector);
+			fullyResetActiveDispenseOperation();
 			feedState = FEED_STANDBY;
 			return;
 		}
@@ -640,7 +619,7 @@ void Injector::handleResumeOperation(Injector *injector) {
 	}
 }
 
-void Injector::handleCancelOperation(Injector *injector) {
+void Injector::handleCancelOperation() {
 	if (!active_dispense_INJECTION_ongoing) {
 		sendToPC("CANCEL ignored: No active inject/purge operation to cancel.");
 		return;
@@ -662,7 +641,7 @@ void Injector::handleCancelOperation(Injector *injector) {
 	
 	last_completed_dispense_ml = 0.0f; // Set "completed" amount to 0 for a cancelled operation
 
-	fullyResetActiveDispenseOperation(injector); // Clears all active_op_ trackers
+	fullyResetActiveDispenseOperation(); // Clears all active_op_ trackers
 	
 	feedState = FEED_INJECTION_CANCELLED; // A specific state for cancelled
 	// Main loop should transition this to FEED_STANDBY
@@ -673,7 +652,7 @@ void Injector::handleCancelOperation(Injector *injector) {
 	sendToPC("Operation Cancelled. Dispensed value for this attempt will show as 0 ml in idle telemetry.");
 }
 
-void Injector::finalizeAndResetActiveDispenseOperation(Injector *injector, bool operationCompletedSuccessfully) {
+void Injector::finalizeAndResetActiveDispenseOperation(bool operationCompletedSuccessfully) {
 	if (active_dispense_INJECTION_ongoing) {
 		// Calculate final dispensed amount for this operation segment
 		if (active_op_steps_per_ml > 0.0001f) {
@@ -692,7 +671,7 @@ void Injector::finalizeAndResetActiveDispenseOperation(Injector *injector, bool 
 	active_op_remaining_steps = 0;
 }
 
-void Injector::fullyResetActiveDispenseOperation(Injector *injector) {
+void Injector::fullyResetActiveDispenseOperation() {
 	active_dispense_INJECTION_ongoing = false;
 	active_op_target_ml = 0.0f;
 	active_op_total_dispensed_ml = 0.0f; // Crucial for starting fresh

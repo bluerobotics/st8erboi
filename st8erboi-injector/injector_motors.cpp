@@ -18,15 +18,12 @@
 
 #include "injector.h"
 
-#define EWMA_ALPHA 0.2f
-#define TORQUE_SENTINEL_INVALID_VALUE -9999.0f
-
 void Injector::setupInjectorMotors(void){
 	MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
 	ConnectorM0.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM0.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	ConnectorM0.VelMax(Injector.velocityLimit);
-	ConnectorM0.AccelMax(Injector.acc);
+	ConnectorM0.VelMax(velocityLimit);
+	ConnectorM0.AccelMax(accelerationLimit);
 	ConnectorM0.EnableRequest(true);
 
 	ConnectorM1.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
@@ -126,7 +123,7 @@ void Injector::moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit_per
 	if (stepsM1 != 0) ConnectorM1.Move(stepsM1);
 }
 
-void Injector::movePinchMotor(int stepsM3, int stepsM1, int torque_limit_percent, int velocity_sps, int accel_sps2) {
+void Injector::movePinchMotor(int stepsM3, int torque_limit_percent, int velocity_sps, int accel_sps2) {
 	if (!motorsAreEnabled) {
 		sendToPC("MOVE BLOCKED: Motors are disabled.");
 		return;
