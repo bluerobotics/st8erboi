@@ -799,6 +799,10 @@ def build_gui(send_udp, discover):
     # Initial call to update_state to set up panels based on initial main_state_var
     root.after(20, lambda: update_state(main_state_var.get()))
     # The button states for inject/purge will be set by main.py upon receiving the first telemetry.
+    ui_elements['update_ml_per_rev'] = update_ml_per_rev
+    ui_elements['update_inject_time'] = update_inject_time
+    ui_elements['update_purge_time'] = update_purge_time
+
     return ui_elements
 
 

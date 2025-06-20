@@ -357,27 +357,34 @@ def recv_loop(gui_refs):
 
 
 def main():
-    # Initialize shared_gui_refs before build_gui in case terminal_cb is needed early
+    global connected
+    connected = False  # Ensure auto_discover_loop starts discovery
+
     shared_gui_refs = {"last_feed_op_type": None}
 
-    # Pass lambda functions that will use shared_gui_refs for terminal_cb
-    # The terminal_cb in gui_refs will be populated by build_gui
-    gui = build_gui(
-        lambda msg_to_send: send_udp(msg_to_send, shared_gui_refs.get('terminal_cb')),
-        lambda: discover(shared_gui_refs.get('terminal_cb'))
-    )
-    shared_gui_refs.update(gui)  # gui now contains all ui_elements including 'terminal_cb'
+    # Use a function to always fetch the latest terminal_cb (even if not populated yet)
+    def get_terminal_cb():
+        return shared_gui_refs.get('terminal_cb')
 
-    # Ensure all threads get the fully populated shared_gui_refs
+    # Build the GUI and pass dynamic terminal callback resolver
+    gui = build_gui(
+        lambda msg_to_send: send_udp(msg_to_send, get_terminal_cb()),
+        lambda: discover(get_terminal_cb())
+    )
+
+    shared_gui_refs.update(gui)
+
+    # Start networking and telemetry threads
     threading.Thread(target=recv_loop, args=(shared_gui_refs,), daemon=True).start()
     threading.Thread(target=monitor_connection, args=(shared_gui_refs,), daemon=True).start()
-    # auto_discover_loop should also use the shared_gui_refs for its terminal_cb if it logs
-    threading.Thread(target=auto_discover_loop, args=(shared_gui_refs.get('terminal_cb'),), daemon=True).start()
+    threading.Thread(target=auto_discover_loop, args=(get_terminal_cb(),), daemon=True).start()
 
-    # Initial call to update panels based on default state
+    # Send a one-time DISCOVER right after GUI is up
+    discover(get_terminal_cb())
+
+    # Trigger initial GUI state update
     if 'update_state' in shared_gui_refs and callable(shared_gui_refs['update_state']):
-        shared_gui_refs['root'].after(50,
-                                      lambda: shared_gui_refs['update_state'](shared_gui_refs['main_state_var'].get()))
+        shared_gui_refs['root'].after(50, lambda: shared_gui_refs['update_state'](shared_gui_refs['main_state_var'].get()))
 
     shared_gui_refs['root'].mainloop()
 
