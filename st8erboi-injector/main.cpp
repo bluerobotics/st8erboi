@@ -33,6 +33,13 @@ int main(void)
 {
 	Injector injector;
 	
+	//injector.setupUsbSerial();
+	//Delay_ms(5000);
+	//ConnectorUsb.SendLine("main: Delay finished. Proceeding with setup...");
+	
+	injector.setupEthernet();
+	injector.setupInjectorMotors();
+	
 	uint32_t now = Milliseconds();
 
 	while (true)

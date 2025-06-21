@@ -94,8 +94,7 @@ void Injector::handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp) {
 	sendToPC(replyMsg);
 }
 
-void Injector::checkUdpBuffer(void)
-{
+void Injector::checkUdpBuffer(void){
     memset(packetBuffer, 0, MAX_PACKET_LENGTH);
     uint16_t packetSize = Udp.PacketParse();
 

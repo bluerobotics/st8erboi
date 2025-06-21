@@ -78,12 +78,6 @@ Injector::Injector(){
 }
 
 void Injector::reset() {
-	setupEthernet();
-	setupInjectorMotors();
-	//setupUsbSerial();
-	//Delay_ms(5000);
-	//ConnectorUsb.SendLine("main: Delay finished. Proceeding with setup...");
-	
 	//--- State Variables ---//
 	mainState = STANDBY_MODE;
 	homingState = HOMING_NONE;

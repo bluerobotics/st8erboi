@@ -53,6 +53,8 @@
 
 #define EWMA_ALPHA 0.2f
 #define TORQUE_SENTINEL_INVALID_VALUE -9999.0f
+#define MAX_PACKET_LENGTH 100
+#define LOCAL_PORT 8888
 
 // --- State Enums ---
 enum MainState : uint8_t {
@@ -177,8 +179,6 @@ class Injector {
 	
 	//--- Ethernet Variables ---//
 	EthernetUdp Udp;
-	const int MAX_PACKET_LENGTH = 100;
-	const int LOCAL_PORT = 8888;
 	IpAddress terminalIp;
 	uint16_t terminalPort;
 	bool terminalDiscovered;
@@ -318,5 +318,5 @@ class Injector {
 	const char* feedStateStr() const;
 	const char* errorStateStr() const;
 	
-	unsigned char packetBuffer[];
+	unsigned char packetBuffer[MAX_PACKET_LENGTH];
 };
