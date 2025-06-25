@@ -342,35 +342,73 @@ void Injector::handleCartridgeHomeMove(const char *msg) {
 }
 
 void Injector::handlePinchHomeMove() {
+	// This command should only be available in HOMING_MODE for safety.
 	if (mainState != HOMING_MODE) {
-		sendToPC("MACHINE_HOME_MOVE ignored: Not in HOMING_MODE.");
+		sendToPC("PINCH_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
-	if (currentHomingPhase != HOMING_PHASE_IDLE && currentHomingPhase != HOMING_PHASE_COMPLETE && currentHomingPhase != HOMING_PHASE_ERROR) {
-		sendToPC("MACHINE_HOME_MOVE ignored: Homing operation already in progress.");
-		return;
-	}
-
-	float velocity = 200; //steps per second
-	float acceleration = 5000; //steps per second squared
-	float torque_percent = 30;
 	
-	if (!motorsAreEnabled) {
-		sendToPC("MACHINE_HOME_MOVE blocked: Motors disabled. Set to HOMING_PHASE_ERROR.");
-		homingState = HOMING_MACHINE; // Indicate it was attempted
-		currentHomingPhase = HOMING_PHASE_ERROR;
-		errorState = ERROR_MANUAL_ABORT; // Or a more specific error
+	// These parameters can be adjusted as needed for the pinch mechanism.
+	long homing_steps = -800; // Move a long distance to ensure it hits the stop
+	int velocity = 400;      // steps per second
+	int acceleration = 5000; // steps per second squared
+	int torque_percent = 10; // The torque percent to stall against the hard stop
+	
+	// Check if the specific motor for this move is enabled
+	if (ConnectorM2.HlfbState() != MotorDriver::HLFB_ASSERTED) {
+		sendToPC("PINCH_HOME_MOVE blocked: Pinch motor is disabled.");
 		return;
 	}
 
-	// Initialize homing state machine
-	homingState = HOMING_MACHINE;
-	currentHomingPhase = HOMING_PHASE_RAPID_MOVE;
-	homingStartTime = Milliseconds(); // For timeout tracking
-	errorState = ERROR_NONE; // Clear previous errors
+	sendToPC("Initiating Pinch Homing...");
+	movePinchMotor(homing_steps, torque_percent, velocity, acceleration);
+	
+	// For a fully robust implementation, you would monitor this move
+	// for completion (e.g., watching for the torque limit to be hit and velocity to be zero)
+	// and then set homingPinchDone = true; and potentially reset the motor's position to 0.
+	// For now, this initiates the homing move.
+}
 
-	sendToPC("Initiating Pinch Homing");
-	movePinchMotor(800, torque_percent, velocity, acceleration);
+void Injector::handlePinchJogMove(const char *msg) {
+	if (mainState != JOG_MODE) {
+		sendToPC("PINCH_JOG_MOVE ignored: Not in JOG_MODE.");
+		return;
+	}
+
+	long steps = 0;
+	int torque_percent = 0, velocity_sps = 0, accel_sps2 = 0;
+
+	// Format: PINCH_JOG_MOVE <steps> <torque_%> <vel_sps> <accel_sps2>
+	int parsed_count = sscanf(msg + strlen(USER_CMD_STR_PINCH_JOG_MOVE), "%ld %d %d %d",
+	&steps, &torque_percent, &velocity_sps, &accel_sps2);
+
+	if (parsed_count == 4) {
+		char response[150];
+		snprintf(response, sizeof(response), "PINCH_JOG_MOVE RX: s:%ld TqL:%d%% Vel:%d Acc:%d",
+		steps, torque_percent, velocity_sps, accel_sps2);
+		sendToPC(response);
+
+		// Basic validation of parameters
+		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 30;
+		if (velocity_sps <= 0) velocity_sps = 800;
+		if (accel_sps2 <= 0) accel_sps2 = 5000;
+
+		movePinchMotor(steps, torque_percent, velocity_sps, accel_sps2);
+		} else {
+		char errorMsg[100];
+		snprintf(errorMsg, sizeof(errorMsg), "Invalid PINCH_JOG_MOVE format. Expected 4 params, got %d.", parsed_count);
+		sendToPC(errorMsg);
+	}
+}
+
+void Injector::handleEnablePinch() {
+    sendToPC("Enabling Pinch Motor (M2)...");
+    ConnectorM2.EnableRequest(true);
+}
+
+void Injector::handleDisablePinch() {
+    sendToPC("Disabling Pinch Motor (M2)...");
+    ConnectorM2.EnableRequest(false);
 }
 
 void Injector::handlePinchOpen(){

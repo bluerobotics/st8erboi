@@ -18,22 +18,35 @@
 
 #include "injector.h"
 
-void Injector::setupInjectorMotors(void){
+void Injector::setupInjectorMotors(void) {
 	MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
+
+	// Setup for M0 (Injector Axis)
 	ConnectorM0.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM0.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
 	ConnectorM0.VelMax(velocityLimit);
 	ConnectorM0.AccelMax(accelerationLimit);
 	ConnectorM0.EnableRequest(true);
 
+	// Setup for M1 (Injector Axis)
 	ConnectorM1.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM1.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
 	ConnectorM1.VelMax(velocityLimit);
 	ConnectorM1.AccelMax(accelerationLimit);
 	ConnectorM1.EnableRequest(true);
 
+	// Setup for M2 (Pinch Motor)
+	ConnectorM2.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
+	ConnectorM2.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
+	ConnectorM2.VelMax(velocityLimit);
+	ConnectorM2.AccelMax(accelerationLimit);
+	ConnectorM2.EnableRequest(true);
+
 	Delay_ms(100);
-	if(ConnectorM0.HlfbState() == MotorDriver::HLFB_ASSERTED || ConnectorM1.HlfbState() == MotorDriver::HLFB_ASSERTED) motorsAreEnabled = true;
+	// Initial check for enabled status. Note: telemetry provides live, per-motor status.
+	if (ConnectorM0.HlfbState() == MotorDriver::HLFB_ASSERTED || ConnectorM1.HlfbState() == MotorDriver::HLFB_ASSERTED) {
+		motorsAreEnabled = true;
+	}
 	Delay_ms(100);
 }
 
@@ -123,41 +136,43 @@ void Injector::moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit_per
 	if (stepsM1 != 0) ConnectorM1.Move(stepsM1);
 }
 
-void Injector::movePinchMotor(int stepsM3, int torque_limit_percent, int velocity_sps, int accel_sps2) {
-	if (!motorsAreEnabled) {
-		sendToPC("MOVE BLOCKED: Motors are disabled.");
+void Injector::movePinchMotor(int stepsM2, int torque_limit_percent, int velocity_sps, int accel_sps2) {
+	if (!motorsAreEnabled && ConnectorM2.HlfbState() != MotorDriver::HLFB_ASSERTED) {
+		sendToPC("MOVE BLOCKED: Pinch motor is disabled.");
 		return;
 	}
 
-	// Validate parameters (basic examples)
+	// Validate parameters
 	if (torque_limit_percent < 0 || torque_limit_percent > 100) {
-		sendToPC("Error: Invalid torque limit for moveInjectorMotors. Using default.");
-		torque_limit_percent = (int)injectorMotorsTorqueLimit; // Fallback or a safe default
+		sendToPC("Error: Invalid torque limit for movePinchMotor. Using default.");
+		torque_limit_percent = 30; // Safe default
 	}
-	if (velocity_sps <= 0 || velocity_sps > 10000) {
-		sendToPC("Error: Invalid velocity for moveInjectorMotors. Using default max.");
-		velocity_sps = velocityLimit; // Or a safe default
+	if (velocity_sps <= 0) {
+		sendToPC("Error: Invalid velocity for movePinchMotor. Using default.");
+		velocity_sps = 1000; // Safe default
 	}
-	if (accel_sps2 <= 0 || velocity_sps > 100000) {
-		sendToPC("Error: Invalid acceleration for moveInjectorMotors. Using default max.");
-		accel_sps2 = accelerationLimit; // Or a safe default
+	if (accel_sps2 <= 0) {
+		sendToPC("Error: Invalid acceleration for movePinchMotor. Using default.");
+		accel_sps2 = 10000; // Safe default
 	}
 	
-	// Set the injectorMotorsTorqueLimit that checkInjectorTorqueLimit() will use for this operation
+	// Set the torque limit that checkInjectorTorqueLimit() will use for this operation
+	// Note: a separate check function for M2 torque would be ideal for simultaneous moves.
 	injectorMotorsTorqueLimit = (float)torque_limit_percent;
 	
 	// Set speed and acceleration for this specific move
-	// These will cap at the motor's VelMax/AccelMax if higher.
-	ConnectorM3.VelMax(velocity_sps);
-	ConnectorM3.AccelMax(accel_sps2);
+	ConnectorM2.VelMax(velocity_sps);
+	ConnectorM2.AccelMax(accel_sps2);
 	
-	char msg[128]; // Reduced size, only sending essential info
-	snprintf(msg, sizeof(msg), "moveInjectorMotors: M3s:%d TqL: %d%% V:%d A:%d",
-	stepsM3, torque_limit_percent, velocity_sps, accel_sps2);
+	char msg[128];
+	snprintf(msg, sizeof(msg), "movePinchMotor: M2s:%d TqL:%d%% V:%d A:%d",
+	stepsM2, torque_limit_percent, velocity_sps, accel_sps2);
 	sendToPC(msg);
 	
-	// Initiate moves
-	if (stepsM3 != 0) ConnectorM0.Move(stepsM3);
+	// Initiate the move on the correct motor
+	if (stepsM2 != 0) {
+		ConnectorM2.Move(stepsM2);
+	}
 }
 
 bool Injector::checkInjectorMoving(void)

@@ -1,4 +1,4 @@
-main.d main.o: .././main.cpp .././fillhead.h \
+injector.d injector.o: .././injector.cpp .././injector.h \
  ../../libClearCore/inc/ClearCore.h ../../libClearCore/inc/AdcManager.h \
  ../../libClearCore/inc/IirFilter.h ../../libClearCore/inc/SysTiming.h \
  ../../libClearCore/inc/CcioBoardManager.h \
@@ -162,7 +162,7 @@ main.d main.o: .././main.cpp .././fillhead.h \
  ../../libClearCore/inc/XBeeDriver.h ../../libClearCore/inc/EthernetUdp.h \
  ../../libClearCore/inc/IpAddress.h
 
-.././fillhead.h:
+.././injector.h:
 
 ../../libClearCore/inc/ClearCore.h:
 

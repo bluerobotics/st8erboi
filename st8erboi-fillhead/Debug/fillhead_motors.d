@@ -1,6 +1,7 @@
-main.d main.o: .././main.cpp .././fillhead.h \
- ../../libClearCore/inc/ClearCore.h ../../libClearCore/inc/AdcManager.h \
- ../../libClearCore/inc/IirFilter.h ../../libClearCore/inc/SysTiming.h \
+fillhead_motors.d fillhead_motors.o: .././fillhead_motors.cpp \
+ .././fillhead.h ../../libClearCore/inc/ClearCore.h \
+ ../../libClearCore/inc/AdcManager.h ../../libClearCore/inc/IirFilter.h \
+ ../../libClearCore/inc/SysTiming.h \
  ../../libClearCore/inc/CcioBoardManager.h \
  ../../libClearCore/inc/CcioPin.h \
  C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include/sam.h \

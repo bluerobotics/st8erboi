@@ -18,7 +18,7 @@
 #include "injector.h"
 #include <math.h>
 
-const char *MainStateNames[MAIN_STATE_COUNT] = {
+const char *Injector::MainStateNames[MAIN_STATE_COUNT] = {
 	"STANDBY_MODE",
 	"JOG_MODE",
 	"HOMING_MODE",
@@ -26,13 +26,13 @@ const char *MainStateNames[MAIN_STATE_COUNT] = {
 	"DISABLED_MODE"
 };
 
-const char *HomingStateNames[HOMING_STATE_COUNT] = {
+const char *Injector::HomingStateNames[HOMING_STATE_COUNT] = {
 	"HOMING_NONE",
 	"HOMING_MACHINE_ACTIVE",
 	"HOMING_CARTRIDGE_ACTIVE"
 };
 
-const char *HomingPhaseNames[HOMING_PHASE_COUNT] = {
+const char *Injector::HomingPhaseNames[HOMING_PHASE_COUNT] = {
 	"IDLE",
 	"RAPID_MOVE",
 	"BACK_OFF",
@@ -42,7 +42,7 @@ const char *HomingPhaseNames[HOMING_PHASE_COUNT] = {
 	"ERROR"
 };
 
-const char *FeedStateNames[FEED_STATE_COUNT] = {
+const char *Injector::FeedStateNames[FEED_STATE_COUNT] = {
 	"FEED_NONE",
 	"FEED_STANDBY",
 	"FEED_INJECT_STARTING",
@@ -59,7 +59,7 @@ const char *FeedStateNames[FEED_STATE_COUNT] = {
 	"FEED_OP_COMPLETED"
 };
 
-const char *ErrorStateNames[ERROR_STATE_COUNT] = {
+const char *Injector::ErrorStateNames[ERROR_STATE_COUNT] = {
 	"ERROR_NONE",
 	"ERROR_MANUAL_ABORT",
 	"ERROR_TORQUE_ABORT",
@@ -88,6 +88,7 @@ void Injector::reset() {
 	homingCartridgeDone = false;
 	feedingDone = false;
 	jogDone = false;
+	homingPinchDone = false;
 	homingStartTime = 0;
 	
 	//--- Ethernet Variables ---//
@@ -98,12 +99,12 @@ void Injector::reset() {
 	// Motor Variables
 	injectorMotorsTorqueLimit	= 2.0f;   // Default overall limit, overridden by moveInjectorMotors's param
 	injectorMotorsTorqueOffset = -2.4f;  // Global offset, settable by USER_CMD_SET_TORQUE_OFFSET
+	smoothedTorqueValue0 = 0.0f;
 	smoothedTorqueValue1 = 0.0f;
 	smoothedTorqueValue2 = 0.0f;
-	smoothedTorqueValue3 = 0.0f;
+	firstTorqueReading0 = true;
 	firstTorqueReading1 = true;
 	firstTorqueReading2 = true;
-	firstTorqueReading3 = true;
 	motorsAreEnabled = false;
 	pulsesPerRev = 800;
 	machineStepCounter = 0;

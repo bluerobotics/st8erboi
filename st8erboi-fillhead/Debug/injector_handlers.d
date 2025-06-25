@@ -1,6 +1,7 @@
-main.d main.o: .././main.cpp .././fillhead.h \
- ../../libClearCore/inc/ClearCore.h ../../libClearCore/inc/AdcManager.h \
- ../../libClearCore/inc/IirFilter.h ../../libClearCore/inc/SysTiming.h \
+injector_handlers.d injector_handlers.o: .././injector_handlers.cpp \
+ .././injector.h ../../libClearCore/inc/ClearCore.h \
+ ../../libClearCore/inc/AdcManager.h ../../libClearCore/inc/IirFilter.h \
+ ../../libClearCore/inc/SysTiming.h \
  ../../libClearCore/inc/CcioBoardManager.h \
  ../../libClearCore/inc/CcioPin.h \
  C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include/sam.h \
@@ -162,7 +163,7 @@ main.d main.o: .././main.cpp .././fillhead.h \
  ../../libClearCore/inc/XBeeDriver.h ../../libClearCore/inc/EthernetUdp.h \
  ../../libClearCore/inc/IpAddress.h
 
-.././fillhead.h:
+.././injector.h:
 
 ../../libClearCore/inc/ClearCore.h:
 

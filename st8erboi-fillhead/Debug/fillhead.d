@@ -1,4 +1,4 @@
-main.d main.o: .././main.cpp .././fillhead.h \
+fillhead.d fillhead.o: .././fillhead.cpp .././fillhead.h \
  ../../libClearCore/inc/ClearCore.h ../../libClearCore/inc/AdcManager.h \
  ../../libClearCore/inc/IirFilter.h ../../libClearCore/inc/SysTiming.h \
  ../../libClearCore/inc/CcioBoardManager.h \

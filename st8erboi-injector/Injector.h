@@ -40,16 +40,20 @@
 #define USER_CMD_STR_JOG_MOVE						"JOG_MOVE "
 #define USER_CMD_STR_MACHINE_HOME_MOVE				"MACHINE_HOME_MOVE "
 #define USER_CMD_STR_CARTRIDGE_HOME_MOVE			"CARTRIDGE_HOME_MOVE "
-#define USER_CMD_STR_PINCH_HOME_MOVE				"PINCH_HOME_MOVE "
+#define USER_CMD_STR_PINCH_HOME_MOVE				"PINCH_HOME_MOVE"
 #define USER_CMD_STR_INJECT_MOVE					"INJECT_MOVE "
 #define USER_CMD_STR_PURGE_MOVE						"PURGE_MOVE "
 #define USER_CMD_STR_PINCH_OPEN						"PINCH_OPEN"
 #define USER_CMD_STR_PINCH_CLOSE					"PINCH_CLOSE"
+#define USER_CMD_STR_PINCH_JOG_MOVE				    "PINCH_JOG_MOVE "
+#define USER_CMD_STR_ENABLE_PINCH					"ENABLE_PINCH"
+#define USER_CMD_STR_DISABLE_PINCH					"DISABLE_PINCH"
 #define USER_CMD_STR_MOVE_TO_CARTRIDGE_HOME			"MOVE_TO_CARTRIDGE_HOME"
 #define USER_CMD_STR_MOVE_TO_CARTRIDGE_RETRACT		"MOVE_TO_CARTRIDGE_RETRACT "
 #define USER_CMD_STR_PAUSE_INJECTION				"PAUSE_INJECTION"
 #define USER_CMD_STR_RESUME_INJECTION				"RESUME_INJECTION"
 #define USER_CMD_STR_CANCEL_INJECTION				"CANCEL_INJECTION"
+#define TELEM_PREFIX_GUI "INJ_TELEM_GUI:"
 
 #define EWMA_ALPHA 0.2f
 #define TORQUE_SENTINEL_INVALID_VALUE -9999.0f
@@ -143,6 +147,9 @@ typedef enum {
 	USER_CMD_PINCH_HOME_MOVE,
 	USER_CMD_PINCH_OPEN,
 	USER_CMD_PINCH_CLOSE,
+	USER_CMD_PINCH_JOG_MOVE,
+	USER_CMD_ENABLE_PINCH,
+	USER_CMD_DISABLE_PINCH,
 	USER_CMD_HOME_X,
 	USER_CMD_HOME_Y,
 	USER_CMD_HOME_Z,
@@ -186,6 +193,7 @@ class Injector {
 	//--- System Flags ---//
 	bool homingMachineDone;
 	bool homingCartridgeDone;
+	bool homingPinchDone;
 	bool feedingDone;
 	bool jogDone;
 	bool pinchPosition; // 0 = open, 1 = close
@@ -196,12 +204,12 @@ class Injector {
 	int accelerationLimit;
 	float injectorMotorsTorqueLimit;    
 	float injectorMotorsTorqueOffset;
+	float smoothedTorqueValue0;
 	float smoothedTorqueValue1;
 	float smoothedTorqueValue2;
-	float smoothedTorqueValue3;
+	bool firstTorqueReading0;
 	bool firstTorqueReading1;
 	bool firstTorqueReading2;
-	bool firstTorqueReading3;
 	bool motorsAreEnabled;
 	uint32_t pulsesPerRev;
 	int32_t machineStepCounter;
@@ -303,14 +311,17 @@ class Injector {
 
 	//--- Pinch Valve ---//
 	void handlePinchHomeMove(void);
+	void handlePinchJogMove(const char *msg);
 	void handlePinchOpen(void);
 	void handlePinchClose(void);
+	void handleEnablePinch(void);     // <-- ADD THIS
+    void handleDisablePinch(void);    // <-- ADD THIS
 	
-	const char *MainStateNames[MAIN_STATE_COUNT];
-	const char *HomingStateNames[HOMING_STATE_COUNT];
-	const char *HomingPhaseNames[HOMING_PHASE_COUNT];
-	const char *FeedStateNames[FEED_STATE_COUNT];
-	const char *ErrorStateNames[ERROR_STATE_COUNT];
+	static const char *MainStateNames[MAIN_STATE_COUNT];
+	static const char *HomingStateNames[HOMING_STATE_COUNT];
+	static const char *HomingPhaseNames[HOMING_PHASE_COUNT];
+	static const char *FeedStateNames[FEED_STATE_COUNT];
+	static const char *ErrorStateNames[ERROR_STATE_COUNT];
 
 	const char* mainStateStr() const;
 	const char* homingStateStr() const;

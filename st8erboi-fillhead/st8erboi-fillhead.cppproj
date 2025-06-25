@@ -40,23 +40,22 @@
         </dependencies>
       </framework-data>
     </AsfFrameworkConfig>
-    <avrtool>custom</avrtool>
-    <avrtoolserialnumber>
-    </avrtoolserialnumber>
+    <avrtool>com.atmel.avrdbg.tool.atmelice</avrtool>
+    <avrtoolserialnumber>J42700081739</avrtoolserialnumber>
     <avrdeviceexpectedsignature>0x61830303</avrdeviceexpectedsignature>
     <avrtoolinterface>SWD</avrtoolinterface>
     <com_atmel_avrdbg_tool_atmelice>
       <ToolOptions>
         <InterfaceProperties>
-          <SwdClock>0</SwdClock>
+          <SwdClock>2000001</SwdClock>
         </InterfaceProperties>
         <InterfaceName>SWD</InterfaceName>
       </ToolOptions>
       <ToolType>com.atmel.avrdbg.tool.atmelice</ToolType>
-      <ToolNumber>J41800072707</ToolNumber>
+      <ToolNumber>J42700081739</ToolNumber>
       <ToolName>Atmel-ICE</ToolName>
     </com_atmel_avrdbg_tool_atmelice>
-    <avrtoolinterfaceclock>0</avrtoolinterfaceclock>
+    <avrtoolinterfaceclock>2000001</avrtoolinterfaceclock>
     <custom>
       <ToolOptions xmlns="">
         <InterfaceProperties>
@@ -243,31 +242,16 @@
     <PostBuildEvent>"$(SolutionDir)\..\Tools\uf2-builder\Release\uf2-builder.exe" "$(OutputDirectory)\$(OutputFileName).bin" "$(OutputDirectory)\$(OutputFileName).uf2"</PostBuildEvent>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="InjectorHandlers.cpp">
+    <Compile Include="fillhead_handlers.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="InjectorHandlers.h">
+    <Compile Include="fillhead_motors.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="InjectorMessages.cpp">
+    <Compile Include="fillhead_comms.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="InjectorMessages.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="InjectorMotors.cpp">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="InjectorMotors.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="Ethernet.cpp">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="Ethernet.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="InjectorStates.cpp">
+    <Compile Include="fillhead.cpp">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="Device_Startup\flash_with_bootloader.ld">
@@ -276,7 +260,7 @@
     <Compile Include="Device_Startup\startup_same53.c">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="InjectorStates.h">
+    <Compile Include="fillhead.h">
       <SubType>compile</SubType>
     </Compile>
     <None Include="Device_Startup\flash_without_bootloader.ld">
