@@ -1,60 +1,58 @@
 #include "fillhead.h"
 
-// This function is now safe. It sends to the destination configured once
-// in handleMessage, without trying to reconnect.
+// --- REPLACED FUNCTION ---
+// Now sends status updates to both the GUI and the connected peer.
 void Fillhead::sendStatus(const char* statusType, const char* message) {
 	char msg[100];
 	snprintf(msg, sizeof(msg), "%s%s", statusType, message);
 	
 	if (guiDiscovered) {
-		// This is required before every send with this library.
-		Udp.Connect(guiIp, guiPort); 
+		Udp.Connect(guiIp, guiPort);
 		Udp.PacketWrite(msg);
 		Udp.PacketSend();
 	}
+
+    if (peerDiscovered) {
+        Udp.Connect(peerIp, LOCAL_PORT); 
+        Udp.PacketWrite(msg);
+        Udp.PacketSend();
+    }
 }
 
-// --- REPLACED FUNCTION ---
-// This function now sends position data in millimeters by converting the raw step count.
 void Fillhead::sendGuiTelemetry() {
 	if (!guiDiscovered) return;
 	
-	// This function now uses the abbreviated key format to create a smaller,
-	// more efficient telemetry packet with position in millimeters.
 	snprintf(telemetryBuffer, sizeof(telemetryBuffer),
 	    "%s,s:%s,"
-	    "p0:%.2f,t0:%.2f,e0:%d,h0:%d,"  // p0 is now a float (%.2f) for mm
-	    "p1:%.2f,t1:%.2f,e1:%d,h1:%d,"  // p1 is now a float (%.2f) for mm
-	    "p2:%.2f,t2:%.2f,e2:%d,h2:%d,"  // p2 is now a float (%.2f) for mm
-	    "p3:%.2f,t3:%.2f,e3:%d,h3:%d",  // p3 is now a float (%.2f) for mm
+	    "p0:%.2f,t0:%.2f,e0:%d,h0:%d,"
+	    "p1:%.2f,t1:%.2f,e1:%d,h1:%d,"
+	    "p2:%.2f,t2:%.2f,e2:%d,h2:%d,"
+	    "p3:%.2f,t3:%.2f,e3:%d,h3:%d,"
+        "pd:%d,pip:%s", // <-- NEW FIELDS
 	    TELEM_PREFIX_GUI,
 	    stateToString(),
-	    // Convert steps to mm for each motor
 	    (float)MotorX.PositionRefCommanded() / STEPS_PER_MM_X,
 	    (MotorX.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorX, &smoothedTorqueM0, &firstTorqueReadM0) : 0.0f),
 	    (int)MotorX.StatusReg().bit.Enabled, (int)homedX,
-
 	    (float)MotorY1.PositionRefCommanded() / STEPS_PER_MM_Y,
 	    (MotorY1.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY1, &smoothedTorqueM1, &firstTorqueReadM1) : 0.0f),
 	    (int)MotorY1.StatusReg().bit.Enabled, (int)homedY1,
-
-	    (float)MotorY2.PositionRefCommanded() / STEPS_PER_MM_Y, // Y2 uses the same conversion as Y1
+	    (float)MotorY2.PositionRefCommanded() / STEPS_PER_MM_Y,
 	    (MotorY2.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY2, &smoothedTorqueM2, &firstTorqueReadM2) : 0.0f),
 	    (int)MotorY2.StatusReg().bit.Enabled, (int)homedY2,
-
 	    (float)MotorZ.PositionRefCommanded() / STEPS_PER_MM_Z,
 	    (MotorZ.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorZ, &smoothedTorqueM3, &firstTorqueReadM3) : 0.0f),
-	    (int)MotorZ.StatusReg().bit.Enabled, (int)homedZ);
+	    (int)MotorZ.StatusReg().bit.Enabled, (int)homedZ,
+        (int)peerDiscovered, peerIp.StringValue()); // <-- NEW VALUES
 
-	// This is required before every send with this library.
 	Udp.Connect(guiIp, guiPort);
 	Udp.PacketWrite(telemetryBuffer);
 	Udp.PacketSend();
 }
 
-
+// --- REPLACED FUNCTION ---
+// Removed the line that overwrites the GUI's IP on every message.
 void Fillhead::handleMessage(const char* msg) {
-	guiIp = Udp.RemoteIp();
 	FillheadCommand cmd = parseCommand(msg);
 	switch(cmd) {
 		case CMD_SET_PEER_IP: handleSetPeerIp(msg); break;
@@ -71,7 +69,6 @@ void Fillhead::handleMessage(const char* msg) {
 		    handleHome(msg);
 		    break;
 		case CMD_REQUEST_TELEM:
-			// When the GUI asks for telemetry, send exactly one packet back.
 			sendGuiTelemetry();
 			break;
 		case CMD_DISCOVER: {
@@ -80,20 +77,16 @@ void Fillhead::handleMessage(const char* msg) {
 				guiIp = Udp.RemoteIp();
 				guiPort = atoi(portStr + 5);
 				guiDiscovered = true;
-				// Send the confirmation message. The sendStatus function
-				// will handle the connect call itself.
 				sendStatus("DISCOVERY: ", "FILLHEAD DISCOVERED");
 			}
 			break;
 		}
 		case CMD_UNKNOWN:
 		default:
-		    // be silent
 		    break;
 	}
 }
 
-// No changes to processUdp, but included for completeness of the file.
 void Fillhead::processUdp() {
 	if (Udp.PacketParse()) {
 		int32_t bytesRead = Udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
@@ -104,31 +97,12 @@ void Fillhead::processUdp() {
 	}
 }
 
-// NOTE: This function still has the issue of "stealing" the UDP connection from the GUI.
-// This is a larger architectural issue to solve later if needed. The primary GUI communication is now fixed.
+// NOTE: sendInternalTelemetry is now effectively replaced by the upgraded sendStatus.
+// This function can be deprecated or removed if no longer needed.
 void Fillhead::sendInternalTelemetry() {
-	if (!peerDiscovered) return;
-	
-    // To send to the peer, we must temporarily change the UDP destination
-	Udp.Connect(peerIp, LOCAL_PORT);
-
-	char msg[200];
-	snprintf(msg, sizeof(msg), "%s,state:%s,pos_m0:%ld,pos_m1:%ld,pos_m2:%ld,pos_m3:%ld,moving:%d",
-	"FH_TELEM_INT:",
-	stateToString(),
-	MotorX.PositionRefCommanded(),
-	MotorY1.PositionRefCommanded(),
-	MotorY2.PositionRefCommanded(),
-	MotorZ.PositionRefCommanded(),
-	isMoving() ? 1 : 0);
-	
-	Udp.PacketWrite(msg);
-	Udp.PacketSend();
-
+	// This function is no longer the primary way to send peer status.
 }
 
-
-// These functions are unchanged but are part of a complete "comms" file.
 void Fillhead::setupUsbSerial(void) {
 	ConnectorUsb.Mode(Connector::USB_CDC);
 	ConnectorUsb.Speed(9600);

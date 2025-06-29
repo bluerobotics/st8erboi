@@ -168,6 +168,16 @@ def parse_injector_telemetry(msg, gui_refs):
         if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
             f'{float(parts.get("dispensed_ml", 0.0)):.2f} ml')
 
+        # Parse Injector Peer Status
+        if 'peer_status_injector_var' in gui_refs:
+            # Assumes the injector firmware will use these keys: 'peer_disc' and 'peer_ip'
+            is_peer_discovered = parts.get("peer_disc", "0") == "1"
+            peer_ip = parts.get("peer_ip", "0.0.0.0")
+            if is_peer_discovered:
+                gui_refs['peer_status_injector_var'].set(f"Peer: {peer_ip}")
+            else:
+                gui_refs['peer_status_injector_var'].set("Peer: Not Connected")
+
     except Exception as e:
         log_to_terminal(f"Injector telemetry parse error: {e}", gui_refs.get('terminal_cb'))
 
@@ -220,6 +230,15 @@ def parse_fillhead_telemetry(msg, gui_refs):
                 if history_key in gui_refs:
                     gui_refs[history_key] = gui_refs[history_key][start_index:]
 
+        # Parse Fillhead Peer Status
+        if 'peer_status_fillhead_var' in gui_refs:
+            is_peer_discovered = parts.get("pd", "0") == "1"
+            peer_ip = parts.get("pip", "0.0.0.0")
+            if is_peer_discovered:
+                gui_refs['peer_status_fillhead_var'].set(f"Peer: {peer_ip}")
+            else:
+                gui_refs['peer_status_fillhead_var'].set("Peer: Not Connected")
+
     except Exception as e:
         log_to_terminal(f"Fillhead telemetry parse error: {e}", gui_refs.get('terminal_cb'))
 
@@ -244,14 +263,12 @@ def recv_loop(gui_refs):
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_injector_telemetry(msg, gui_refs)
-                # Let the timed loop in main.py handle polling
 
             elif msg.startswith("FH_TELEM_GUI:"):
                 handle_connection("fillhead", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_fillhead_telemetry(msg, gui_refs)
-                # Let the timed loop in main.py handle polling
 
             elif msg.startswith(("INFO:", "DONE:", "ERROR:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)

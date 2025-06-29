@@ -10,11 +10,35 @@ def create_shared_widgets(root, command_funcs):
     top_frame = tk.Frame(root, bg="#21232b")
     top_frame.pack(fill=tk.X, padx=10, pady=5)
 
+    # --- Main Status Frame ---
+    status_frame = tk.Frame(top_frame, bg="#21232b")
+    status_frame.pack(side=tk.LEFT, anchor='n')
+
     status_var_injector = tk.StringVar(value="🔌 Injector Disconnected")
     status_var_fillhead = tk.StringVar(value="🔌 Fillhead Disconnected")
-    tk.Label(top_frame, textvariable=status_var_injector, bg="#21232b", fg="white").pack(side=tk.LEFT)
-    tk.Label(top_frame, text="  |  ", bg="#21232b", fg="white").pack(side=tk.LEFT)
-    tk.Label(top_frame, textvariable=status_var_fillhead, bg="#21232b", fg="white").pack(side=tk.LEFT)
+
+    tk.Label(status_frame, textvariable=status_var_injector, bg="#21232b", fg="white",
+             font=("Segoe UI", 9, "bold")).pack(side=tk.TOP, anchor='w')
+    tk.Label(status_frame, textvariable=status_var_fillhead, bg="#21232b", fg="white",
+             font=("Segoe UI", 9, "bold")).pack(side=tk.TOP, anchor='w')
+
+    # --- Peer Status Frame ---
+    peer_status_frame = tk.Frame(top_frame, bg="#21232b")
+    peer_status_frame.pack(side=tk.LEFT, anchor='n', padx=20)
+
+    peer_status_injector = tk.StringVar(value="Peer: ---")
+    peer_status_fillhead = tk.StringVar(value="Peer: ---")
+
+    tk.Label(peer_status_frame, text="Injector Peer Status:", bg="#21232b", fg="white").pack(side=tk.TOP, anchor='w')
+    tk.Label(peer_status_frame, textvariable=peer_status_injector, bg="#21232b", fg="#aaddff").pack(side=tk.TOP,
+                                                                                                    anchor='w')
+
+    # --- CORRECTED LINE ---
+    # Moved the pady=(5, 0) from the Label constructor to the pack() method.
+    tk.Label(peer_status_frame, text="Fillhead Peer Status:", bg="#21232b", fg="white").pack(side=tk.TOP, anchor='w',
+                                                                                             pady=(5, 0))
+    tk.Label(peer_status_frame, textvariable=peer_status_fillhead, bg="#21232b", fg="#aaddff").pack(side=tk.TOP,
+                                                                                                    anchor='w')
 
     action_buttons_frame = tk.Frame(top_frame, bg="#21232b")
     action_buttons_frame.pack(side=tk.RIGHT, padx=10)
@@ -52,6 +76,8 @@ def create_shared_widgets(root, command_funcs):
     return {
         'status_var_injector': status_var_injector,
         'status_var_fillhead': status_var_fillhead,
+        'peer_status_injector_var': peer_status_injector,
+        'peer_status_fillhead_var': peer_status_fillhead,
         'terminal': terminal,
         'terminal_cb': lambda msg: terminal.insert(tk.END, msg) and terminal.see(tk.END),
         'shared_bottom_frame': bottom_frame,
