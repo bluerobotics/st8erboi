@@ -198,21 +198,33 @@ def parse_fillhead_telemetry(msg, gui_refs):
             if f'fh_enabled_m{i}_var' in gui_refs: gui_refs[f'fh_enabled_m{i}_var'].set(enabled)
             if f'fh_homed_m{i}_var' in gui_refs: gui_refs[f'fh_homed_m{i}_var'].set(homed)
 
+        # Append new data
+        current_time = time.time()
+        gui_refs.get('fillhead_torque_times', []).append(current_time)
         for i in range(4):
             gui_refs.get(f'fillhead_torque_history{i}', []).append(torque_floats[i])
-        gui_refs.get('fillhead_torque_times', []).append(time.time())
 
-        while len(gui_refs['fillhead_torque_times']) > TORQUE_HISTORY_LENGTH:
-            gui_refs['fillhead_torque_times'].pop(0)
+        # --- NEW TIME-BASED PRUNING LOGIC ---
+        # This replaces the old logic that capped the list at 200 points.
+        # We will keep a slightly larger buffer (e.g., 15 seconds) than the plot window.
+        cutoff_time = current_time - 15
+
+        # Find the index of the first data point that is recent enough to keep
+        start_index = 0
+        timestamps = gui_refs['fillhead_torque_times']
+        for i, ts in enumerate(timestamps):
+            if ts >= cutoff_time:
+                start_index = i
+                break
+
+        # If we found old data points to prune (i.e., start_index > 0)
+        if start_index > 0:
+            # Slice the lists to remove all data older than the cutoff
+            gui_refs['fillhead_torque_times'] = timestamps[start_index:]
             for i in range(4):
-                if gui_refs.get(f'fillhead_torque_history{i}'):
-                    gui_refs[f'fillhead_torque_history{i}'].pop(0)
-
-        if 'update_fillhead_torque_plot' in gui_refs and callable(gui_refs['update_fillhead_torque_plot']):
-            gui_refs['update_fillhead_torque_plot']()
-
-        if 'update_fillhead_viz' in gui_refs and callable(gui_refs['update_fillhead_viz']):
-            gui_refs['update_fillhead_viz']()
+                history_key = f'fillhead_torque_history{i}'
+                if history_key in gui_refs:
+                    gui_refs[history_key] = gui_refs[history_key][start_index:]
 
     except Exception as e:
         log_to_terminal(f"Fillhead telemetry parse error: {e}", gui_refs.get('terminal_cb'))
