@@ -51,6 +51,13 @@ void Fillhead::handleMove(const char* msg) {
 		default: break;
 	}
 
+    // --- FIX: Reset the torque filter before starting a new operation ---
+    firstTorqueReadM0 = true;
+    firstTorqueReadM1 = true;
+    firstTorqueReadM2 = true;
+    firstTorqueReadM3 = true;
+    // --------------------------------------------------------------------
+
 	state = STATE_STARTING_MOVE;
 	activeMotor1 = nullptr;
 	activeMotor2 = nullptr;
@@ -73,33 +80,51 @@ void Fillhead::handleHome(const char* msg) {
 	}
 	
 	int torque, rapid_sps, touch_sps;
+    long distance_steps;
 	FillheadCommand cmd = parseCommand(msg);
 	const char* args = strchr(msg, ' ');
 
-	if (!args || sscanf(args, "%d %d %d", &torque, &rapid_sps, &touch_sps) != 3) {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format");
+	if (!args || sscanf(args, "%d %d %d %ld", &torque, &rapid_sps, &touch_sps, &distance_steps) != 4) {
+		sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format. Expected: <torque> <rapid_sps> <touch_sps> <distance_steps>");
 		return;
 	}
 	
-	switch(cmd) {
-		case CMD_HOME_X: sendStatus(STATUS_PREFIX_INFO, "HOME_X Received"); break;
-		case CMD_HOME_Y: sendStatus(STATUS_PREFIX_INFO, "HOME_Y Received"); break;
-		case CMD_HOME_Z: sendStatus(STATUS_PREFIX_INFO, "HOME_Z Received"); break;
-		default: return;
-	}
+    // Reset the torque filter before starting the new operation.
+    firstTorqueReadM0 = true;
+    firstTorqueReadM1 = true;
+    firstTorqueReadM2 = true;
+    firstTorqueReadM3 = true;
 
 	state = STATE_HOMING;
 	homingPhase = HOMING_START;
 	homingTorque = torque;
 	homingRapidSps = rapid_sps;
 	homingTouchSps = touch_sps;
+    homingDistanceSteps = distance_steps;
 	activeMotor1 = nullptr;
 	activeMotor2 = nullptr;
 
+    // --- CORRECTED LOGIC ---
+    // A single switch statement now handles sending the status AND setting the
+    // active motors. This prevents the state from being accidentally reset.
 	switch(cmd) {
-		case CMD_HOME_X: activeMotor1 = &MotorX; break;
-		case CMD_HOME_Y: activeMotor1 = &MotorY1; activeMotor2 = &MotorY2; break;
-		case CMD_HOME_Z: activeMotor1 = &MotorZ; break;
-		default: state = STATE_STANDBY; return;
+		case CMD_HOME_X:
+            sendStatus(STATUS_PREFIX_INFO, "HOME_X Received");
+            activeMotor1 = &MotorX;
+            break;
+		case CMD_HOME_Y:
+            sendStatus(STATUS_PREFIX_INFO, "HOME_Y Received");
+            activeMotor1 = &MotorY1;
+            activeMotor2 = &MotorY2;
+            break;
+		case CMD_HOME_Z:
+            sendStatus(STATUS_PREFIX_INFO, "HOME_Z Received");
+            activeMotor1 = &MotorZ;
+            break;
+		default:
+            // If the command is somehow unknown, revert to standby and exit.
+            sendStatus(STATUS_PREFIX_INFO, "UNKNOWN HOME CMD");
+			state = STATE_STANDBY;
+            return;
 	}
 }

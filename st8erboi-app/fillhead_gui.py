@@ -62,6 +62,7 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     fh_home_torque_var = tk.StringVar(value="20")
     fh_home_rapid_vel_var = tk.StringVar(value="8000")
     fh_home_touch_vel_var = tk.StringVar(value="2000")
+    fh_home_distance_var = tk.StringVar(value="200000")
 
     home_params_frame = tk.Frame(fh_home_frame, bg="#2a2d3b")
     home_params_frame.pack()
@@ -73,12 +74,18 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     tk.Label(home_params_frame, text="Touch Vel (sps):", bg="#2a2d3b", fg="white").grid(row=2, column=0, sticky="e",
                                                                                         pady=1)
     ttk.Entry(home_params_frame, textvariable=fh_home_touch_vel_var, width=8).grid(row=2, column=1, sticky="w", pady=1)
+    tk.Label(home_params_frame, text="Distance (steps):", bg="#2a2d3b", fg="white").grid(row=3, column=0, sticky="e",
+                                                                                         pady=1)
+    ttk.Entry(home_params_frame, textvariable=fh_home_distance_var, width=8).grid(row=3, column=1, sticky="w", pady=1)
 
     home_btn_frame = tk.Frame(fh_home_frame, bg="#2a2d3b")
     home_btn_frame.pack(pady=(5, 0))
 
-    home_cmd_str = lambda \
-        axis: f"{axis} {fh_home_torque_var.get()} {fh_home_rapid_vel_var.get()} {fh_home_touch_vel_var.get()}"
+    home_cmd_str = lambda axis: (
+        f"{axis} {fh_home_torque_var.get()} {fh_home_rapid_vel_var.get()} "
+        f"{fh_home_touch_vel_var.get()} {fh_home_distance_var.get()}"
+    )
+
     ttk.Button(home_btn_frame, text="Home X", command=lambda: send_fillhead_cmd(home_cmd_str("HOME_X"))).pack(
         side=tk.LEFT, expand=True, fill=tk.X)
     ttk.Button(home_btn_frame, text="Home Y", command=lambda: send_fillhead_cmd(home_cmd_str("HOME_Y"))).pack(
@@ -106,13 +113,13 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     ax_xy.set_facecolor('#1b1e2b')
     ax_xy.set_xlabel("X (mm)", color='white')
     ax_xy.set_ylabel("Y (mm)", color='white')
-    ax_xy.set_xlim(-100, 100)
+    ax_xy.set_xlim(-100, 100);
     ax_xy.set_ylim(-100, 100)
-    ax_xy.tick_params(colors='white')
-    ax_xy.spines['bottom'].set_color('white');
-    ax_xy.spines['left'].set_color('white')
-    ax_xy.spines['top'].set_visible(False);
-    ax_xy.spines['right'].set_visible(False)
+    ax_xy.tick_params(colors='white');
+    ax_xy.spines['bottom'].set_color('white')
+    ax_xy.spines['left'].set_color('white');
+    ax_xy.spines['top'].set_visible(False)
+    ax_xy.spines['right'].set_visible(False);
     ax_xy.grid(True, linestyle='--', alpha=0.3)
 
     z_bar = ax_z.bar(['Z'], [0], color='#ff8888')[0]
@@ -131,12 +138,7 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     canvas_widget = canvas.get_tk_widget()
     canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    ui_elements.update({
-        'fh_pos_viz_canvas': canvas,
-        'fh_xy_marker': xy_pos_marker,
-        'fh_z_bar': z_bar,
-        'fh_ax_z': ax_z
-    })
+    ui_elements.update({'fh_pos_viz_canvas': canvas, 'fh_xy_marker': xy_pos_marker, 'fh_z_bar': z_bar, 'fh_ax_z': ax_z})
 
     fh_status_frame = tk.Frame(middle_frame, bg="#21232b")
     fh_status_frame.pack(side=tk.LEFT, fill=tk.Y, expand=False, padx=5, pady=5, anchor='n')
@@ -148,39 +150,41 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     for i, name in enumerate(motor_map):
         frame = tk.LabelFrame(fh_status_frame, text=name, bg="#2a2d3b", fg="white", padx=5, pady=2)
         frame.pack(fill=tk.X, pady=2, anchor='n')
-        pos_var = tk.StringVar(value="0");
-        ui_elements[f'fh_pos_m{i}_var'] = pos_var
-        torque_var = tk.StringVar(value="0.0 %");
-        ui_elements[f'fh_torque_m{i}_var'] = torque_var
-        enabled_var = tk.StringVar(value="Disabled");
-        ui_elements[f'fh_enabled_m{i}_var'] = enabled_var
-        homed_var = tk.StringVar(value="Not Homed");
-        ui_elements[f'fh_homed_m{i}_var'] = homed_var
+        ui_elements[f'fh_pos_m{i}_var'] = tk.StringVar(value="0")
+        ui_elements[f'fh_torque_m{i}_var'] = tk.StringVar(value="0.0 %")
+        ui_elements[f'fh_enabled_m{i}_var'] = tk.StringVar(value="Disabled")
+        ui_elements[f'fh_homed_m{i}_var'] = tk.StringVar(value="Not Homed")
         frame.grid_columnconfigure(1, weight=1)
         tk.Label(frame, text="Position:", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="w")
-        tk.Label(frame, textvariable=pos_var, bg="#2a2d3b", fg="cyan").grid(row=0, column=1, sticky="w")
+        tk.Label(frame, textvariable=ui_elements[f'fh_pos_m{i}_var'], bg="#2a2d3b", fg="cyan").grid(row=0, column=1,
+                                                                                                    sticky="w")
         tk.Label(frame, text="Torque:", bg="#2a2d3b", fg="white").grid(row=1, column=0, sticky="w")
-        tk.Label(frame, textvariable=torque_var, bg="#2a2d3b", fg="cyan").grid(row=1, column=1, sticky="w")
+        tk.Label(frame, textvariable=ui_elements[f'fh_torque_m{i}_var'], bg="#2a2d3b", fg="cyan").grid(row=1, column=1,
+                                                                                                       sticky="w")
         tk.Label(frame, text="Enabled:", bg="#2a2d3b", fg="white").grid(row=2, column=0, sticky="w")
-        tk.Label(frame, textvariable=enabled_var, bg="#2a2d3b", fg="lightgreen").grid(row=2, column=1, sticky="w")
+        tk.Label(frame, textvariable=ui_elements[f'fh_enabled_m{i}_var'], bg="#2a2d3b", fg="lightgreen").grid(row=2,
+                                                                                                              column=1,
+                                                                                                              sticky="w")
         tk.Label(frame, text="Homed:", bg="#2a2d3b", fg="white").grid(row=3, column=0, sticky="w")
-        tk.Label(frame, textvariable=homed_var, bg="#2a2d3b", fg="lightgreen").grid(row=3, column=1, sticky="w")
+        tk.Label(frame, textvariable=ui_elements[f'fh_homed_m{i}_var'], bg="#2a2d3b", fg="lightgreen").grid(row=3,
+                                                                                                            column=1,
+                                                                                                            sticky="w")
 
     fig_torque, ax_torque = plt.subplots(figsize=(7, 2.5), facecolor='#21232b')
     colors = ['#00bfff', 'yellow', '#ffed72', '#ff8888']
     lines = [ax_torque.plot([], [], color=c, label=f"M{i}")[0] for i, c in enumerate(colors)]
-    ax_torque.set_title("Fillhead Torque", color='white')
-    ax_torque.set_facecolor('#1b1e2b');
-    ax_torque.tick_params(colors='white')
-    ax_torque.spines['bottom'].set_color('white');
-    ax_torque.spines['left'].set_color('white')
-    ax_torque.spines['top'].set_visible(False);
-    ax_torque.spines['right'].set_visible(False)
-    ax_torque.set_ylabel("Torque (%)", color='white');
-    ax_torque.set_ylim(-10, 110)
+    ax_torque.set_title("Fillhead Torque", color='white');
+    ax_torque.set_facecolor('#1b1e2b')
+    ax_torque.tick_params(colors='white');
+    ax_torque.spines['bottom'].set_color('white')
+    ax_torque.spines['left'].set_color('white');
+    ax_torque.spines['top'].set_visible(False)
+    ax_torque.spines['right'].set_visible(False);
+    ax_torque.set_ylabel("Torque (%)", color='white')
+    ax_torque.set_ylim(-10, 110);
     ax_torque.legend(facecolor='#21232b', edgecolor='white', labelcolor='white')
     canvas_torque = FigureCanvasTkAgg(fig_torque, master=plot_frame)
-    canvas_widget_torque = canvas_torque.get_tk_widget()
+    canvas_widget_torque = canvas_torque.get_tk_widget();
     canvas_widget_torque.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     ui_elements['fillhead_torque_plot_canvas'] = canvas_torque

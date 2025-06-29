@@ -9,50 +9,36 @@ Fillhead fillhead;
     and stepping through the homing sequence.
 */
 void Fillhead::updateState() {
-    switch(state) {
+    switch (state) {
         case STATE_STANDBY:
             // Do nothing while in standby
             break;
 
-        // NEW: This case was added to solve the race condition.
-        // It waits for the motor to physically start moving before transitioning
-        // to the main STATE_MOVING where torque is monitored.
         case STATE_STARTING_MOVE: {
             if (isMoving()) {
-                // The motor's "StepsActive" bit is now high, confirming the move has started.
-                // We can now safely transition to the monitoring state.
                 state = STATE_MOVING;
             }
-            // Note: A timeout could be added here to handle cases where a
-            // move is commanded but fails to start for some reason.
             break;
         }
 
         case STATE_MOVING: {
+            // This is the known-good logic that works for jogging.
             bool torque_exceeded = false;
-            // Check motor 1 for torque limit
-            if (activeMotor1) {
-                if (checkTorqueLimit(activeMotor1)) {
-                    torque_exceeded = true;
-                }
+            if (activeMotor1 && checkTorqueLimit(activeMotor1)) {
+                torque_exceeded = true;
             }
-            // Check motor 2 for torque limit if motor 1 was okay
-            if (!torque_exceeded && activeMotor2) {
-                if (checkTorqueLimit(activeMotor2)) {
-                    torque_exceeded = true;
-                }
+            // Ensure both motors are checked every time, no short-circuiting.
+            if (activeMotor2 && checkTorqueLimit(activeMotor2)) {
+                torque_exceeded = true;
             }
 
-            // If torque was exceeded on either motor, abort the move
             if (torque_exceeded) {
                 abortAllMoves();
                 sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit");
                 state = STATE_STANDBY;
                 activeMotor1 = nullptr;
                 activeMotor2 = nullptr;
-            }
-            // Otherwise, if the move has completed normally (no longer moving)
-            else if (!isMoving()) {
+            } else if (!isMoving()) {
                 sendStatus(STATUS_PREFIX_DONE, "MOVE");
                 state = STATE_STANDBY;
                 activeMotor1 = nullptr;
@@ -62,58 +48,86 @@ void Fillhead::updateState() {
         }
 
         case STATE_HOMING: {
-            // This logic remains the same.
-            bool torque1 = checkTorqueLimit(activeMotor1);
-            bool torque2 = checkTorqueLimit(activeMotor2);
-
-            switch(homingPhase) {
+            switch (homingPhase) {
                 case HOMING_START:
                     torqueLimit = (float)homingTorque;
                     homingBackoffSteps = 400;
-                    if (activeMotor1) moveAxis(activeMotor1, -200000, homingRapidSps, 200000, homingTorque);
-                    if (activeMotor2) moveAxis(activeMotor2, -200000, homingRapidSps, 200000, homingTorque);
-                    homingPhase = HOMING_RAPID;
+                    if (activeMotor1) moveAxis(activeMotor1, -homingDistanceSteps, homingRapidSps, 200000, homingTorque);
+                    if (activeMotor2) moveAxis(activeMotor2, -homingDistanceSteps, homingRapidSps, 200000, homingTorque);
+
+                    // Transition to the specific wait state for the rapid move
+                    homingPhase = HOMING_WAIT_FOR_RAPID_START;
                     break;
 
-                case HOMING_RAPID:
-                    if (torque1 || torque2) {
+                case HOMING_WAIT_FOR_RAPID_START:
+                    if (isMoving()) {
+                        // The rapid move is confirmed to be active. Proceed.
+                        homingPhase = HOMING_RAPID;
+                    }
+                    break;
+
+                case HOMING_RAPID: { // Scoped for clarity
+                    bool torque_exceeded = false;
+                    if (activeMotor1 && checkTorqueLimit(activeMotor1)) torque_exceeded = true;
+                    if (activeMotor2 && checkTorqueLimit(activeMotor2)) torque_exceeded = true;
+
+                    if (torque_exceeded) {
                         abortAllMoves();
                         Delay_ms(50);
-                        if (activeMotor1) moveAxis(activeMotor1, homingBackoffSteps, homingTouchSps, 200000, 100);
+                        // Start the back-off move
+                        moveAxis(activeMotor1, homingBackoffSteps, homingTouchSps, 200000, 100);
                         if (activeMotor2) moveAxis(activeMotor2, homingBackoffSteps, homingTouchSps, 200000, 100);
                         homingPhase = HOMING_BACK_OFF;
                     } else if (!isMoving()) {
-                        sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Move completed without torque");
+                        sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Rapid move completed without torque");
                         state = STATE_STANDBY;
                         homingPhase = HOMING_IDLE;
                     }
                     break;
+                }
 
                 case HOMING_BACK_OFF:
+                    // This state now ONLY waits for the back-off move to complete.
                     if (!isMoving()) {
-                        if (activeMotor1) moveAxis(activeMotor1, -homingBackoffSteps * 2, homingTouchSps, 200000, homingTorque);
+                        // The back-off is done. Now, start the final touch-off move.
+                        moveAxis(activeMotor1, -homingBackoffSteps * 2, homingTouchSps, 200000, homingTorque);
                         if (activeMotor2) moveAxis(activeMotor2, -homingBackoffSteps * 2, homingTouchSps, 200000, homingTorque);
+
+                        // Transition to the new wait state for the touch-off move.
+                        homingPhase = HOMING_WAIT_FOR_TOUCH_START;
+                    }
+                    break;
+
+                case HOMING_WAIT_FOR_TOUCH_START:
+                    if (isMoving()) {
+                        // The touch-off move is confirmed to be active. Proceed to monitor it.
                         homingPhase = HOMING_TOUCH;
                     }
                     break;
 
-                case HOMING_TOUCH:
-                     if (torque1 || torque2) {
+                case HOMING_TOUCH: { // Scoped for clarity
+                    bool torque_exceeded = false;
+                    if (activeMotor1 && checkTorqueLimit(activeMotor1)) torque_exceeded = true;
+                    if (activeMotor2 && checkTorqueLimit(activeMotor2)) torque_exceeded = true;
+
+                    if (torque_exceeded) {
+                        // This is the successful homing condition
                         abortAllMoves();
                         homingPhase = HOMING_COMPLETE;
                     } else if (!isMoving()) {
+                        // This check is now reliable for the touch-off move.
                         sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Touch-off move completed without torque");
                         state = STATE_STANDBY;
                         homingPhase = HOMING_IDLE;
                     }
                     break;
+                }
 
                 case HOMING_COMPLETE:
                     if (!isMoving()) {
                         if (activeMotor1 == &MotorX) homedX = true;
                         if (activeMotor1 == &MotorY1) homedY1 = true;
                         if (activeMotor2 == &MotorY2) homedY2 = true;
-                        // MODIFIED: Corrected a typo here ("2homedZ" to "homedZ")
                         if (activeMotor1 == &MotorZ) homedZ = true;
 
                         if (activeMotor1) activeMotor1->PositionRefSet(0);
@@ -127,10 +141,9 @@ void Fillhead::updateState() {
                     }
                     break;
 
-                case HOMING_IDLE:
-                case HOMING_ERROR:
                 default:
                     state = STATE_STANDBY;
+                    homingPhase = HOMING_IDLE;
                     break;
             }
             break;
@@ -139,27 +152,26 @@ void Fillhead::updateState() {
 }
 
 void Fillhead::loop() {
-	// --- Fast Code ---
-	processUdp();
-	updateState();
+    // --- Fast Code ---
+    processUdp();
+    updateState();
 
-	// --- Slow Code ---
-	if (checkSlowCodeInterval()) {
-		//sendGuiTelemetry();
-	}
+    // --- Slow Code ---
+    if (checkSlowCodeInterval()) {
+        //sendGuiTelemetry();
+    }
 }
 
 /*
     Main application entry point.
 */
-
 int main(void) {
-	// Perform one-time setup
-	fillhead.setup();
+    // Perform one-time setup
+    fillhead.setup();
 
-	// Main non-blocking application loop
-	while (true) {
-		// Just call the main loop handler for our fillhead object.
-		fillhead.loop();
-	}
+    // Main non-blocking application loop
+    while (true) {
+        // Just call the main loop handler for our fillhead object.
+        fillhead.loop();
+    }
 }
