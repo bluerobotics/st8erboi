@@ -84,14 +84,7 @@ void Injector::handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp) {
 		ConnectorUsb.SendLine("Discovery Error: 'PORT=' NOT found in message. Cannot discover.");
 	}
 
-	ConnectorUsb.SendLine("Discovery: Attempting to send telemetry reply...");
-	ConnectorUsb.SendLine("Discovery: Called sendTelem.");
-
-	char replyMsg[500];
-	snprintf(replyMsg, sizeof(replyMsg),
-	"DISCOVERED: Set terminalPort=%u, terminalIp=%s, terminalDiscovered=true",
-	terminalPort, terminalIp.StringValue());
-	sendToPC(replyMsg);
+	sendToPC("DISCOVERY: INJECTOR DISCOVERED");
 }
 
 void Injector::checkUdpBuffer(void){
@@ -206,6 +199,7 @@ void Injector::sendTelem(void) {
 }
 
 UserCommand Injector::parseUserCommand(const char *msg) {
+	if (strcmp(msg, USER_CMD_STR_REQUEST_TELEM) == 0) return USER_CMD_REQUEST_TELEM; // ADD THIS LINE
 	if (strncmp(msg, USER_CMD_STR_DISCOVER_TELEM, strlen(USER_CMD_STR_DISCOVER_TELEM)) == 0) return USER_CMD_DISCOVER_TELEM;
 
 	if (strcmp(msg, USER_CMD_STR_ENABLE) == 0) return USER_CMD_ENABLE;
@@ -252,6 +246,7 @@ void Injector::handleMessage(const char *msg) {
 	UserCommand command = parseUserCommand(msg);
 
 	switch (command) {
+		case USER_CMD_REQUEST_TELEM:             sendTelem(); break;
 		case USER_CMD_DISCOVER_TELEM:            handleDiscoveryTelemPacket(msg, Udp.RemoteIp()); break;
 		case USER_CMD_ENABLE:                    handleEnable(); break;
 		case USER_CMD_DISABLE:                   handleDisable(); break;
@@ -283,13 +278,7 @@ void Injector::handleMessage(const char *msg) {
 
 		case USER_CMD_UNKNOWN:
 		default:
-			char unknownCmdMsg[128];
-			int msg_len = strlen(msg);
-			int max_len_to_copy = (sizeof(unknownCmdMsg) - strlen("Unknown cmd: ''") - 2);
-			if (max_len_to_copy < 0) max_len_to_copy = 0;
-			if (msg_len > max_len_to_copy) msg_len = max_len_to_copy;
-			snprintf(unknownCmdMsg, sizeof(unknownCmdMsg), "Unknown cmd: '%.*s'", msg_len, msg);
-			sendToPC(unknownCmdMsg);
+			// be silent
 			break;
 	}
 }

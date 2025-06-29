@@ -8,7 +8,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define USER_CMD_STR_DISCOVER_TELEM					"DISCOVER_TELEM"
+#define USER_CMD_STR_REQUEST_TELEM  "REQUEST_TELEM"
+#define USER_CMD_STR_DISCOVER_TELEM					"DISCOVER_INJECTOR"
 #define USER_CMD_STR_ENABLE							"ENABLE"
 #define USER_CMD_STR_DISABLE						"DISABLE"
 #define USER_CMD_STR_ABORT							"ABORT"
@@ -110,6 +111,7 @@ enum ErrorState : uint8_t {
 //--- User Command Enum---//
 typedef enum {
 	USER_CMD_UNKNOWN = 0,
+	USER_CMD_REQUEST_TELEM,
 	USER_CMD_DISCOVER_TELEM,
 	USER_CMD_ENABLE,
 	USER_CMD_DISABLE,

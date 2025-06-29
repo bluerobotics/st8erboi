@@ -18,28 +18,30 @@ void Fillhead::sendStatus(const char* statusType, const char* message) {
 void Fillhead::sendGuiTelemetry() {
 	if (!guiDiscovered) return;
 	
-	char msg[500];
-	snprintf(msg, sizeof(msg),
-	"%s,state:%s,"
-	"pos_m0:%ld,torque_m0:%.2f,enabled_m0:%d,homed_m0:%d,"
-	"pos_m1:%ld,torque_m1:%.2f,enabled_m1:%d,homed_m1:%d,"
-	"pos_m2:%ld,torque_m2:%.2f,enabled_m2:%d,homed_m2:%d,"
-	"pos_m3:%ld,torque_m3:%.2f,enabled_m3:%d,homed_m3:%d",
+	// This function now uses the abbreviated key format to create a smaller,
+	// more efficient telemetry packet.
+	snprintf(telemetryBuffer, sizeof(telemetryBuffer),
+	"%s,s:%s,"
+	"p0:%ld,t0:%.2f,e0:%d,h0:%d,"
+	"p1:%ld,t1:%.2f,e1:%d,h1:%d,"
+	"p2:%ld,t2:%.2f,e2:%d,h2:%d,"
+	"p3:%ld,t3:%.2f,e3:%d,h3:%d",
 	TELEM_PREFIX_GUI,
 	stateToString(),
-	MotorX.PositionRefCommanded(),  getSmoothedTorque(&MotorX, &smoothedTorqueM0, &firstTorqueReadM0),  (int)MotorX.StatusReg().bit.Enabled,  (int)homedX,
-	MotorY1.PositionRefCommanded(), getSmoothedTorque(&MotorY1, &smoothedTorqueM1, &firstTorqueReadM1), (int)MotorY1.StatusReg().bit.Enabled, (int)homedY1,
-	MotorY2.PositionRefCommanded(), getSmoothedTorque(&MotorY2, &smoothedTorqueM2, &firstTorqueReadM2), (int)MotorY2.StatusReg().bit.Enabled, (int)homedY2,
-	MotorZ.PositionRefCommanded(),  getSmoothedTorque(&MotorZ, &smoothedTorqueM3, &firstTorqueReadM3),  (int)MotorZ.StatusReg().bit.Enabled,  (int)homedZ);
+	MotorX.PositionRefCommanded(),  (MotorX.StatusReg().bit.StepsActive  ? getSmoothedTorque(&MotorX, &smoothedTorqueM0, &firstTorqueReadM0) : 0.0f), (int)MotorX.StatusReg().bit.Enabled,  (int)homedX,
+	MotorY1.PositionRefCommanded(), (MotorY1.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY1, &smoothedTorqueM1, &firstTorqueReadM1) : 0.0f), (int)MotorY1.StatusReg().bit.Enabled, (int)homedY1,
+	MotorY2.PositionRefCommanded(), (MotorY2.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY2, &smoothedTorqueM2, &firstTorqueReadM2) : 0.0f), (int)MotorY2.StatusReg().bit.Enabled, (int)homedY2,
+	MotorZ.PositionRefCommanded(),  (MotorZ.StatusReg().bit.StepsActive  ? getSmoothedTorque(&MotorZ, &smoothedTorqueM3, &firstTorqueReadM3) : 0.0f), (int)MotorZ.StatusReg().bit.Enabled,  (int)homedZ);
 
 	// This is required before every send with this library.
 	Udp.Connect(guiIp, guiPort);
-	Udp.PacketWrite(msg);
+	Udp.PacketWrite(telemetryBuffer);
 	Udp.PacketSend();
 }
 
 
 void Fillhead::handleMessage(const char* msg) {
+	guiIp = Udp.RemoteIp();
 	FillheadCommand cmd = parseCommand(msg);
 	switch(cmd) {
 		case CMD_SET_PEER_IP: handleSetPeerIp(msg); break;
@@ -55,6 +57,10 @@ void Fillhead::handleMessage(const char* msg) {
 		case CMD_HOME_Z:
 		    handleHome(msg);
 		    break;
+		case CMD_REQUEST_TELEM:
+			// When the GUI asks for telemetry, send exactly one packet back.
+			sendGuiTelemetry();
+			break;
 		case CMD_DISCOVER: {
 			char* portStr = strstr(msg, "PORT=");
 			if (portStr) {
@@ -63,14 +69,13 @@ void Fillhead::handleMessage(const char* msg) {
 				guiDiscovered = true;
 				// Send the confirmation message. The sendStatus function
 				// will handle the connect call itself.
-				Udp.Connect(guiIp, guiPort); 
-				sendStatus(STATUS_PREFIX_INFO, "GUI Discovered and Connected");
+				sendStatus("DISCOVERY: ", "FILLHEAD DISCOVERED");
 			}
 			break;
 		}
 		case CMD_UNKNOWN:
 		default:
-		    sendStatus(STATUS_PREFIX_ERROR, "Unknown command");
+		    // be silent
 		    break;
 	}
 }
@@ -143,6 +148,7 @@ void Fillhead::setupEthernet() {
 }
 
 FillheadCommand Fillhead::parseCommand(const char* msg) {
+	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
 	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;

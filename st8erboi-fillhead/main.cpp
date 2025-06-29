@@ -145,7 +145,7 @@ void Fillhead::loop() {
 
 	// --- Slow Code ---
 	if (checkSlowCodeInterval()) {
-		sendGuiTelemetry();
+		//sendGuiTelemetry();
 	}
 }
 

@@ -20,7 +20,8 @@
 #define ALL_FILLHEAD_MOTORS MotorManager::MOTOR_ALL
 
 // --- Command Definitions ---
-#define CMD_STR_DISCOVER          "DISCOVER_TELEM"
+#define CMD_STR_REQUEST_TELEM     "REQUEST_TELEM"
+#define CMD_STR_DISCOVER          "DISCOVER_FILLHEAD"
 #define CMD_STR_SET_PEER_IP       "SET_PEER_IP "
 #define CMD_STR_CLEAR_PEER_IP     "CLEAR_PEER_IP"
 #define CMD_STR_ABORT             "ABORT"
@@ -37,10 +38,10 @@
 #define STATUS_PREFIX_DONE    "DONE:"
 #define STATUS_PREFIX_ERROR   "ERROR:"
 #define EWMA_ALPHA 0.2f
-#define SLOW_CODE_INTERVAL_MS 20
+#define SLOW_CODE_INTERVAL_MS 50
 
 typedef enum { STATE_STANDBY, STATE_STARTING_MOVE, STATE_MOVING, STATE_HOMING } FillheadState;
-typedef enum { CMD_UNKNOWN, CMD_DISCOVER, CMD_SET_PEER_IP, CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z, CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z } FillheadCommand;
+typedef enum { CMD_UNKNOWN, CMD_REQUEST_TELEM, CMD_DISCOVER, CMD_SET_PEER_IP, CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z, CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z } FillheadCommand;
 typedef enum { HOMING_IDLE, HOMING_START, HOMING_RAPID, HOMING_BACK_OFF, HOMING_TOUCH, HOMING_COMPLETE, HOMING_ERROR } HomingPhase;
 
 class Fillhead {
@@ -103,6 +104,7 @@ class Fillhead {
 	bool checkSlowCodeInterval();
 	uint32_t lastGuiTelemetryTime;
 	uint32_t lastGuiMessageTime;
+	char telemetryBuffer[256]; // Moved from stack to static memory
 
 	unsigned char packetBuffer[MAX_PACKET_LENGTH];
 };
