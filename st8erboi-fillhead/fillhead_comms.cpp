@@ -1,6 +1,119 @@
 #include "fillhead.h"
 
-// Adding a USB serial setup is very useful for debugging
+// This function is now safe. It sends to the destination configured once
+// in handleMessage, without trying to reconnect.
+void Fillhead::sendStatus(const char* statusType, const char* message) {
+	char msg[100];
+	snprintf(msg, sizeof(msg), "%s%s", statusType, message);
+	
+	if (guiDiscovered) {
+		// This is required before every send with this library.
+		Udp.Connect(guiIp, guiPort); 
+		Udp.PacketWrite(msg);
+		Udp.PacketSend();
+	}
+}
+
+// This function is also safe now.
+void Fillhead::sendGuiTelemetry() {
+	if (!guiDiscovered) return;
+	
+	char msg[500];
+	snprintf(msg, sizeof(msg),
+	"%s,state:%s,"
+	"pos_m0:%ld,torque_m0:%.2f,enabled_m0:%d,homed_m0:%d,"
+	"pos_m1:%ld,torque_m1:%.2f,enabled_m1:%d,homed_m1:%d,"
+	"pos_m2:%ld,torque_m2:%.2f,enabled_m2:%d,homed_m2:%d,"
+	"pos_m3:%ld,torque_m3:%.2f,enabled_m3:%d,homed_m3:%d",
+	TELEM_PREFIX_GUI,
+	stateToString(),
+	MotorX.PositionRefCommanded(),  getSmoothedTorque(&MotorX, &smoothedTorqueM0, &firstTorqueReadM0),  (int)MotorX.StatusReg().bit.Enabled,  (int)homedX,
+	MotorY1.PositionRefCommanded(), getSmoothedTorque(&MotorY1, &smoothedTorqueM1, &firstTorqueReadM1), (int)MotorY1.StatusReg().bit.Enabled, (int)homedY1,
+	MotorY2.PositionRefCommanded(), getSmoothedTorque(&MotorY2, &smoothedTorqueM2, &firstTorqueReadM2), (int)MotorY2.StatusReg().bit.Enabled, (int)homedY2,
+	MotorZ.PositionRefCommanded(),  getSmoothedTorque(&MotorZ, &smoothedTorqueM3, &firstTorqueReadM3),  (int)MotorZ.StatusReg().bit.Enabled,  (int)homedZ);
+
+	// This is required before every send with this library.
+	Udp.Connect(guiIp, guiPort);
+	Udp.PacketWrite(msg);
+	Udp.PacketSend();
+}
+
+
+void Fillhead::handleMessage(const char* msg) {
+	FillheadCommand cmd = parseCommand(msg);
+	switch(cmd) {
+		case CMD_SET_PEER_IP: handleSetPeerIp(msg); break;
+		case CMD_CLEAR_PEER_IP: handleClearPeerIp(); break;
+		case CMD_ABORT: handleAbort(); break;
+		case CMD_MOVE_X:
+		case CMD_MOVE_Y:
+		case CMD_MOVE_Z:
+		    handleMove(msg);
+		    break;
+		case CMD_HOME_X:
+		case CMD_HOME_Y:
+		case CMD_HOME_Z:
+		    handleHome(msg);
+		    break;
+		case CMD_DISCOVER: {
+			char* portStr = strstr(msg, "PORT=");
+			if (portStr) {
+				guiIp = Udp.RemoteIp();
+				guiPort = atoi(portStr + 5);
+				guiDiscovered = true;
+				// Send the confirmation message. The sendStatus function
+				// will handle the connect call itself.
+				sendStatus(STATUS_PREFIX_INFO, "GUI Discovered and Connected");
+			}
+			break;
+		}
+		case CMD_UNKNOWN:
+		default:
+		    sendStatus(STATUS_PREFIX_ERROR, "Unknown command");
+		    break;
+	}
+}
+
+// No changes to processUdp, but included for completeness of the file.
+void Fillhead::processUdp() {
+	if (Udp.PacketParse()) {
+		int32_t bytesRead = Udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
+		if (bytesRead > 0) {
+			packetBuffer[bytesRead] = '\0';
+			handleMessage((char*)packetBuffer);
+		}
+	}
+}
+
+// NOTE: This function still has the issue of "stealing" the UDP connection from the GUI.
+// This is a larger architectural issue to solve later if needed. The primary GUI communication is now fixed.
+void Fillhead::sendInternalTelemetry() {
+	if (!peerDiscovered) return;
+	
+    // To send to the peer, we must temporarily change the UDP destination
+	Udp.Connect(peerIp, LOCAL_PORT);
+
+	char msg[200];
+	snprintf(msg, sizeof(msg), "%s,state:%s,pos_m0:%ld,pos_m1:%ld,pos_m2:%ld,pos_m3:%ld,moving:%d",
+	"FH_TELEM_INT:",
+	stateToString(),
+	MotorX.PositionRefCommanded(),
+	MotorY1.PositionRefCommanded(),
+	MotorY2.PositionRefCommanded(),
+	MotorZ.PositionRefCommanded(),
+	isMoving() ? 1 : 0);
+	
+	Udp.PacketWrite(msg);
+	Udp.PacketSend();
+
+    // IMPORTANT: Reconnect back to the GUI so we don't interrupt its telemetry
+    if (guiDiscovered) {
+        Udp.Connect(guiIp, guiPort);
+    }
+}
+
+
+// These functions are unchanged but are part of a complete "comms" file.
 void Fillhead::setupUsbSerial(void) {
 	ConnectorUsb.Mode(Connector::USB_CDC);
 	ConnectorUsb.Speed(9600);
@@ -10,7 +123,6 @@ void Fillhead::setupUsbSerial(void) {
 	while (!ConnectorUsb && Milliseconds() - start < timeout);
 }
 
-// --- MODIFIED: Reverted to robust DHCP method ---
 void Fillhead::setupEthernet() {
 	ConnectorUsb.SendLine("Fillhead: Starting Ethernet setup...");
 	EthernetMgr.Setup();
@@ -35,84 +147,14 @@ void Fillhead::setupEthernet() {
 
 FillheadCommand Fillhead::parseCommand(const char* msg) {
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
+	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
+	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
+	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
 	if (strncmp(msg, CMD_STR_MOVE_X, strlen(CMD_STR_MOVE_X)) == 0) return CMD_MOVE_X;
 	if (strncmp(msg, CMD_STR_MOVE_Y, strlen(CMD_STR_MOVE_Y)) == 0) return CMD_MOVE_Y;
 	if (strncmp(msg, CMD_STR_MOVE_Z, strlen(CMD_STR_MOVE_Z)) == 0) return CMD_MOVE_Z;
-	if (strcmp(msg, CMD_STR_HOME_X) == 0) return CMD_HOME_X;
-	if (strcmp(msg, CMD_STR_HOME_Y) == 0) return CMD_HOME_Y;
-	if (strcmp(msg, CMD_STR_HOME_Z) == 0) return CMD_HOME_Z;
+	if (strncmp(msg, CMD_STR_HOME_X, strlen(CMD_STR_HOME_X)) == 0) return CMD_HOME_X;
+	if (strncmp(msg, CMD_STR_HOME_Y, strlen(CMD_STR_HOME_Y)) == 0) return CMD_HOME_Y;
+	if (strncmp(msg, CMD_STR_HOME_Z, strlen(CMD_STR_HOME_Z)) == 0) return CMD_HOME_Z;
 	return CMD_UNKNOWN;
-}
-
-void Fillhead::handleMessage(const char* msg) {
-	FillheadCommand cmd = parseCommand(msg);
-	switch(cmd) {
-		case CMD_MOVE_X: handleMove(&MotorX, msg); break;
-		case CMD_MOVE_Y: handleMove(&MotorY, msg); break;
-		case CMD_MOVE_Z: handleMove(&MotorZ, msg); break;
-		case CMD_HOME_X: handleHome(&MotorX, &homedX); break;
-		case CMD_HOME_Y: handleHome(&MotorY, &homedY); break;
-		case CMD_HOME_Z: handleHome(&MotorZ, &homedZ); break;
-		case CMD_DISCOVER: {
-			char* portStr = strstr(msg, "PORT=");
-			if (portStr) {
-				guiIp = Udp.RemoteIp();
-				guiPort = atoi(portStr + 5);
-				guiDiscovered = true;
-			}
-			break;
-		}
-		case CMD_UNKNOWN:
-		default:
-		break;
-	}
-}
-
-void Fillhead::processUdp() {
-	if (Udp.PacketParse()) {
-		int32_t bytesRead = Udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
-		if (bytesRead > 0) {
-			packetBuffer[bytesRead] = '\0';
-			handleMessage((char*)packetBuffer);
-		}
-	}
-}
-
-void Fillhead::sendInternalTelemetry() {
-	static uint32_t lastSendTime = 0;
-	if (Milliseconds() - lastSendTime < 50) return;
-	lastSendTime = Milliseconds();
-
-	char msg[200];
-	snprintf(msg, sizeof(msg), "%s,pos_x:%ld,pos_y:%ld,pos_z:%ld,moving:%d,homed:%d",
-	TELEM_PREFIX_INTERNAL,
-	MotorX.PositionRefCommanded(),
-	MotorY.PositionRefCommanded(),
-	MotorZ.PositionRefCommanded(),
-	isMoving() ? 1 : 0,
-	(homedX && homedY && homedZ) ? 1 : 0);
-	
-	Udp.Connect(injectorIp, LOCAL_PORT);
-	Udp.PacketWrite(msg);
-	Udp.PacketSend();
-}
-
-void Fillhead::sendGuiTelemetry() {
-	if (!guiDiscovered) return;
-
-	static uint32_t lastSendTime = 0;
-	if (Milliseconds() - lastSendTime < 100) return;
-	lastSendTime = Milliseconds();
-
-	char msg[500];
-	// --- MODIFIED: No warnings, as enabled status is a boolean (int 0 or 1) ---
-	snprintf(msg, sizeof(msg), "%s,STATE:IDLE,pos_x:%ld,torque_x:%.2f,enabled_x:%d,homed_x:%d,pos_y:%ld,torque_y:%.2f,enabled_y:%d,homed_y:%d,pos_z:%ld,torque_z:%.2f,enabled_z:%d,homed_z:%d",
-	TELEM_PREFIX_GUI,
-	MotorX.PositionRefCommanded(), MotorX.HlfbPercent(), MotorX.StatusReg().bit.Enabled, homedX,
-	MotorY.PositionRefCommanded(), MotorY.HlfbPercent(), MotorY.StatusReg().bit.Enabled, homedY,
-	MotorZ.PositionRefCommanded(), MotorZ.HlfbPercent(), MotorZ.StatusReg().bit.Enabled, homedZ);
-
-	Udp.Connect(guiIp, guiPort);
-	Udp.PacketWrite(msg);
-	Udp.PacketSend();
 }

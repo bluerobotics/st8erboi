@@ -9,40 +9,39 @@
 #include <stdio.h>
 
 // --- Network Configuration ---
-#define INJECTOR_IP "192.168.1.114" // The "brain" controller IP
 #define LOCAL_PORT 8888
-#define MAX_PACKET_LENGTH 100
+#define MAX_PACKET_LENGTH 128
 
 // --- Motor Configuration ---
-#define MotorX ConnectorM0
-#define MotorY ConnectorM1
-#define MotorZ ConnectorM2
-// --- MODIFIED: Corrected enum for specifying multiple motors ---
+#define MotorX  ConnectorM0
+#define MotorY1 ConnectorM1
+#define MotorY2 ConnectorM2
+#define MotorZ  ConnectorM3
 #define ALL_FILLHEAD_MOTORS MotorManager::MOTOR_ALL
 
 // --- Command Definitions ---
-#define CMD_STR_DISCOVER        "DISCOVER_TELEM"
-#define CMD_STR_MOVE_X          "MOVE_X "
-#define CMD_STR_MOVE_Y          "MOVE_Y "
-#define CMD_STR_MOVE_Z          "MOVE_Z "
-#define CMD_STR_HOME_X          "HOME_X"
-#define CMD_STR_HOME_Y          "HOME_Y"
-#define CMD_STR_HOME_Z          "HOME_Z"
+#define CMD_STR_DISCOVER          "DISCOVER_TELEM"
+#define CMD_STR_SET_PEER_IP       "SET_PEER_IP "
+#define CMD_STR_CLEAR_PEER_IP     "CLEAR_PEER_IP"
+#define CMD_STR_ABORT             "ABORT"
+#define CMD_STR_MOVE_X            "MOVE_X "
+#define CMD_STR_MOVE_Y            "MOVE_Y "
+#define CMD_STR_MOVE_Z            "MOVE_Z "
+#define CMD_STR_HOME_X            "HOME_X "
+#define CMD_STR_HOME_Y            "HOME_Y "
+#define CMD_STR_HOME_Z            "HOME_Z "
 
-// --- Telemetry Prefixes ---
-#define TELEM_PREFIX_GUI        "FH_TELEM_GUI:" // Added colon for easier parsing
-#define TELEM_PREFIX_INTERNAL   "FH_TELEM_INT:" // Added colon
+// --- Telemetry & Status Prefixes ---
+#define TELEM_PREFIX_GUI      "FH_TELEM_GUI:"
+#define STATUS_PREFIX_INFO    "INFO:"
+#define STATUS_PREFIX_DONE    "DONE:"
+#define STATUS_PREFIX_ERROR   "ERROR:"
+#define EWMA_ALPHA 0.2f
+#define SLOW_CODE_INTERVAL_MS 20
 
-typedef enum {
-	CMD_UNKNOWN,
-	CMD_DISCOVER,
-	CMD_MOVE_X,
-	CMD_MOVE_Y,
-	CMD_MOVE_Z,
-	CMD_HOME_X,
-	CMD_HOME_Y,
-	CMD_HOME_Z
-} FillheadCommand;
+typedef enum { STATE_STANDBY, STATE_STARTING_MOVE, STATE_MOVING, STATE_HOMING } FillheadState;
+typedef enum { CMD_UNKNOWN, CMD_DISCOVER, CMD_SET_PEER_IP, CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z, CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z } FillheadCommand;
+typedef enum { HOMING_IDLE, HOMING_START, HOMING_RAPID, HOMING_BACK_OFF, HOMING_TOUCH, HOMING_COMPLETE, HOMING_ERROR } HomingPhase;
 
 class Fillhead {
 	public:
@@ -50,27 +49,60 @@ class Fillhead {
 	IpAddress guiIp;
 	uint16_t guiPort;
 	bool guiDiscovered;
-	IpAddress injectorIp;
+	IpAddress peerIp;
+	bool peerDiscovered;
 
-	bool homedX, homedY, homedZ;
+	FillheadState state;
+	HomingPhase homingPhase;
+	MotorDriver* activeMotor1;
+	MotorDriver* activeMotor2;
+
+	int homingTorque;
+	int homingRapidSps;
+	int homingTouchSps;
+	long homingBackoffSteps;
+
+	float torqueLimit;
+	float torqueOffset;
+	float smoothedTorqueM0, smoothedTorqueM1, smoothedTorqueM2, smoothedTorqueM3;
+	bool firstTorqueReadM0, firstTorqueReadM1, firstTorqueReadM2, firstTorqueReadM3;
+
+	bool homedX, homedY1, homedY2, homedZ;
 
 	Fillhead();
 
 	void setup();
+	void loop();
 	void setupEthernet();
 	void setupMotors();
 	void setupUsbSerial();
 
 	void processUdp();
-	void sendInternalTelemetry();
+	void updateState();
 	void sendGuiTelemetry();
+	void sendInternalTelemetry();
 	
 	void handleMessage(const char* msg);
-	void handleMove(MotorDriver* motor, const char* msg);
-	void handleHome(MotorDriver* motor, bool* homedFlag);
+	void handleMove(const char* msg);
+	void handleHome(const char* msg);
+	void handleSetPeerIp(const char* msg);
+	void handleClearPeerIp();
+	void handleAbort();
 
 	private:
 	FillheadCommand parseCommand(const char* msg);
 	bool isMoving();
+	void sendStatus(const char* statusType, const char* message);
+	const char* stateToString();
+	void abortAllMoves();
+	void moveAxis(MotorDriver* motor, long steps, int vel, int accel, int torque);
+	float getSmoothedTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
+	bool checkTorqueLimit(MotorDriver* motor);
+	
+	// interval
+	bool checkSlowCodeInterval();
+	uint32_t lastGuiTelemetryTime;
+	uint32_t lastGuiMessageTime;
+
 	unsigned char packetBuffer[MAX_PACKET_LENGTH];
 };

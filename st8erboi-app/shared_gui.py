@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 
-def create_shared_widgets(root, send_injector_cmd):
+
+def create_shared_widgets(root, command_funcs):
     """
     Creates the shared UI elements that are not part of any specific tab.
     Returns a dictionary of references to these elements.
@@ -17,11 +18,12 @@ def create_shared_widgets(root, send_injector_cmd):
 
     action_buttons_frame = tk.Frame(top_frame, bg="#21232b")
     action_buttons_frame.pack(side=tk.RIGHT, padx=10)
+
     abort_btn = tk.Button(action_buttons_frame, text="🛑 ABORT", bg="#db2828", fg="white", font=("Segoe UI", 10, "bold"),
-                          command=lambda: send_injector_cmd("ABORT"), relief="raised", bd=3, padx=10, pady=5)
+                          command=command_funcs.get("abort"), relief="raised", bd=3, padx=10, pady=5)
     abort_btn.pack(side=tk.LEFT, padx=(0, 5))
     clear_errors_btn = ttk.Button(action_buttons_frame, text="⚠️ Clear Errors", style='Yellow.TButton',
-                                  command=lambda: send_injector_cmd("CLEAR_ERRORS"))
+                                  command=command_funcs.get("clear_errors"))
     clear_errors_btn.pack(side=tk.LEFT, padx=(5, 0))
 
     bottom_frame = tk.Frame(root, bg="#21232b")

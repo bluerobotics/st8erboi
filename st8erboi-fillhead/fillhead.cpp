@@ -1,17 +1,55 @@
 #include "fillhead.h"
 
-// --- MODIFIED: Correctly initialize IpAddress member ---
-Fillhead::Fillhead() : injectorIp(INJECTOR_IP) {
+Fillhead::Fillhead() {
 	guiDiscovered = false;
 	guiPort = 0;
+	peerDiscovered = false;
 	
 	homedX = false;
-	homedY = false;
+	homedY1 = false;
+	homedY2 = false;
 	homedZ = false;
+
+	state = STATE_STANDBY;
+	homingPhase = HOMING_IDLE;
+	activeMotor1 = nullptr;
+	activeMotor2 = nullptr;
+
+	torqueLimit = 20.0f;
+	torqueOffset = 0.0f;
+	firstTorqueReadM0 = true;
+	firstTorqueReadM1 = true;
+	firstTorqueReadM2 = true;
+	firstTorqueReadM3 = true;
+	smoothedTorqueM0 = 0.0f;
+	smoothedTorqueM1 = 0.0f;
+	smoothedTorqueM2 = 0.0f;
+	smoothedTorqueM3 = 0.0f;
+	lastGuiTelemetryTime = 0;
+	lastGuiMessageTime = 0;
 }
 
 void Fillhead::setup() {
-	setupUsbSerial(); // Good for debugging
+	setupUsbSerial();
 	setupEthernet();
 	setupMotors();
+}
+
+const char* Fillhead::stateToString() {
+	switch(state) {
+		case STATE_STANDBY: return "STANDBY";
+		case STATE_STARTING_MOVE: return "STARTING_MOVE";
+		case STATE_MOVING:  return "MOVING";
+		case STATE_HOMING:  return "HOMING";
+		default:            return "UNKNOWN";
+	}
+}
+
+bool Fillhead::checkSlowCodeInterval() {
+	uint32_t now = Milliseconds();
+	if (now - lastGuiTelemetryTime >= SLOW_CODE_INTERVAL_MS) {
+		lastGuiTelemetryTime = now; // Update the time for the next check
+		return true;
+	}
+	return false;
 }

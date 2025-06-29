@@ -1,45 +1,105 @@
 #include "fillhead.h"
 
-// Generic handler for MOVE commands
-void Fillhead::handleMove(MotorDriver* motor, const char* msg) {
-	if (isMoving()) return; // Ignore new move commands while busy
+void Fillhead::handleAbort() {
+	abortAllMoves();
+	state = STATE_STANDBY;
+	activeMotor1 = nullptr;
+	activeMotor2 = nullptr;
+	sendStatus(STATUS_PREFIX_INFO, "ABORT Received. All motion stopped.");
+}
 
-	long steps;
-	int velocity;
-	
-	// Find the first space to parse arguments after it
-	const char* args = strchr(msg, ' ');
-	if (args && sscanf(args, "%ld %d", &steps, &velocity) == 2) {
-		motor->VelMax(velocity);
-		motor->Move(steps);
+void Fillhead::handleSetPeerIp(const char* msg) {
+	const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
+	IpAddress newPeerIp(ipStr);
+	if (strcmp(newPeerIp.StringValue(), "0.0.0.0") == 0) {
+		peerDiscovered = false;
+		sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
+		} else {
+		peerIp = newPeerIp;
+		peerDiscovered = true;
+		char response[100];
+		snprintf(response, sizeof(response), "Peer IP set to %s", ipStr);
+		sendStatus(STATUS_PREFIX_INFO, response);
 	}
 }
 
+void Fillhead::handleClearPeerIp() {
+	peerDiscovered = false;
+	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
+}
 
-// --- MODIFIED: Corrected to use software polling for torque, matching original Injector pattern ---
-// Generic handler for HOME commands
-void Fillhead::handleHome(MotorDriver* motor, bool* homedFlag) {
-	if (isMoving()) return; // Ignore new move commands while busy
+void Fillhead::handleMove(const char* msg) {
+	if (state != STATE_STANDBY) {
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Not in STANDBY");
+		return;
+	}
 
-	// 1. Set a moderate homing velocity
-	motor->VelMax(5000);
+	long steps;
+	int velocity, torque;
+	FillheadCommand cmd = parseCommand(msg);
+	const char* args = strchr(msg, ' ');
 
-	// 2. Command a long-distance move in the negative direction.
-	// We will monitor and stop this move manually based on torque.
-	motor->Move(-200000);
-	
-	// 3. Poll the motor status until the move is no longer active.
-	while(motor->StatusReg().bit.StepsActive) {
-		// Check if the torque limit has been exceeded
-		if (motor->HlfbPercent() > 15.0f) { // 15% torque limit
-			motor->MoveStopAbrupt();
-			break; // Exit the while loop
-		}
-		Delay_ms(5); // Small delay to prevent hogging the processor
+	if (!args || sscanf(args, "%ld %d %d", &steps, &velocity, &torque) != 3) {
+		sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format");
+		return;
+	}
+
+	switch(cmd) {
+		case CMD_MOVE_X: sendStatus(STATUS_PREFIX_INFO, "MOVE_X Received"); break;
+		case CMD_MOVE_Y: sendStatus(STATUS_PREFIX_INFO, "MOVE_Y Received"); break;
+		case CMD_MOVE_Z: sendStatus(STATUS_PREFIX_INFO, "MOVE_Z Received"); break;
+		default: break;
+	}
+
+	state = STATE_STARTING_MOVE;
+	activeMotor1 = nullptr;
+	activeMotor2 = nullptr;
+
+	switch(cmd) {
+		case CMD_MOVE_X: activeMotor1 = &MotorX; break;
+		case CMD_MOVE_Y: activeMotor1 = &MotorY1; activeMotor2 = &MotorY2; break;
+		case CMD_MOVE_Z: activeMotor1 = &MotorZ; break;
+		default: state = STATE_STANDBY; return;
 	}
 	
-	// 4. The motor has stopped. Set this position as the new zero.
-	motor->PositionRefSet(0);
+	if (activeMotor1) moveAxis(activeMotor1, steps, velocity, 200000, torque);
+	if (activeMotor2) moveAxis(activeMotor2, steps, velocity, 200000, torque);
+}
+
+void Fillhead::handleHome(const char* msg) {
+	if (state != STATE_STANDBY) {
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start home: Not in STANDBY");
+		return;
+	}
 	
-	*homedFlag = true;
+	int torque, rapid_sps, touch_sps;
+	FillheadCommand cmd = parseCommand(msg);
+	const char* args = strchr(msg, ' ');
+
+	if (!args || sscanf(args, "%d %d %d", &torque, &rapid_sps, &touch_sps) != 3) {
+		sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format");
+		return;
+	}
+	
+	switch(cmd) {
+		case CMD_HOME_X: sendStatus(STATUS_PREFIX_INFO, "HOME_X Received"); break;
+		case CMD_HOME_Y: sendStatus(STATUS_PREFIX_INFO, "HOME_Y Received"); break;
+		case CMD_HOME_Z: sendStatus(STATUS_PREFIX_INFO, "HOME_Z Received"); break;
+		default: return;
+	}
+
+	state = STATE_HOMING;
+	homingPhase = HOMING_START;
+	homingTorque = torque;
+	homingRapidSps = rapid_sps;
+	homingTouchSps = touch_sps;
+	activeMotor1 = nullptr;
+	activeMotor2 = nullptr;
+
+	switch(cmd) {
+		case CMD_HOME_X: activeMotor1 = &MotorX; break;
+		case CMD_HOME_Y: activeMotor1 = &MotorY1; activeMotor2 = &MotorY2; break;
+		case CMD_HOME_Z: activeMotor1 = &MotorZ; break;
+		default: state = STATE_STANDBY; return;
+	}
 }
