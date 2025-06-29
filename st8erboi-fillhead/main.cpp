@@ -74,9 +74,10 @@ void Fillhead::updateState() {
                     if (torque_exceeded) {
                         abortAllMoves();
                         Delay_ms(50);
-                        // Start the back-off move
-                        moveAxis(activeMotor1, homingBackoffSteps, homingTouchSps, 200000, 100);
-                        if (activeMotor2) moveAxis(activeMotor2, homingBackoffSteps, homingTouchSps, 200000, 100);
+                        // --- MODIFIED ---
+                        // Start the back-off move at rapid speed
+                        moveAxis(activeMotor1, homingBackoffSteps, homingRapidSps, 200000, 100);
+                        if (activeMotor2) moveAxis(activeMotor2, homingBackoffSteps, homingRapidSps, 200000, 100);
                         homingPhase = HOMING_BACK_OFF;
                     } else if (!isMoving()) {
                         sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Rapid move completed without torque");
@@ -158,7 +159,7 @@ void Fillhead::loop() {
 
     // --- Slow Code ---
     if (checkSlowCodeInterval()) {
-        //sendGuiTelemetry();
+        sendGuiTelemetry();
     }
 }
 

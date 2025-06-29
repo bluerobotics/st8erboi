@@ -28,103 +28,132 @@ void Fillhead::handleClearPeerIp() {
 	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }
 
+// --- REPLACED FUNCTION ---
+// This function is now updated to accept all units in mm, mm/s, and mm/s^2.
 void Fillhead::handleMove(const char* msg) {
 	if (state != STATE_STANDBY) {
 		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Not in STANDBY");
 		return;
 	}
 
+	// --- MODIFIED: Arguments now accept float for all motion parameters ---
+	float distance_mm, vel_mms, accel_mms2;
+	int torque;
 	long steps;
-	int velocity, torque;
+	int velocity_sps, accel_sps2;
+	float steps_per_mm = 0;
+
 	FillheadCommand cmd = parseCommand(msg);
 	const char* args = strchr(msg, ' ');
 
-	if (!args || sscanf(args, "%ld %d %d", &steps, &velocity, &torque) != 3) {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format");
+	// --- MODIFIED: Parsing float for vel and accel, and added accel to the format ---
+	if (!args || sscanf(args, "%f %f %f %d", &distance_mm, &vel_mms, &accel_mms2, &torque) != 4) {
+		sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format. Expected: <dist_mm> <vel_mm_s> <accel_mm_s2> <torque>");
 		return;
 	}
 
-	switch(cmd) {
-		case CMD_MOVE_X: sendStatus(STATUS_PREFIX_INFO, "MOVE_X Received"); break;
-		case CMD_MOVE_Y: sendStatus(STATUS_PREFIX_INFO, "MOVE_Y Received"); break;
-		case CMD_MOVE_Z: sendStatus(STATUS_PREFIX_INFO, "MOVE_Z Received"); break;
-		default: break;
-	}
-
-    // --- FIX: Reset the torque filter before starting a new operation ---
-    firstTorqueReadM0 = true;
-    firstTorqueReadM1 = true;
-    firstTorqueReadM2 = true;
-    firstTorqueReadM3 = true;
-    // --------------------------------------------------------------------
+	// Reset the torque filter before starting a new operation
+	firstTorqueReadM0 = true;
+	firstTorqueReadM1 = true;
+	firstTorqueReadM2 = true;
+	firstTorqueReadM3 = true;
 
 	state = STATE_STARTING_MOVE;
 	activeMotor1 = nullptr;
 	activeMotor2 = nullptr;
 
 	switch(cmd) {
-		case CMD_MOVE_X: activeMotor1 = &MotorX; break;
-		case CMD_MOVE_Y: activeMotor1 = &MotorY1; activeMotor2 = &MotorY2; break;
-		case CMD_MOVE_Z: activeMotor1 = &MotorZ; break;
-		default: state = STATE_STANDBY; return;
+		case CMD_MOVE_X:
+		sendStatus(STATUS_PREFIX_INFO, "MOVE_X Received");
+		activeMotor1 = &MotorX;
+		steps_per_mm = STEPS_PER_MM_X;
+		break;
+		case CMD_MOVE_Y:
+		sendStatus(STATUS_PREFIX_INFO, "MOVE_Y Received");
+		activeMotor1 = &MotorY1;
+		activeMotor2 = &MotorY2;
+		steps_per_mm = STEPS_PER_MM_Y;
+		break;
+		case CMD_MOVE_Z:
+		sendStatus(STATUS_PREFIX_INFO, "MOVE_Z Received");
+		activeMotor1 = &MotorZ;
+		steps_per_mm = STEPS_PER_MM_Z;
+		break;
+		default:
+		state = STATE_STANDBY;
+		return;
 	}
+
+	// --- NEW: Convert all mm-based units to step-based units ---
+	steps = (long)(distance_mm * steps_per_mm);
+	velocity_sps = (int)(vel_mms * steps_per_mm);
+	accel_sps2 = (int)(accel_mms2 * steps_per_mm);
 	
-	if (activeMotor1) moveAxis(activeMotor1, steps, velocity, 200000, torque);
-	if (activeMotor2) moveAxis(activeMotor2, steps, velocity, 200000, torque);
+	if (activeMotor1) moveAxis(activeMotor1, steps, velocity_sps, accel_sps2, torque);
+	if (activeMotor2) moveAxis(activeMotor2, steps, velocity_sps, accel_sps2, torque);
 }
 
+
+// --- REPLACED FUNCTION ---
+// This function now uses default speeds in mm/s and converts them to steps/s.
 void Fillhead::handleHome(const char* msg) {
 	if (state != STATE_STANDBY) {
 		sendStatus(STATUS_PREFIX_ERROR, "Cannot start home: Not in STANDBY");
 		return;
 	}
-	
-	int torque, rapid_sps, touch_sps;
-    long distance_steps;
+
+	int torque;
+	float max_dist_mm;
+	float steps_per_mm = 0;
 	FillheadCommand cmd = parseCommand(msg);
 	const char* args = strchr(msg, ' ');
 
-	if (!args || sscanf(args, "%d %d %d %ld", &torque, &rapid_sps, &touch_sps, &distance_steps) != 4) {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format. Expected: <torque> <rapid_sps> <touch_sps> <distance_steps>");
+	if (!args || sscanf(args, "%d %f", &torque, &max_dist_mm) != 2) {
+		sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format. Expected: <torque> <max_dist_mm>");
 		return;
 	}
-	
-    // Reset the torque filter before starting the new operation.
-    firstTorqueReadM0 = true;
-    firstTorqueReadM1 = true;
-    firstTorqueReadM2 = true;
-    firstTorqueReadM3 = true;
+
+	firstTorqueReadM0 = true;
+	firstTorqueReadM1 = true;
+	firstTorqueReadM2 = true;
+	firstTorqueReadM3 = true;
 
 	state = STATE_HOMING;
 	homingPhase = HOMING_START;
-	homingTorque = torque;
-	homingRapidSps = rapid_sps;
-	homingTouchSps = touch_sps;
-    homingDistanceSteps = distance_steps;
 	activeMotor1 = nullptr;
 	activeMotor2 = nullptr;
 
-    // --- CORRECTED LOGIC ---
-    // A single switch statement now handles sending the status AND setting the
-    // active motors. This prevents the state from being accidentally reset.
-	switch(cmd) {
+	homingTorque = torque;
+	
+	// Set default speeds in mm/s
+	float rapid_vel_mms = 2.5;  // Corresponds to 1000 steps/s with 400 steps/mm
+	float touch_vel_mms = 0.25; // Corresponds to 100 steps/s with 400 steps/mm
+
+	switch (cmd) {
 		case CMD_HOME_X:
-            sendStatus(STATUS_PREFIX_INFO, "HOME_X Received");
-            activeMotor1 = &MotorX;
-            break;
+		sendStatus(STATUS_PREFIX_INFO, "HOME_X Received");
+		activeMotor1 = &MotorX;
+		steps_per_mm = STEPS_PER_MM_X;
+		break;
 		case CMD_HOME_Y:
-            sendStatus(STATUS_PREFIX_INFO, "HOME_Y Received");
-            activeMotor1 = &MotorY1;
-            activeMotor2 = &MotorY2;
-            break;
+		sendStatus(STATUS_PREFIX_INFO, "HOME_Y Received");
+		activeMotor1 = &MotorY1;
+		activeMotor2 = &MotorY2;
+		steps_per_mm = STEPS_PER_MM_Y;
+		break;
 		case CMD_HOME_Z:
-            sendStatus(STATUS_PREFIX_INFO, "HOME_Z Received");
-            activeMotor1 = &MotorZ;
-            break;
+		sendStatus(STATUS_PREFIX_INFO, "HOME_Z Received");
+		activeMotor1 = &MotorZ;
+		steps_per_mm = STEPS_PER_MM_Z;
+		break;
 		default:
-            // If the command is somehow unknown, revert to standby and exit.
-            sendStatus(STATUS_PREFIX_INFO, "UNKNOWN HOME CMD");
-			state = STATE_STANDBY;
-            return;
+		sendStatus(STATUS_PREFIX_INFO, "UNKNOWN HOME CMD");
+		state = STATE_STANDBY;
+		return;
 	}
+	
+	// Convert mm-based values to step-based values for the driver
+	homingDistanceSteps = (long)(max_dist_mm * steps_per_mm);
+	homingRapidSps = (int)(rapid_vel_mms * steps_per_mm);
+	homingTouchSps = (int)(touch_vel_mms * steps_per_mm);
 }

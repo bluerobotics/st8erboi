@@ -14,24 +14,37 @@ void Fillhead::sendStatus(const char* statusType, const char* message) {
 	}
 }
 
-// This function is also safe now.
+// --- REPLACED FUNCTION ---
+// This function now sends position data in millimeters by converting the raw step count.
 void Fillhead::sendGuiTelemetry() {
 	if (!guiDiscovered) return;
 	
 	// This function now uses the abbreviated key format to create a smaller,
-	// more efficient telemetry packet.
+	// more efficient telemetry packet with position in millimeters.
 	snprintf(telemetryBuffer, sizeof(telemetryBuffer),
-	"%s,s:%s,"
-	"p0:%ld,t0:%.2f,e0:%d,h0:%d,"
-	"p1:%ld,t1:%.2f,e1:%d,h1:%d,"
-	"p2:%ld,t2:%.2f,e2:%d,h2:%d,"
-	"p3:%ld,t3:%.2f,e3:%d,h3:%d",
-	TELEM_PREFIX_GUI,
-	stateToString(),
-	MotorX.PositionRefCommanded(),  (MotorX.StatusReg().bit.StepsActive  ? getSmoothedTorque(&MotorX, &smoothedTorqueM0, &firstTorqueReadM0) : 0.0f), (int)MotorX.StatusReg().bit.Enabled,  (int)homedX,
-	MotorY1.PositionRefCommanded(), (MotorY1.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY1, &smoothedTorqueM1, &firstTorqueReadM1) : 0.0f), (int)MotorY1.StatusReg().bit.Enabled, (int)homedY1,
-	MotorY2.PositionRefCommanded(), (MotorY2.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY2, &smoothedTorqueM2, &firstTorqueReadM2) : 0.0f), (int)MotorY2.StatusReg().bit.Enabled, (int)homedY2,
-	MotorZ.PositionRefCommanded(),  (MotorZ.StatusReg().bit.StepsActive  ? getSmoothedTorque(&MotorZ, &smoothedTorqueM3, &firstTorqueReadM3) : 0.0f), (int)MotorZ.StatusReg().bit.Enabled,  (int)homedZ);
+	    "%s,s:%s,"
+	    "p0:%.2f,t0:%.2f,e0:%d,h0:%d,"  // p0 is now a float (%.2f) for mm
+	    "p1:%.2f,t1:%.2f,e1:%d,h1:%d,"  // p1 is now a float (%.2f) for mm
+	    "p2:%.2f,t2:%.2f,e2:%d,h2:%d,"  // p2 is now a float (%.2f) for mm
+	    "p3:%.2f,t3:%.2f,e3:%d,h3:%d",  // p3 is now a float (%.2f) for mm
+	    TELEM_PREFIX_GUI,
+	    stateToString(),
+	    // Convert steps to mm for each motor
+	    (float)MotorX.PositionRefCommanded() / STEPS_PER_MM_X,
+	    (MotorX.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorX, &smoothedTorqueM0, &firstTorqueReadM0) : 0.0f),
+	    (int)MotorX.StatusReg().bit.Enabled, (int)homedX,
+
+	    (float)MotorY1.PositionRefCommanded() / STEPS_PER_MM_Y,
+	    (MotorY1.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY1, &smoothedTorqueM1, &firstTorqueReadM1) : 0.0f),
+	    (int)MotorY1.StatusReg().bit.Enabled, (int)homedY1,
+
+	    (float)MotorY2.PositionRefCommanded() / STEPS_PER_MM_Y, // Y2 uses the same conversion as Y1
+	    (MotorY2.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorY2, &smoothedTorqueM2, &firstTorqueReadM2) : 0.0f),
+	    (int)MotorY2.StatusReg().bit.Enabled, (int)homedY2,
+
+	    (float)MotorZ.PositionRefCommanded() / STEPS_PER_MM_Z,
+	    (MotorZ.StatusReg().bit.StepsActive ? getSmoothedTorque(&MotorZ, &smoothedTorqueM3, &firstTorqueReadM3) : 0.0f),
+	    (int)MotorZ.StatusReg().bit.Enabled, (int)homedZ);
 
 	// This is required before every send with this library.
 	Udp.Connect(guiIp, guiPort);

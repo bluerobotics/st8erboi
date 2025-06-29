@@ -40,13 +40,28 @@
 #define EWMA_ALPHA 0.2f
 #define SLOW_CODE_INTERVAL_MS 50
 
+// Conversion factors for real-world units
+// 800 steps/rev / 2mm/rev = 400 steps/mm
 #define STEPS_PER_MM_X 400.0f
 #define STEPS_PER_MM_Y 400.0f
 #define STEPS_PER_MM_Z 400.0f
 
 typedef enum { STATE_STANDBY, STATE_STARTING_MOVE, STATE_MOVING, STATE_HOMING } FillheadState;
 typedef enum { CMD_UNKNOWN, CMD_REQUEST_TELEM, CMD_DISCOVER, CMD_SET_PEER_IP, CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z, CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z } FillheadCommand;
-typedef enum { HOMING_IDLE, HOMING_WAIT_FOR_RAPID_START, HOMING_START, HOMING_RAPID, HOMING_BACK_OFF, HOMING_WAIT_FOR_TOUCH_START, HOMING_TOUCH, HOMING_COMPLETE, HOMING_ERROR } HomingPhase;
+
+// --- MODIFIED ENUM ---
+// Added specific wait states for robust homing logic
+typedef enum {
+    HOMING_IDLE,
+    HOMING_START,
+    HOMING_WAIT_FOR_RAPID_START,
+    HOMING_RAPID,
+    HOMING_BACK_OFF,
+    HOMING_WAIT_FOR_TOUCH_START,
+    HOMING_TOUCH,
+    HOMING_COMPLETE,
+    HOMING_ERROR
+} HomingPhase;
 
 class Fillhead {
 	public:
