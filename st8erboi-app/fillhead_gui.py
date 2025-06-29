@@ -11,6 +11,14 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
 
     ui_elements = {}
 
+    # --- FIX: Pre-initialize all StringVars to prevent KeyError ---
+    for i in range(4):
+        ui_elements[f'fh_pos_m{i}_var'] = tk.StringVar(value="0.00")
+        ui_elements[f'fh_torque_m{i}_var'] = tk.StringVar(value="0.0 %")
+        ui_elements[f'fh_enabled_m{i}_var'] = tk.StringVar(value="Disabled")
+        ui_elements[f'fh_homed_m{i}_var'] = tk.StringVar(value="Not Homed")
+    # --- END FIX ---
+
     top_frame = tk.Frame(fillhead_tab, bg="#21232b")
     top_frame.pack(side=tk.TOP, fill=tk.X, expand=False, padx=5, pady=5)
 
@@ -29,62 +37,67 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     fh_jog_frame = tk.LabelFrame(fh_controls_frame, text="Fillhead Jog", bg="#2a2d3b", fg="white", padx=5, pady=5)
     fh_jog_frame.pack(fill=tk.X, pady=5, anchor='n')
 
-    fh_jog_steps_var = tk.StringVar(value="1000")
-    fh_jog_vel_var = tk.StringVar(value="8000")
-    fh_jog_torque_var = tk.StringVar(value="10")
-    tk.Label(fh_jog_frame, text="Steps:", bg="#2a2d3b", fg="white").grid(row=0, column=0, padx=5, pady=2)
-    ttk.Entry(fh_jog_frame, textvariable=fh_jog_steps_var, width=8).grid(row=0, column=1)
-    tk.Label(fh_jog_frame, text="Speed (sps):", bg="#2a2d3b", fg="white").grid(row=0, column=2, padx=5)
-    ttk.Entry(fh_jog_frame, textvariable=fh_jog_vel_var, width=8).grid(row=0, column=3)
-    tk.Label(fh_jog_frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=1, column=0, padx=5, pady=2)
-    ttk.Entry(fh_jog_frame, textvariable=fh_jog_torque_var, width=8).grid(row=1, column=1)
+    fh_jog_dist_mm_var = tk.StringVar(value="10.0")
+    fh_jog_vel_mms_var = tk.StringVar(value="15.0")
+    fh_jog_accel_mms2_var = tk.StringVar(value="50.0")
+    fh_jog_torque_var = tk.StringVar(value="20")
+
+    jog_params_frame = tk.Frame(fh_jog_frame, bg="#2a2d3b")
+    jog_params_frame.grid(row=0, column=0, columnspan=4, sticky='ew')
+
+    tk.Label(jog_params_frame, text="Distance (mm):", bg="#2a2d3b", fg="white").grid(row=0, column=0, padx=5, pady=2,
+                                                                                     sticky='e')
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_dist_mm_var, width=8).grid(row=0, column=1)
+    tk.Label(jog_params_frame, text="Speed (mm/s):", bg="#2a2d3b", fg="white").grid(row=1, column=0, padx=5, pady=2,
+                                                                                    sticky='e')
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_vel_mms_var, width=8).grid(row=1, column=1)
+    tk.Label(jog_params_frame, text="Accel (mm/s²):", bg="#2a2d3b", fg="white").grid(row=0, column=2, padx=5, pady=2,
+                                                                                     sticky='e')
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_accel_mms2_var, width=8).grid(row=0, column=3)
+    tk.Label(jog_params_frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=1, column=2, padx=5, pady=2,
+                                                                                  sticky='e')
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_torque_var, width=8).grid(row=1, column=3)
+
+    jog_cmd_str = lambda \
+        dist: f"{dist} {fh_jog_vel_mms_var.get()} {fh_jog_accel_mms2_var.get()} {fh_jog_torque_var.get()}"
 
     jog_btn_frame = tk.Frame(fh_jog_frame, bg="#2a2d3b")
     jog_btn_frame.grid(row=2, column=0, columnspan=4, pady=5)
-    ttk.Button(jog_btn_frame, text="X-", command=lambda: send_fillhead_cmd(
-        f"MOVE_X -{fh_jog_steps_var.get()} {fh_jog_vel_var.get()} {fh_jog_torque_var.get()}")).pack(side=tk.LEFT)
-    ttk.Button(jog_btn_frame, text="X+", command=lambda: send_fillhead_cmd(
-        f"MOVE_X {fh_jog_steps_var.get()} {fh_jog_vel_var.get()} {fh_jog_torque_var.get()}")).pack(side=tk.LEFT)
-    ttk.Button(jog_btn_frame, text="Y-", command=lambda: send_fillhead_cmd(
-        f"MOVE_Y -{fh_jog_steps_var.get()} {fh_jog_vel_var.get()} {fh_jog_torque_var.get()}")).pack(side=tk.LEFT,
-                                                                                                    padx=10)
-    ttk.Button(jog_btn_frame, text="Y+", command=lambda: send_fillhead_cmd(
-        f"MOVE_Y {fh_jog_steps_var.get()} {fh_jog_vel_var.get()} {fh_jog_torque_var.get()}")).pack(side=tk.LEFT)
-    ttk.Button(jog_btn_frame, text="Z-", command=lambda: send_fillhead_cmd(
-        f"MOVE_Z -{fh_jog_steps_var.get()} {fh_jog_vel_var.get()} {fh_jog_torque_var.get()}")).pack(side=tk.LEFT,
-                                                                                                    padx=10)
-    ttk.Button(jog_btn_frame, text="Z+", command=lambda: send_fillhead_cmd(
-        f"MOVE_Z {fh_jog_steps_var.get()} {fh_jog_vel_var.get()} {fh_jog_torque_var.get()}")).pack(side=tk.LEFT)
+    ttk.Button(jog_btn_frame, text="X-",
+               command=lambda: send_fillhead_cmd(f"MOVE_X -{jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT)
+    ttk.Button(jog_btn_frame, text="X+",
+               command=lambda: send_fillhead_cmd(f"MOVE_X {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT)
+    ttk.Button(jog_btn_frame, text="Y-",
+               command=lambda: send_fillhead_cmd(f"MOVE_Y -{jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
+                                                                                                           padx=10)
+    ttk.Button(jog_btn_frame, text="Y+",
+               command=lambda: send_fillhead_cmd(f"MOVE_Y {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT)
+    ttk.Button(jog_btn_frame, text="Z-",
+               command=lambda: send_fillhead_cmd(f"MOVE_Z -{jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
+                                                                                                           padx=10)
+    ttk.Button(jog_btn_frame, text="Z+",
+               command=lambda: send_fillhead_cmd(f"MOVE_Z {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT)
 
     fh_home_frame = tk.LabelFrame(fh_controls_frame, text="Fillhead Homing", bg="#2a2d3b", fg="white", padx=5, pady=5)
     fh_home_frame.pack(fill=tk.X, pady=5, anchor='n')
 
     fh_home_torque_var = tk.StringVar(value="20")
-    fh_home_rapid_vel_var = tk.StringVar(value="8000")
-    fh_home_touch_vel_var = tk.StringVar(value="2000")
-    fh_home_distance_var = tk.StringVar(value="200000")
+    fh_home_distance_mm_var = tk.StringVar(value="120.0")
 
     home_params_frame = tk.Frame(fh_home_frame, bg="#2a2d3b")
     home_params_frame.pack()
-    tk.Label(home_params_frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="e", pady=1)
-    ttk.Entry(home_params_frame, textvariable=fh_home_torque_var, width=8).grid(row=0, column=1, sticky="w", pady=1)
-    tk.Label(home_params_frame, text="Rapid Vel (sps):", bg="#2a2d3b", fg="white").grid(row=1, column=0, sticky="e",
-                                                                                        pady=1)
-    ttk.Entry(home_params_frame, textvariable=fh_home_rapid_vel_var, width=8).grid(row=1, column=1, sticky="w", pady=1)
-    tk.Label(home_params_frame, text="Touch Vel (sps):", bg="#2a2d3b", fg="white").grid(row=2, column=0, sticky="e",
-                                                                                        pady=1)
-    ttk.Entry(home_params_frame, textvariable=fh_home_touch_vel_var, width=8).grid(row=2, column=1, sticky="w", pady=1)
-    tk.Label(home_params_frame, text="Distance (steps):", bg="#2a2d3b", fg="white").grid(row=3, column=0, sticky="e",
-                                                                                         pady=1)
-    ttk.Entry(home_params_frame, textvariable=fh_home_distance_var, width=8).grid(row=3, column=1, sticky="w", pady=1)
+    tk.Label(home_params_frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="e", pady=1,
+                                                                                   padx=5)
+    ttk.Entry(home_params_frame, textvariable=fh_home_torque_var, width=10).grid(row=0, column=1, sticky="w", pady=1)
+    tk.Label(home_params_frame, text="Max Distance (mm):", bg="#2a2d3b", fg="white").grid(row=1, column=0, sticky="e",
+                                                                                          pady=1, padx=5)
+    ttk.Entry(home_params_frame, textvariable=fh_home_distance_mm_var, width=10).grid(row=1, column=1, sticky="w",
+                                                                                      pady=1)
 
     home_btn_frame = tk.Frame(fh_home_frame, bg="#2a2d3b")
     home_btn_frame.pack(pady=(5, 0))
 
-    home_cmd_str = lambda axis: (
-        f"{axis} {fh_home_torque_var.get()} {fh_home_rapid_vel_var.get()} "
-        f"{fh_home_touch_vel_var.get()} {fh_home_distance_var.get()}"
-    )
+    home_cmd_str = lambda axis: f"{axis} {fh_home_torque_var.get()} {fh_home_distance_mm_var.get()}"
 
     ttk.Button(home_btn_frame, text="Home X", command=lambda: send_fillhead_cmd(home_cmd_str("HOME_X"))).pack(
         side=tk.LEFT, expand=True, fill=tk.X)
@@ -96,12 +109,32 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     vis_frame = tk.LabelFrame(top_frame, text="Position Visualization", bg="#2a2d3b", fg="white", padx=5, pady=5)
     vis_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
 
-    fh_pitch_var = tk.StringVar(value="2.0")
-    ui_elements['fh_pitch_var'] = fh_pitch_var
-    pitch_frame = tk.Frame(vis_frame, bg="#2a2d3b")
-    pitch_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 0))
-    tk.Label(pitch_frame, text="Pitch (mm/rev):", bg="#2a2d3b", fg="white").pack(side=tk.LEFT)
-    ttk.Entry(pitch_frame, textvariable=fh_pitch_var, width=8).pack(side=tk.LEFT, padx=5)
+    readout_frame = tk.Frame(vis_frame, bg="#2a2d3b")
+    readout_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 5))
+
+    font_readout_label = ("Segoe UI", 10, "bold")
+    font_readout_value = ("Consolas", 24, "bold")
+
+    # X Readout - Uses the pre-initialized StringVar
+    x_frame = tk.Frame(readout_frame, bg=readout_frame['bg'])
+    x_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
+    tk.Label(x_frame, text="X (mm)", bg=readout_frame['bg'], fg="cyan", font=font_readout_label).pack()
+    tk.Label(x_frame, textvariable=ui_elements['fh_pos_m0_var'], bg=readout_frame['bg'], fg="cyan",
+             font=font_readout_value).pack()
+
+    # Y Readout - Uses the pre-initialized StringVar
+    y_frame = tk.Frame(readout_frame, bg=readout_frame['bg'])
+    y_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
+    tk.Label(y_frame, text="Y (mm)", bg=readout_frame['bg'], fg="yellow", font=font_readout_label).pack()
+    tk.Label(y_frame, textvariable=ui_elements['fh_pos_m1_var'], bg=readout_frame['bg'], fg="yellow",
+             font=font_readout_value).pack()
+
+    # Z Readout - Uses the pre-initialized StringVar
+    z_frame = tk.Frame(readout_frame, bg=readout_frame['bg'])
+    z_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
+    tk.Label(z_frame, text="Z (mm)", bg=readout_frame['bg'], fg="#ff8888", font=font_readout_label).pack()
+    tk.Label(z_frame, textvariable=ui_elements['fh_pos_m3_var'], bg=readout_frame['bg'], fg="#ff8888",
+             font=font_readout_value).pack()
 
     fig = plt.figure(figsize=(5, 3), facecolor='#2a2d3b')
     ax_xy = fig.add_subplot(1, 2, 1)
@@ -126,8 +159,8 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     ax_z.set_title("Z Position", color='white')
     ax_z.set_facecolor('#1b1e2b')
     ax_z.set_ylabel("Z (mm)", color='white')
-    ax_z.set_ylim(0, 100)
-    ax_z.tick_params(axis='x', colors='#2a2d3b')
+    ax_z.set_ylim(-100, 5)
+    ax_z.tick_params(axis='x', colors='#2a2d3b');
     ax_z.tick_params(axis='y', colors='white')
     ax_z.spines['bottom'].set_color('white');
     ax_z.spines['left'].set_color('white')
@@ -138,7 +171,7 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     canvas_widget = canvas.get_tk_widget()
     canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    ui_elements.update({'fh_pos_viz_canvas': canvas, 'fh_xy_marker': xy_pos_marker, 'fh_z_bar': z_bar, 'fh_ax_z': ax_z})
+    ui_elements.update({'fh_pos_viz_canvas': canvas, 'fh_xy_marker': xy_pos_marker, 'fh_z_bar': z_bar})
 
     fh_status_frame = tk.Frame(middle_frame, bg="#21232b")
     fh_status_frame.pack(side=tk.LEFT, fill=tk.Y, expand=False, padx=5, pady=5, anchor='n')
@@ -150,15 +183,13 @@ def create_fillhead_tab(notebook, send_fillhead_cmd):
     for i, name in enumerate(motor_map):
         frame = tk.LabelFrame(fh_status_frame, text=name, bg="#2a2d3b", fg="white", padx=5, pady=2)
         frame.pack(fill=tk.X, pady=2, anchor='n')
-        ui_elements[f'fh_pos_m{i}_var'] = tk.StringVar(value="0")
-        ui_elements[f'fh_torque_m{i}_var'] = tk.StringVar(value="0.0 %")
-        ui_elements[f'fh_enabled_m{i}_var'] = tk.StringVar(value="Disabled")
-        ui_elements[f'fh_homed_m{i}_var'] = tk.StringVar(value="Not Homed")
+
+        # --- FIX: The StringVars are now guaranteed to exist, so we just use them. ---
         frame.grid_columnconfigure(1, weight=1)
-        tk.Label(frame, text="Position:", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="w")
+        tk.Label(frame, text="Position (mm):", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="w")
         tk.Label(frame, textvariable=ui_elements[f'fh_pos_m{i}_var'], bg="#2a2d3b", fg="cyan").grid(row=0, column=1,
                                                                                                     sticky="w")
-        tk.Label(frame, text="Torque:", bg="#2a2d3b", fg="white").grid(row=1, column=0, sticky="w")
+        tk.Label(frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=1, column=0, sticky="w")
         tk.Label(frame, textvariable=ui_elements[f'fh_torque_m{i}_var'], bg="#2a2d3b", fg="cyan").grid(row=1, column=1,
                                                                                                        sticky="w")
         tk.Label(frame, text="Enabled:", bg="#2a2d3b", fg="white").grid(row=2, column=0, sticky="w")

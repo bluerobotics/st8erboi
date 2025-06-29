@@ -16,6 +16,11 @@ from shared_gui import create_shared_widgets
 from injector_gui import create_injector_tab
 from fillhead_gui import create_fillhead_tab
 
+# --- CONFIGURATION CONSTANT ---
+# Sets the update frequency for both telemetry polling and graph updates in milliseconds.
+# 100ms = 10Hz, 50ms = 20Hz.
+GUI_UPDATE_INTERVAL_MS = 75
+
 
 # --- Main Application ---
 def main():
@@ -86,33 +91,48 @@ def main():
         except (IndexError, ValueError):
             pass
 
+    def update_fillhead_position_plot():
+        canvas = shared_gui_refs.get('fh_pos_viz_canvas')
+        xy_marker = shared_gui_refs.get('fh_xy_marker')
+        z_bar = shared_gui_refs.get('fh_z_bar')
+        if not all([canvas, xy_marker, z_bar]): return
+
+        try:
+            x_pos = float(shared_gui_refs.get('fh_pos_m0_var').get())
+            y_pos = float(shared_gui_refs.get('fh_pos_m1_var').get())
+            z_pos = float(shared_gui_refs.get('fh_pos_m3_var').get())
+
+            xy_marker.set_data([x_pos], [y_pos])
+            z_bar.set_height(z_pos)
+
+            canvas.draw_idle()
+        except (ValueError, tk.TclError):
+            pass
+
     def periodic_gui_updater():
         """This function runs in the main Tkinter thread to safely update plots."""
-        # For now, only the fillhead plot is being updated here, but you can add injector plots
         update_fillhead_torque_plot()
-        root.after(80, periodic_gui_updater)  # Refresh plots 10 times per second
+        update_fillhead_position_plot()
+
+        # Add injector plot updater here if needed
+
+        # Reschedule using the master constant
+        root.after(GUI_UPDATE_INTERVAL_MS, periodic_gui_updater)
 
     # --- Timed Telemetry Requester ---
     def telemetry_requester_loop():
         """This function runs in the main GUI thread and sends telemetry requests at a defined interval."""
-        interval_ms = 80  # Default safe interval
 
-        # Check for injector
+        # Poll Injector if connected
         if comms.devices["injector"]["connected"]:
-            # To add user-control for injector, add an entry box and variable like below
             comms.send_to_device("injector", "REQUEST_TELEM", shared_gui_refs)
 
-        # Check for fillhead
+        # Poll Fillhead if connected
         if comms.devices["fillhead"]["connected"]:
-            try:
-                interval_ms = int(shared_gui_refs['fh_telem_interval_var'].get())
-                if interval_ms < 50: interval_ms = 50  # Enforce a minimum of 50ms (20Hz) to be safe
-                comms.send_to_device("fillhead", "REQUEST_TELEM", shared_gui_refs)
-            except (ValueError, KeyError):
-                interval_ms = 250  # Use default if GUI value is invalid
+            comms.send_to_device("fillhead", "REQUEST_TELEM", shared_gui_refs)
 
-        # Schedule the next run using the determined interval
-        root.after(interval_ms, telemetry_requester_loop)
+        # Reschedule the next poll for both devices using the master constant
+        root.after(GUI_UPDATE_INTERVAL_MS, telemetry_requester_loop)
 
     # --- Start Communication Threads ---
     threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()

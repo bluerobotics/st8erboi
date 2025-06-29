@@ -118,6 +118,7 @@ def handle_connection(device_key, source_ip, gui_refs):
         log_to_terminal(status_text, gui_refs.get('terminal_cb'))
         gui_refs[f'status_var_{device_key}'].set(status_text)
 
+        # Send one request on initial connection, then let the timed loop take over.
         send_to_device(device_key, "REQUEST_TELEM", gui_refs)
 
         other_key = "fillhead" if device_key == "injector" else "injector"
@@ -167,8 +168,6 @@ def parse_injector_telemetry(msg, gui_refs):
         if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
             f'{float(parts.get("dispensed_ml", 0.0)):.2f} ml')
 
-        # ... (rest of your original injector parsing logic) ...
-
     except Exception as e:
         log_to_terminal(f"Injector telemetry parse error: {e}", gui_refs.get('terminal_cb'))
 
@@ -182,7 +181,7 @@ def parse_fillhead_telemetry(msg, gui_refs):
 
         torque_floats = []
         for i in range(4):
-            pos = parts.get(f'p{i}', '0')
+            pos = parts.get(f'p{i}', '0.00')
             enabled = "Enabled" if parts.get(f'e{i}', '0') == "1" else "Disabled"
             homed = "Homed" if parts.get(f'h{i}', '0') == "1" else "Not Homed"
             torque_str = parts.get(f"t{i}", '0.0')
@@ -193,33 +192,28 @@ def parse_fillhead_telemetry(msg, gui_refs):
                 torque_val = 0.0
             torque_floats.append(torque_val)
 
-            if f'fh_pos_m{i}_var' in gui_refs: gui_refs[f'fh_pos_m{i}_var'].set(pos)
+            # Update the string variables for the labels
+            if f'fh_pos_m{i}_var' in gui_refs: gui_refs[f'fh_pos_m{i}_var'].set(f"{float(pos):.2f}")
             if f'fh_torque_m{i}_var' in gui_refs: gui_refs[f'fh_torque_m{i}_var'].set(f"{torque_val:.1f} %")
             if f'fh_enabled_m{i}_var' in gui_refs: gui_refs[f'fh_enabled_m{i}_var'].set(enabled)
             if f'fh_homed_m{i}_var' in gui_refs: gui_refs[f'fh_homed_m{i}_var'].set(homed)
 
-        # Append new data
+        # Append new data for torque plot
         current_time = time.time()
         gui_refs.get('fillhead_torque_times', []).append(current_time)
         for i in range(4):
             gui_refs.get(f'fillhead_torque_history{i}', []).append(torque_floats[i])
 
-        # --- NEW TIME-BASED PRUNING LOGIC ---
-        # This replaces the old logic that capped the list at 200 points.
-        # We will keep a slightly larger buffer (e.g., 15 seconds) than the plot window.
+        # Time-based pruning logic for plot data
         cutoff_time = current_time - 15
-
-        # Find the index of the first data point that is recent enough to keep
-        start_index = 0
         timestamps = gui_refs['fillhead_torque_times']
+        start_index = 0
         for i, ts in enumerate(timestamps):
             if ts >= cutoff_time:
                 start_index = i
                 break
 
-        # If we found old data points to prune (i.e., start_index > 0)
         if start_index > 0:
-            # Slice the lists to remove all data older than the cutoff
             gui_refs['fillhead_torque_times'] = timestamps[start_index:]
             for i in range(4):
                 history_key = f'fillhead_torque_history{i}'
@@ -250,14 +244,14 @@ def recv_loop(gui_refs):
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_injector_telemetry(msg, gui_refs)
-                send_to_device("injector", "REQUEST_TELEM", gui_refs)
+                # Let the timed loop in main.py handle polling
 
             elif msg.startswith("FH_TELEM_GUI:"):
                 handle_connection("fillhead", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_fillhead_telemetry(msg, gui_refs)
-                send_to_device("fillhead", "REQUEST_TELEM", gui_refs)
+                # Let the timed loop in main.py handle polling
 
             elif msg.startswith(("INFO:", "DONE:", "ERROR:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
