@@ -63,6 +63,7 @@ void Fillhead::handleMessage(const char* msg) {
 				guiDiscovered = true;
 				// Send the confirmation message. The sendStatus function
 				// will handle the connect call itself.
+				Udp.Connect(guiIp, guiPort); 
 				sendStatus(STATUS_PREFIX_INFO, "GUI Discovered and Connected");
 			}
 			break;
@@ -106,10 +107,6 @@ void Fillhead::sendInternalTelemetry() {
 	Udp.PacketWrite(msg);
 	Udp.PacketSend();
 
-    // IMPORTANT: Reconnect back to the GUI so we don't interrupt its telemetry
-    if (guiDiscovered) {
-        Udp.Connect(guiIp, guiPort);
-    }
 }
 
 
