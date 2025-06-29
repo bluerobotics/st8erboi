@@ -1,20 +1,3 @@
-// ============================================================================
-// injector.cpp
-//
-// Core initialization and runtime state management for the Injector class.
-//
-// Implements constructor logic, state tracking, and string mapping utilities
-// for translating internal enum states into telemetry and UI-friendly outputs.
-//
-// Contains basic system reset logic and internal flag transitions
-// for mode entry/exit coordination.
-//
-// Corresponds to declarations in `injector.h`.
-//
-// Copyright 2025 Blue Robotics Inc.
-// Author: Eldin Miller-Stead <eldin@bluerobotics.com>
-// ============================================================================
-
 #include "injector.h"
 #include <math.h>
 
@@ -34,6 +17,7 @@ const char *Injector::HomingStateNames[HOMING_STATE_COUNT] = {
 
 const char *Injector::HomingPhaseNames[HOMING_PHASE_COUNT] = {
 	"IDLE",
+	"STARTING_MOVE",
 	"RAPID_MOVE",
 	"BACK_OFF",
 	"TOUCH_OFF",
@@ -59,6 +43,7 @@ const char *Injector::FeedStateNames[FEED_STATE_COUNT] = {
 	"FEED_OP_COMPLETED"
 };
 
+// --- MODIFIED NAME ARRAY ---
 const char *Injector::ErrorStateNames[ERROR_STATE_COUNT] = {
 	"ERROR_NONE",
 	"ERROR_MANUAL_ABORT",
@@ -70,7 +55,9 @@ const char *Injector::ErrorStateNames[ERROR_STATE_COUNT] = {
 	"ERROR_HOMING_NO_TORQUE_RAPID",
 	"ERROR_HOMING_NO_TORQUE_TOUCH",
 	"ERROR_INVALID_INJECTION",
-	"ERROR_NOT_HOMED"
+	"ERROR_NOT_HOMED",
+	"ERROR_INVALID_PARAMETERS", // ADDED
+	"ERROR_MOTORS_DISABLED"     // ADDED
 };
 
 Injector::Injector(){
@@ -78,7 +65,6 @@ Injector::Injector(){
 }
 
 void Injector::reset() {
-	//--- State Variables ---//
 	mainState = STANDBY_MODE;
 	homingState = HOMING_NONE;
 	currentHomingPhase = HOMING_PHASE_IDLE;
@@ -90,15 +76,14 @@ void Injector::reset() {
 	jogDone = false;
 	homingPinchDone = false;
 	homingStartTime = 0;
+	PITCH_MM_PER_REV = 5;
 	
-	//--- Ethernet Variables ---//
 	terminalPort = 0;
 	terminalDiscovered = false;
-	telemInterval = 50; // ms
+	telemInterval = 50;
 	
-	// Motor Variables
-	injectorMotorsTorqueLimit	= 2.0f;   // Default overall limit, overridden by moveInjectorMotors's param
-	injectorMotorsTorqueOffset = -2.4f;  // Global offset, settable by USER_CMD_SET_TORQUE_OFFSET
+	injectorMotorsTorqueLimit	= 2.0f;
+	injectorMotorsTorqueOffset = -2.4f;
 	smoothedTorqueValue0 = 0.0f;
 	smoothedTorqueValue1 = 0.0f;
 	smoothedTorqueValue2 = 0.0f;
@@ -109,8 +94,8 @@ void Injector::reset() {
 	pulsesPerRev = 800;
 	machineStepCounter = 0;
 	cartridgeStepCounter = 0;
-	velocityLimit = 10000;  // pulses/sec
-	accelerationLimit = 100000; // pulses/sec^2
+	velocityLimit = 10000;
+	accelerationLimit = 100000;
 	homingDefaultBackoffSteps = 200;
 	feedDefaultTorquePercent = 30;
 	feedDefaultVelocitySPS = 1000;
@@ -118,8 +103,8 @@ void Injector::reset() {
 	machineHomeReferenceSteps = 0;
 	cartridgeHomeReferenceSteps = 0;
 
-	// Homing params
-	homing_stroke_mm_param = 0.0f; homing_rapid_vel_mm_s_param = 0.0f;
+	homing_stroke_mm_param = 0.0f;
+	homing_rapid_vel_mm_s_param = 0.0f;
 	homing_touch_vel_mm_s_param = 0.0f;
 	homing_acceleration_param = 0.0f;
 	homing_retract_mm_param = 0.0f;
@@ -130,7 +115,6 @@ void Injector::reset() {
 	homing_actual_touch_sps = 0;
 	homing_actual_accel_sps2 = 0;
 
-	// Dispensing / Feed Operation Tracking
 	active_op_target_ml = 0.0f;
 	active_op_total_dispensed_ml = 0.0f;
 	active_op_total_target_steps = 0;

@@ -1,21 +1,3 @@
-// ============================================================================
-// injector.h
-//
-// Public interface for the Injector subsystem.
-//
-// Declares the Injector class and related enums that manage system states,
-// error tracking, motion phases, and command handling for a ClearCore-driven
-// fluid injector system.
-//
-// Exposes methods for external communication (UDP), motor control,
-// operational state transitions (e.g., homing, jog, feed), and runtime telemetry.
-//
-// All logic implementations reside in the `injector_*.cpp` source files.
-//
-// Copyright 2025 Blue Robotics Inc.
-// Author: Eldin Miller-Stead <eldin@bluerobotics.com>
-// ============================================================================
-
 #pragma once
 
 #include <cstdint>
@@ -79,6 +61,7 @@ enum HomingState : uint8_t {
 
 enum HomingPhase : uint8_t {
 	HOMING_PHASE_IDLE,
+	HOMING_PHASE_STARTING_MOVE,
 	HOMING_PHASE_RAPID_MOVE,
 	HOMING_PHASE_BACK_OFF,
 	HOMING_PHASE_TOUCH_OFF,
@@ -91,21 +74,22 @@ enum HomingPhase : uint8_t {
 enum FeedState : uint8_t {
 	FEED_NONE,
 	FEED_STANDBY,
-	FEED_INJECT_STARTING,   // Brief state while initiating inject
-	FEED_INJECT_ACTIVE,     // Actively injecting
-	FEED_INJECT_PAUSED,     // Injection is paused
-	FEED_INJECT_RESUMING,   // Brief state while initiating resume
-	FEED_PURGE_STARTING,    // Brief state while initiating purge
-	FEED_PURGE_ACTIVE,      // Actively purging
-	FEED_PURGE_PAUSED,      // Purge is paused
-	FEED_PURGE_RESUMING,    // Brief state while initiating resume
+	FEED_INJECT_STARTING,
+	FEED_INJECT_ACTIVE,
+	FEED_INJECT_PAUSED,
+	FEED_INJECT_RESUMING,
+	FEED_PURGE_STARTING,
+	FEED_PURGE_ACTIVE,
+	FEED_PURGE_PAUSED,
+	FEED_PURGE_RESUMING,
 	FEED_MOVING_TO_HOME,
 	FEED_MOVING_TO_RETRACT,
 	FEED_INJECTION_CANCELLED,
-	FEED_INJECTION_COMPLETED, // Intermediate state before going to STANDBY
+	FEED_INJECTION_COMPLETED,
 	FEED_STATE_COUNT
 };
 
+// --- MODIFIED ENUM ---
 enum ErrorState : uint8_t {
 	ERROR_NONE,
 	ERROR_MANUAL_ABORT,
@@ -118,6 +102,8 @@ enum ErrorState : uint8_t {
 	ERROR_HOMING_NO_TORQUE_TOUCH,
 	ERROR_INVALID_INJECTION,
 	ERROR_NOT_HOMED,
+	ERROR_INVALID_PARAMETERS, // ADDED
+	ERROR_MOTORS_DISABLED,    // ADDED
 	ERROR_STATE_COUNT
 };
 
@@ -202,7 +188,7 @@ class Injector {
 	//--- Motor Variables ---//
 	int velocityLimit;
 	int accelerationLimit;
-	float injectorMotorsTorqueLimit;    
+	float injectorMotorsTorqueLimit;
 	float injectorMotorsTorqueOffset;
 	float smoothedTorqueValue0;
 	float smoothedTorqueValue1;
@@ -239,12 +225,12 @@ class Injector {
 
 	//--- Feed Operation Variables ---//
 	float active_op_target_ml;
-	float active_op_total_dispensed_ml; // Total dispensed for the current multi-segment operation
-	long active_op_total_target_steps;  // Original total steps for the operation
-	long active_op_remaining_steps;     // Remaining steps when paused
-	long active_op_segment_initial_axis_steps; // Motor steps at start of current segment (after resume)
+	float active_op_total_dispensed_ml;
+	long active_op_total_target_steps;
+	long active_op_remaining_steps;
+	long active_op_segment_initial_axis_steps;
 	float active_op_steps_per_ml;
-	bool active_dispense_INJECTION_ongoing; // Overall flag for inject/purge sequence
+	bool active_dispense_INJECTION_ongoing;
 	long active_op_initial_axis_steps;
 	float last_completed_dispense_ml;
 	int active_op_velocity_sps;
@@ -265,27 +251,27 @@ class Injector {
 	void sendTelem(void);
 	void handleMessage(const char *msg);
 	
-	//--- State Trigger Functions ---//	
+	//--- State Trigger Functions ---//
 	void onHomingMachineDone(void);
 	void onHomingCartridgeDone(void);
 	void onFeedingDone(void);
 	void onJogDone(void);
 	
-	//--- Motor Functions ---//	
-	void setupInjectorMotors(void); 																	// Initializes and enables both motors for use
-	void enableInjectorMotors(const char* reason_message); 												// Enables both motors and waits for HLFB asserted
-	void disableInjectorMotors(const char* reason_message); 											// Disables both motors and resets torque smoothing
-	void moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel); 		// The 'torque_limit' parameter will set the injectorMotorsTorqueLimit for checkInjectorTorqueLimit.
+	//--- Motor Functions ---//
+	void setupInjectorMotors(void);
+	void enableInjectorMotors(const char* reason_message);
+	void disableInjectorMotors(const char* reason_message);
+	void moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel);
 	void movePinchMotor(int stepsM3, int torque_limit, int velocity, int accel);
-	bool checkInjectorMoving(void); 																	// Returns true if either motor is currently moving or not in-position
-	float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);				// Returns smoothed, offset torque value (EWMA filter)
-	bool checkInjectorTorqueLimit(void);																// Checks if the output of getSmoothedTorqueEWMA exceeds injectorMotorsTorqueLimit
-	void abortInjectorMove(void);																		// Abruptly stops all motor motion
+	bool checkInjectorMoving(void);
+	float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);
+	bool checkInjectorTorqueLimit(void);
+	void abortInjectorMove(void);
 	
 	//--- Message Handler Functions ---//
 	void handleEnable(void);
 	void handleDisable(void);
-	void handleAbort(void); // Will call finalizeAndResetActiveDispenseOperation
+	void handleAbort(void);
 	void handleClearErrors(void);
 	void handleStandbyMode(void);
 	void handleJogMode(void);
@@ -304,7 +290,7 @@ class Injector {
 	void handleCancelOperation(void);
 	
 	//--- Reset Functions ---//
-	void resetMotors(void); 	// Disables, clears alerts, resets counters, and re-enables both motors
+	void resetMotors(void);
 	void finalizeAndResetActiveDispenseOperation(bool operationCompletedSuccessfully);
 	void fullyResetActiveDispenseOperation(void);
 	void resetActiveDispenseOp(void);
@@ -314,8 +300,8 @@ class Injector {
 	void handlePinchJogMove(const char *msg);
 	void handlePinchOpen(void);
 	void handlePinchClose(void);
-	void handleEnablePinch(void);     // <-- ADD THIS
-    void handleDisablePinch(void);    // <-- ADD THIS
+	void handleEnablePinch(void);
+	void handleDisablePinch(void);
 	
 	static const char *MainStateNames[MAIN_STATE_COUNT];
 	static const char *HomingStateNames[HOMING_STATE_COUNT];
