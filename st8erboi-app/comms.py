@@ -135,7 +135,8 @@ def handle_connection(device_key, source_ip, gui_refs):
 def parse_injector_telemetry(msg, gui_refs):
     global last_fw_main_state_for_gui_update, last_fw_feed_state_for_gui_update
     try:
-        parts = dict(item.split(':', 1) for item in msg.split(',')[1:] if ':' in item)
+        payload = msg.split("INJ_TELEM_GUI:")[1]
+        parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
         fw_main_state = parts.get("MAIN_STATE", "---")
         fw_feed_state = parts.get("FEED_STATE", "IDLE")
@@ -147,6 +148,36 @@ def parse_injector_telemetry(msg, gui_refs):
         if 'homing_phase_var' in gui_refs: gui_refs['homing_phase_var'].set(parts.get("HOMING_PHASE", "---"))
         if 'error_state_var' in gui_refs: gui_refs['error_state_var'].set(parts.get("ERROR_STATE", "No Error"))
 
+        # --- Torque History Parsing ---
+        torque_floats = []
+        for i in range(3):
+            try:
+                torque_val = float(parts.get(f'torque{i}', '0.0'))
+            except (ValueError, TypeError):
+                torque_val = 0.0
+            torque_floats.append(torque_val)
+
+        current_time = time.time()
+        gui_refs.get('injector_torque_times', []).append(current_time)
+        gui_refs.get('injector_torque_history1', []).append(torque_floats[0])
+        gui_refs.get('injector_torque_history2', []).append(torque_floats[1])
+        gui_refs.get('injector_torque_history3', []).append(torque_floats[2])
+
+        cutoff_time = current_time - 15
+        timestamps = gui_refs.get('injector_torque_times', [])
+        start_index = 0
+        for i, ts in enumerate(timestamps):
+            if ts >= cutoff_time:
+                start_index = i
+                break
+
+        if start_index > 0:
+            gui_refs['injector_torque_times'] = timestamps[start_index:]
+            gui_refs['injector_torque_history1'] = gui_refs.get('injector_torque_history1', [])[start_index:]
+            gui_refs['injector_torque_history2'] = gui_refs.get('injector_torque_history2', [])[start_index:]
+            gui_refs['injector_torque_history3'] = gui_refs.get('injector_torque_history3', [])[start_index:]
+        # --- End Torque History ---
+
         for i in range(3):
             gui_var_index = i + 1
             torque_str = parts.get(f'torque{i}', '0.0')
@@ -154,7 +185,7 @@ def parse_injector_telemetry(msg, gui_refs):
                 gui_refs[f'torque_value{gui_var_index}_var'].set(torque_str)
 
             if f'position_cmd{gui_var_index}_var' in gui_refs: gui_refs[f'position_cmd{gui_var_index}_var'].set(
-                parts.get(f'pos_cmd{i}', '0'))
+                parts.get(f'pos_mm{i}', '0.0'))
             if f'motor_state{gui_var_index}_var' in gui_refs: gui_refs[f'motor_state{gui_var_index}_var'].set(
                 "Ready" if parts.get(f"hlfb{i}", "0") == "1" else "Busy/Fault")
             if f'enabled_state{gui_var_index}_var' in gui_refs: gui_refs[f'enabled_state{gui_var_index}_var'].set(
@@ -163,14 +194,12 @@ def parse_injector_telemetry(msg, gui_refs):
         if 'pinch_homed_var' in gui_refs: gui_refs['pinch_homed_var'].set(
             "Homed" if parts.get("homed2", "0") == "1" else "Not Homed")
 
-        if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("machine_steps", "N/A"))
-        if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("cartridge_steps", "N/A"))
+        if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("machine_mm", "N/A"))
+        if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("cartridge_mm", "N/A"))
         if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
             f'{float(parts.get("dispensed_ml", 0.0)):.2f} ml')
 
-        # Parse Injector Peer Status
         if 'peer_status_injector_var' in gui_refs:
-            # Assumes the injector firmware will use these keys: 'peer_disc' and 'peer_ip'
             is_peer_discovered = parts.get("peer_disc", "0") == "1"
             peer_ip = parts.get("peer_ip", "0.0.0.0")
             if is_peer_discovered:
@@ -202,19 +231,16 @@ def parse_fillhead_telemetry(msg, gui_refs):
                 torque_val = 0.0
             torque_floats.append(torque_val)
 
-            # Update the string variables for the labels
             if f'fh_pos_m{i}_var' in gui_refs: gui_refs[f'fh_pos_m{i}_var'].set(f"{float(pos):.2f}")
             if f'fh_torque_m{i}_var' in gui_refs: gui_refs[f'fh_torque_m{i}_var'].set(f"{torque_val:.1f} %")
             if f'fh_enabled_m{i}_var' in gui_refs: gui_refs[f'fh_enabled_m{i}_var'].set(enabled)
             if f'fh_homed_m{i}_var' in gui_refs: gui_refs[f'fh_homed_m{i}_var'].set(homed)
 
-        # Append new data for torque plot
         current_time = time.time()
         gui_refs.get('fillhead_torque_times', []).append(current_time)
         for i in range(4):
             gui_refs.get(f'fillhead_torque_history{i}', []).append(torque_floats[i])
 
-        # Time-based pruning logic for plot data
         cutoff_time = current_time - 15
         timestamps = gui_refs['fillhead_torque_times']
         start_index = 0
@@ -230,7 +256,6 @@ def parse_fillhead_telemetry(msg, gui_refs):
                 if history_key in gui_refs:
                     gui_refs[history_key] = gui_refs[history_key][start_index:]
 
-        # Parse Fillhead Peer Status
         if 'peer_status_fillhead_var' in gui_refs:
             is_peer_discovered = parts.get("pd", "0") == "1"
             peer_ip = parts.get("pip", "0.0.0.0")
@@ -270,14 +295,14 @@ def recv_loop(gui_refs):
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_fillhead_telemetry(msg, gui_refs)
 
-            elif msg.startswith(("INFO:", "DONE:", "ERROR:")):
+            elif msg.startswith(("INJ_INFO:", "INJ_DONE:", "INJ_ERROR:", "INJ_START:", "DISCOVERY:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
                 for key, device in devices.items():
                     if device["ip"] == source_ip:
                         device["last_rx"] = time.time()
                         break
             else:
-                pass
+                pass  # Ignore unknown packets
 
         except socket.timeout:
             continue

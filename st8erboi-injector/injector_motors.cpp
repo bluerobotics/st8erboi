@@ -1,4 +1,4 @@
-// ===========================// ============================================================================
+// ============================================================================
 // injector_motors.cpp
 //
 // Motor control routines for the Injector class.
@@ -18,28 +18,28 @@
 
 #include "injector.h"
 
-void Injector::setupInjectorMotors(void) {
+void Injector::setupMotors(void) {
 	MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
 
 	// Setup for M0 (Injector Axis)
 	ConnectorM0.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM0.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	ConnectorM0.VelMax(velocityLimit);
-	ConnectorM0.AccelMax(accelerationLimit);
+	ConnectorM0.VelMax(25000);
+	ConnectorM0.AccelMax(100000);
 	ConnectorM0.EnableRequest(true);
 
 	// Setup for M1 (Injector Axis)
 	ConnectorM1.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM1.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	ConnectorM1.VelMax(velocityLimit);
-	ConnectorM1.AccelMax(accelerationLimit);
+	ConnectorM1.VelMax(25000);
+	ConnectorM1.AccelMax(100000);
 	ConnectorM1.EnableRequest(true);
 
 	// Setup for M2 (Pinch Motor)
 	ConnectorM2.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	ConnectorM2.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	ConnectorM2.VelMax(velocityLimit);
-	ConnectorM2.AccelMax(accelerationLimit);
+	ConnectorM2.VelMax(25000);
+	ConnectorM2.AccelMax(100000);
 	ConnectorM2.EnableRequest(true);
 
 	Delay_ms(100);
@@ -60,7 +60,7 @@ void Injector::enableInjectorMotors(const char* reason_message) {
 	while (ConnectorM0.HlfbState() != MotorDriver::HLFB_ASSERTED ||
 	ConnectorM1.HlfbState() != MotorDriver::HLFB_ASSERTED) {
 		if (Milliseconds() > enableTimeout) {
-			sendToPC("Error: Timeout waiting for motors to enable (HLFB).");
+			sendStatus(STATUS_PREFIX_INFO, "Error: Timeout waiting for motors to enable (HLFB).");
 			motorsAreEnabled = false; // Failed to enable
 			// Optionally set an error state in Injector
 			return;
@@ -68,10 +68,12 @@ void Injector::enableInjectorMotors(const char* reason_message) {
 		Delay_ms(10); // Brief delay while polling
 	}
 	
-	sendToPC(reason_message);
-	// Reset torque smoothing on enable
+	sendStatus(STATUS_PREFIX_INFO, reason_message);
+	// Reset torque smoothing on enable for all motors
+	smoothedTorqueValue0 = 0.0f;
 	smoothedTorqueValue1 = 0.0f;
 	smoothedTorqueValue2 = 0.0f;
+	firstTorqueReading0 = true;
 	firstTorqueReading1 = true;
 	firstTorqueReading2 = true;
 }
@@ -82,10 +84,13 @@ void Injector::disableInjectorMotors(const char* reason_message){
 	ConnectorM0.EnableRequest(false);
 	ConnectorM1.EnableRequest(false);
 	motorsAreEnabled = false;
-	sendToPC(reason_message);
+	sendStatus(STATUS_PREFIX_INFO, reason_message);
 
+    // Reset torque smoothing on disable for all motors
+	smoothedTorqueValue0 = 0.0f;
 	smoothedTorqueValue1 = 0.0f;
 	smoothedTorqueValue2 = 0.0f;
+	firstTorqueReading0 = true;
 	firstTorqueReading1 = true;
 	firstTorqueReading2 = true;
 	Delay_ms(50);
@@ -94,42 +99,42 @@ void Injector::disableInjectorMotors(const char* reason_message){
 void Injector::abortInjectorMove(){
 	ConnectorM0.MoveStopAbrupt();
 	ConnectorM1.MoveStopAbrupt();
+	ConnectorM2.MoveStopAbrupt(); // Also abort pinch motor
 }
 
 void Injector::moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit_percent, int velocity_sps, int accel_sps2) {
 	if (!motorsAreEnabled) {
-		sendToPC("MOVE BLOCKED: Motors are disabled.");
+		sendStatus(STATUS_PREFIX_INFO, "MOVE BLOCKED: Motors are disabled.");
 		return;
 	}
 
 	// Validate parameters (basic examples)
 	if (torque_limit_percent < 0 || torque_limit_percent > 100) {
-		sendToPC("Error: Invalid torque limit for moveInjectorMotors. Using default.");
+		sendStatus(STATUS_PREFIX_INFO, "Error: Invalid torque limit for moveInjectorMotors. Using default.");
 		torque_limit_percent = (int)injectorMotorsTorqueLimit; // Fallback or a safe default
 	}
-	if (velocity_sps <= 0 || velocity_sps > 10000) {
-		sendToPC("Error: Invalid velocity for moveInjectorMotors. Using default max.");
-		velocity_sps = velocityLimit; // Or a safe default
+	if (velocity_sps <= 0 || velocity_sps > 25000) { // Use motor's actual max
+		sendStatus(STATUS_PREFIX_INFO, "Error: Invalid velocity for moveInjectorMotors. Using default.");
+		velocity_sps = 1000; // Or a safe default
 	}
-	if (accel_sps2 <= 0 || velocity_sps > 100000) {
-		sendToPC("Error: Invalid acceleration for moveInjectorMotors. Using default max.");
-		accel_sps2 = accelerationLimit; // Or a safe default
+	if (accel_sps2 <= 0 || accel_sps2 > 100000) { // Use motor's actual max
+		sendStatus(STATUS_PREFIX_INFO, "Error: Invalid acceleration for moveInjectorMotors. Using default.");
+		accel_sps2 = 10000; // Or a safe default
 	}
 	
 	// Set the injectorMotorsTorqueLimit that checkInjectorTorqueLimit() will use for this operation
 	injectorMotorsTorqueLimit = (float)torque_limit_percent;
 	
 	// Set speed and acceleration for this specific move
-	// These will cap at the motor's VelMax/AccelMax if higher.
 	ConnectorM0.VelMax(velocity_sps);
 	ConnectorM1.VelMax(velocity_sps);
 	ConnectorM0.AccelMax(accel_sps2);
 	ConnectorM1.AccelMax(accel_sps2);
 	
-	char msg[128]; // Reduced size, only sending essential info
+	char msg[128]; 
 	snprintf(msg, sizeof(msg), "moveInjectorMotors: M0s:%d M1s:%d TqL: %d%% V:%d A:%d",
 	stepsM0, stepsM1, torque_limit_percent, velocity_sps, accel_sps2);
-	sendToPC(msg);
+	sendStatus(STATUS_PREFIX_INFO, msg);
 	
 	// Initiate moves
 	if (stepsM0 != 0) ConnectorM0.Move(stepsM0);
@@ -137,27 +142,26 @@ void Injector::moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit_per
 }
 
 void Injector::movePinchMotor(int stepsM2, int torque_limit_percent, int velocity_sps, int accel_sps2) {
-	if (!motorsAreEnabled && ConnectorM2.HlfbState() != MotorDriver::HLFB_ASSERTED) {
-		sendToPC("MOVE BLOCKED: Pinch motor is disabled.");
+	if (ConnectorM2.HlfbState() != MotorDriver::HLFB_ASSERTED) {
+		sendStatus(STATUS_PREFIX_INFO, "MOVE BLOCKED: Pinch motor is disabled.");
 		return;
 	}
 
 	// Validate parameters
 	if (torque_limit_percent < 0 || torque_limit_percent > 100) {
-		sendToPC("Error: Invalid torque limit for movePinchMotor. Using default.");
+		sendStatus(STATUS_PREFIX_INFO, "Error: Invalid torque limit for movePinchMotor. Using default.");
 		torque_limit_percent = 30; // Safe default
 	}
 	if (velocity_sps <= 0) {
-		sendToPC("Error: Invalid velocity for movePinchMotor. Using default.");
+		sendStatus(STATUS_PREFIX_INFO, "Error: Invalid velocity for movePinchMotor. Using default.");
 		velocity_sps = 1000; // Safe default
 	}
 	if (accel_sps2 <= 0) {
-		sendToPC("Error: Invalid acceleration for movePinchMotor. Using default.");
+		sendStatus(STATUS_PREFIX_INFO, "Error: Invalid acceleration for movePinchMotor. Using default.");
 		accel_sps2 = 10000; // Safe default
 	}
 	
 	// Set the torque limit that checkInjectorTorqueLimit() will use for this operation
-	// Note: a separate check function for M2 torque would be ideal for simultaneous moves.
 	injectorMotorsTorqueLimit = (float)torque_limit_percent;
 	
 	// Set speed and acceleration for this specific move
@@ -167,7 +171,7 @@ void Injector::movePinchMotor(int stepsM2, int torque_limit_percent, int velocit
 	char msg[128];
 	snprintf(msg, sizeof(msg), "movePinchMotor: M2s:%d TqL:%d%% V:%d A:%d",
 	stepsM2, torque_limit_percent, velocity_sps, accel_sps2);
-	sendToPC(msg);
+	sendStatus(STATUS_PREFIX_INFO, msg);
 	
 	// Initiate the move on the correct motor
 	if (stepsM2 != 0) {
@@ -177,11 +181,12 @@ void Injector::movePinchMotor(int stepsM2, int torque_limit_percent, int velocit
 
 bool Injector::checkInjectorMoving(void)
 {
-	if ((ConnectorM0.StepsComplete() && ConnectorM0.HlfbState() == MotorDriver::HLFB_ASSERTED) &&
-	(ConnectorM1.StepsComplete() && ConnectorM1.HlfbState() == MotorDriver::HLFB_ASSERTED)) {
-		return false; // Both are NOT moving
-	}
-	return true; // At least one is still moving
+    // Return true if ANY of the three motors are currently moving.
+	bool m0_moving = !ConnectorM0.StepsComplete() && ConnectorM0.StatusReg().bit.Enabled;
+	bool m1_moving = !ConnectorM1.StepsComplete() && ConnectorM1.StatusReg().bit.Enabled;
+	bool m2_moving = !ConnectorM2.StepsComplete() && ConnectorM2.StatusReg().bit.Enabled;
+	
+	return m0_moving || m1_moving || m2_moving;
 }
 
 float Injector::getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead)
@@ -201,21 +206,29 @@ float Injector::getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, 
 }
 
 bool Injector::checkInjectorTorqueLimit(void){
-	if (motorsAreEnabled && checkInjectorMoving()) {
-		float currentSmoothedTorque1 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue1, &firstTorqueReading1);
-		float currentSmoothedTorque2 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue2, &firstTorqueReading2);
+	if (checkInjectorMoving()) {
+		// Correctly get smoothed torque for all three motors
+		float torque0 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue0, &firstTorqueReading0);
+		float torque1 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue1, &firstTorqueReading1);
+		float torque2 = getSmoothedTorqueEWMA(&ConnectorM2, &smoothedTorqueValue2, &firstTorqueReading2);
 
-		// The operational_offset from commands like JOG_MOVE, HOME_MOVE etc. is not yet used here.
+		// Check if any moving motor is over the current torque limit for the operation
+		bool m0_over_limit = !ConnectorM0.StepsComplete() && (torque0 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(torque0) > injectorMotorsTorqueLimit);
+		bool m1_over_limit = !ConnectorM1.StepsComplete() && (torque1 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(torque1) > injectorMotorsTorqueLimit);
+		bool m2_over_limit = !ConnectorM2.StepsComplete() && (torque2 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(torque2) > injectorMotorsTorqueLimit);
 
-		bool m0_over_limit = (currentSmoothedTorque1 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(currentSmoothedTorque1) > injectorMotorsTorqueLimit);
-		bool m1_over_limit = (currentSmoothedTorque2 != TORQUE_SENTINEL_INVALID_VALUE && fabsf(currentSmoothedTorque2) > injectorMotorsTorqueLimit);
-
-		if (m0_over_limit || m1_over_limit) {
+		if (m0_over_limit || m1_over_limit || m2_over_limit) {
 			abortInjectorMove();
 			Delay_ms(200);
-			sendToPC("TORQUE LIMIT REACHED, MOTION ABORTED");
+			
+			char torque_msg[128];
+			snprintf(torque_msg, sizeof(torque_msg), "TORQUE LIMIT REACHED (%.1f%%). M0:%.1f, M1:%.1f, M2:%.1f", 
+					injectorMotorsTorqueLimit, torque0, torque1, torque2);
+			sendStatus(STATUS_PREFIX_INFO, torque_msg);
+
 			return true; // Limit exceeded
 		}
 	}
 	return false; // Limit not exceeded or not applicable
 }
+

@@ -15,7 +15,7 @@ import comms
 from shared_gui import create_shared_widgets
 from injector_gui import create_injector_tab
 from fillhead_gui import create_fillhead_tab
-from peer_comms_gui import create_peer_comms_tab  # <-- NEW IMPORT
+from peer_comms_gui import create_peer_comms_tab
 
 # --- CONFIGURATION CONSTANT ---
 GUI_UPDATE_INTERVAL_MS = 100
@@ -63,7 +63,6 @@ def main():
     fillhead_widgets = create_fillhead_tab(notebook, send_fillhead_cmd)
     shared_gui_refs.update(fillhead_widgets)
 
-    # --- NEW: Create the Peer Comms tab ---
     peer_comms_widgets = create_peer_comms_tab(notebook, command_funcs)
     shared_gui_refs.update(peer_comms_widgets)
 
@@ -71,8 +70,39 @@ def main():
     shared_widgets['shared_bottom_frame'].pack(fill=tk.X, expand=False, padx=10, pady=(0, 10))
 
     # --- GUI Update Functions ---
+    def update_injector_torque_plot():
+        ax = shared_gui_refs.get('injector_torque_plot_ax')
+        canvas = shared_gui_refs.get('injector_torque_plot_canvas')
+        lines = shared_gui_refs.get('injector_torque_plot_lines')
+        if not all([ax, canvas, lines]): return
+
+        ts = shared_gui_refs.get('injector_torque_times', [])
+        histories = [
+            shared_gui_refs.get("injector_torque_history1", []),
+            shared_gui_refs.get("injector_torque_history2", []),
+            shared_gui_refs.get("injector_torque_history3", [])
+        ]
+        if not ts: return
+
+        try:
+            latest_time = ts[-1]
+            ax.set_xlim(latest_time - 10, latest_time)
+            for i in range(3):
+                if len(ts) == len(histories[i]):
+                    lines[i].set_data(ts, histories[i])
+
+            all_data = [item for sublist in histories for item in sublist if sublist]
+            if not all_data: return
+
+            min_y_data, max_y_data = min(all_data), max(all_data)
+            nmin, nmax = max(min_y_data - 10, -10), min(max_y_data + 10, 110)
+            ax.set_ylim(nmin, nmax)
+
+            canvas.draw_idle()
+        except (IndexError, ValueError):
+            pass
+
     def update_fillhead_torque_plot():
-        # ... (function is unchanged) ...
         ax = shared_gui_refs.get('fillhead_torque_plot_ax')
         canvas = shared_gui_refs.get('fillhead_torque_plot_canvas')
         lines = shared_gui_refs.get('fillhead_torque_plot_lines')
@@ -95,7 +125,6 @@ def main():
             pass
 
     def update_fillhead_position_plot():
-        # ... (function is unchanged) ...
         canvas = shared_gui_refs.get('fh_pos_viz_canvas')
         xy_marker = shared_gui_refs.get('fh_xy_marker')
         z_bar = shared_gui_refs.get('fh_z_bar')
@@ -112,6 +141,7 @@ def main():
 
     def periodic_gui_updater():
         """This function runs in the main Tkinter thread to safely update plots."""
+        update_injector_torque_plot()
         update_fillhead_torque_plot()
         update_fillhead_position_plot()
         root.after(GUI_UPDATE_INTERVAL_MS, periodic_gui_updater)

@@ -18,15 +18,24 @@
 
 #include "injector.h"
 
-void Injector::sendToPC(const char *msg)
-{
-	if (!terminalDiscovered) return;
-	Udp.Connect(terminalIp, terminalPort);
-	Udp.PacketWrite(msg);
-	Udp.PacketSend();
+void Injector::sendStatus(const char* statusType, const char* message) {
+	char msg[512];
+	snprintf(msg, sizeof(msg), "%s%s", statusType, message);
+	
+	if (guiDiscovered) {
+		udp.Connect(guiIp, guiPort);
+		udp.PacketWrite(msg);
+		udp.PacketSend();
+	}
+
+    if (peerDiscovered) {
+        udp.Connect(peerIp, LOCAL_PORT); 
+        udp.PacketWrite(msg);
+        udp.PacketSend();
+    }
 }
 
-void Injector::setupUsbSerial(void)
+void Injector::setupSerial(void)
 {
 	ConnectorUsb.Mode(Connector::USB_CDC);
 	ConnectorUsb.Speed(9600);
@@ -59,71 +68,25 @@ void Injector::setupEthernet(void)
 	}
 	ConnectorUsb.SendLine("SetupEthernet: PhyLinkActive is active.");
 
-	Udp.Begin(LOCAL_PORT);
-	ConnectorUsb.SendLine("SetupEthernet: Udp.Begin() called for port 8888. Setup Complete.");
+	udp.Begin(LOCAL_PORT);
+	ConnectorUsb.SendLine("SetupEthernet: udp.Begin() called for port 8888. Setup Complete.");
 }
 
-void Injector::handleDiscoveryTelemPacket(const char *msg, IpAddress senderIp) {
-	char dbgBuffer[256];
-	snprintf(dbgBuffer, sizeof(dbgBuffer), "Discovery: RX from %s:%u, Msg: '%.*s'",
-	senderIp.StringValue(), Udp.RemotePort(), MAX_PACKET_LENGTH - 1, msg);
-	ConnectorUsb.SendLine(dbgBuffer);
-
-	char *portStr = strstr(msg, "PORT=");
-	if (portStr) {
-		ConnectorUsb.SendLine("Discovery: Found 'PORT=' in message.");
-		terminalPort = atoi(portStr + 5);
-		terminalIp = senderIp;
-		terminalDiscovered = true;
-
-		snprintf(dbgBuffer, sizeof(dbgBuffer),
-		"Discovery: Set terminalPort=%u, terminalIp=%s, terminalDiscovered=true",
-		terminalPort, terminalIp.StringValue());
-		ConnectorUsb.SendLine(dbgBuffer);
-		} else {
-		ConnectorUsb.SendLine("Discovery Error: 'PORT=' NOT found in message. Cannot discover.");
+void Injector::processUdp() {
+	if (udp.PacketParse()) {
+		int32_t bytesRead = udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
+		if (bytesRead > 0) {
+			packetBuffer[bytesRead] = '\0';
+			handleMessage((char*)packetBuffer);
+		}
 	}
-
-	sendToPC("DISCOVERY: INJECTOR DISCOVERED");
-}
-
-void Injector::checkUdpBuffer(void){
-    memset(packetBuffer, 0, MAX_PACKET_LENGTH);
-    uint16_t packetSize = Udp.PacketParse();
-
-    if (packetSize > 0) {
-        char dbgBuffer[MAX_PACKET_LENGTH + 70]; 
-        snprintf(dbgBuffer, sizeof(dbgBuffer), "checkUdpBuffer: Udp.PacketParse() found a packet! Size: %u", packetSize);
-
-        IpAddress remote_ip = Udp.RemoteIp();
-        uint16_t remote_port = Udp.RemotePort();
-        snprintf(dbgBuffer, sizeof(dbgBuffer), "checkUdpBuffer: Packet is from IP: %s, Port: %u", remote_ip.StringValue(), remote_port);
-
-        int32_t bytesRead = Udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
-        
-        if (bytesRead > 0) {
-            packetBuffer[bytesRead] = '\0'; // Null-terminate the received data
-            snprintf(dbgBuffer, sizeof(dbgBuffer), "checkUdpBuffer: Udp.PacketRead() %ld bytes. Msg: '%s'", bytesRead, (char*)packetBuffer);
-            handleMessage((char *)packetBuffer);
-        } else if (bytesRead == 0) {
-        } else {
-            // bytesRead < 0 usually indicates an error
-        }
-    }
 }
 
 
 // This is the full, updated function for injector_comms.cpp
-
-void Injector::sendTelem(void) {
-	static uint32_t lastTelemTime = 0;
-	uint32_t now = Milliseconds();
-
-	if (!terminalDiscovered || terminalPort == 0) return;
-	if (now - lastTelemTime < telemInterval && lastTelemTime != 0) return;
-	lastTelemTime = now;
-
-	// --- Data gathering for zero-indexed motors 0, 1, 2 ---
+void Injector::sendGuiTelemetry(void){
+	
+	// --- Data gathering for motors 0, 1, 2 ---
 	float displayTorque0 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue0, &firstTorqueReading0);
 	float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue1, &firstTorqueReading1);
 	float displayTorque2 = getSmoothedTorqueEWMA(&ConnectorM2, &smoothedTorqueValue2, &firstTorqueReading2);
@@ -132,109 +95,115 @@ void Injector::sendTelem(void) {
 	int hlfb1_val = (int)ConnectorM1.HlfbState();
 	int hlfb2_val = (int)ConnectorM2.HlfbState();
 
-	long current_pos_m0 = ConnectorM0.PositionRefCommanded();
-	long current_pos_m1 = ConnectorM1.PositionRefCommanded();
-	long current_pos_m2 = ConnectorM2.PositionRefCommanded();
+	long current_pos_steps_m0 = ConnectorM0.PositionRefCommanded();
+	long current_pos_steps_m1 = ConnectorM1.PositionRefCommanded();
+	long current_pos_steps_m2 = ConnectorM2.PositionRefCommanded();
+
+    // --- NEW: Convert absolute positions to millimeters ---
+    float pos_mm_m0 = (float)current_pos_steps_m0 / STEPS_PER_MM_M0;
+    float pos_mm_m1 = (float)current_pos_steps_m1 / STEPS_PER_MM_M1;
+    float pos_mm_m2 = (float)current_pos_steps_m2 / STEPS_PER_MM_M2;
 
 	// Homing status for each motor
-	int is_homed0 = homingMachineDone ? 1 : 0; // Motor 0 is tied to machine home
-	int is_homed1 = homingMachineDone ? 1 : 0; // Motor 1 is also tied to machine home
-	int is_homed2 = homingPinchDone ? 1 : 0;   // Motor 2 is tied to its own pinch home status
+	int is_homed0 = homingMachineDone ? 1 : 0;
+	int is_homed1 = homingMachineDone ? 1 : 0;
+	int is_homed2 = homingPinchDone ? 1 : 0;
 
-	// Legacy relative position values
-	long machine_pos_from_home = current_pos_m0 - machineHomeReferenceSteps;
-	long cartridge_pos_from_home = current_pos_m0 - cartridgeHomeReferenceSteps;
+	// --- MODIFIED: Calculate relative positions in millimeters ---
+	float machine_pos_mm = (float)(current_pos_steps_m0 - machineHomeReferenceSteps) / STEPS_PER_MM_M0;
+	float cartridge_pos_mm = (float)(current_pos_steps_m0 - cartridgeHomeReferenceSteps) / STEPS_PER_MM_M0;
 
-	// Dispense status logic
+	// Dispense status logic (unchanged)
 	float current_dispensed_for_telemetry = 0.0f;
 	float current_target_for_telemetry = 0.0f;
-
 	if (active_dispense_INJECTION_ongoing) {
 		current_target_for_telemetry = active_op_target_ml;
 		if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE ||
-		feedState == FEED_INJECT_RESUMING || feedState == FEED_PURGE_RESUMING ) {
+		    feedState == FEED_INJECT_RESUMING || feedState == FEED_PURGE_RESUMING ) {
 			if (active_op_steps_per_ml > 0.0001f) {
-				long total_steps_moved_for_op = current_pos_m0 - active_op_initial_axis_steps;
+				long total_steps_moved_for_op = current_pos_steps_m0 - active_op_initial_axis_steps;
 				current_dispensed_for_telemetry = fabs(total_steps_moved_for_op) / active_op_steps_per_ml;
 			}
-			} else if (feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) {
+		} else if (feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) {
 			current_dispensed_for_telemetry = active_op_total_dispensed_ml;
 		}
-		} else {
+	} else {
 		current_dispensed_for_telemetry = last_completed_dispense_ml;
 		current_target_for_telemetry = 0.0f;
 	}
 
-	// --- Prepare Torque Strings for motors 0, 1, 2 ---
 	char torque0Str[16], torque1Str[16], torque2Str[16];
 	if (displayTorque0 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque0Str, "---"); } else { snprintf(torque0Str, sizeof(torque0Str), "%.2f", displayTorque0); }
 	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "---"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
 	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "---"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
 
-	// --- Assemble new zero-indexed telemetry packet ---
-	char msg[600];
+	// --- MODIFIED: Assemble new telemetry packet with mm units and peer status ---
+	char msg[512];
 	snprintf(msg, sizeof(msg),
-	"%s,MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
-	"torque0:%s,hlfb0:%d,enabled0:%d,pos_cmd0:%ld,homed0:%d,"
-	"torque1:%s,hlfb1:%d,enabled1:%d,pos_cmd1:%ld,homed1:%d,"
-	"torque2:%s,hlfb2:%d,enabled2:%d,pos_cmd2:%ld,homed2:%d,"
-	"machine_steps:%ld,cartridge_steps:%ld,"
-	"dispensed_ml:%.2f,target_ml:%.2f",
-	TELEM_PREFIX_GUI, // The new prefix
-	// State strings
-	mainStateStr(), homingStateStr(), homingPhaseStr(),
-	feedStateStr(), errorStateStr(),
-	// Motor 0 Data
-	torque0Str, hlfb0_val, (int)(ConnectorM0.HlfbState() == MotorDriver::HLFB_ASSERTED), current_pos_m0, is_homed0,
-	// Motor 1 Data
-	torque1Str, hlfb1_val, (int)(ConnectorM1.HlfbState() == MotorDriver::HLFB_ASSERTED), current_pos_m1, is_homed1,
-	// Motor 2 Data
-	torque2Str, hlfb2_val, (int)(ConnectorM2.HlfbState() == MotorDriver::HLFB_ASSERTED), current_pos_m2, is_homed2,
-	// Legacy Homing and dispense data
-	machine_pos_from_home, cartridge_pos_from_home,
-	current_dispensed_for_telemetry,
-	current_target_for_telemetry);
+	    "MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
+	    "torque0:%s,hlfb0:%d,enabled0:%d,pos_mm0:%.2f,homed0:%d,"      // pos_cmd -> pos_mm
+	    "torque1:%s,hlfb1:%d,enabled1:%d,pos_mm1:%.2f,homed1:%d,"      // pos_cmd -> pos_mm
+	    "torque2:%s,hlfb2:%d,enabled2:%d,pos_mm2:%.2f,homed2:%d,"      // pos_cmd -> pos_mm
+	    "machine_mm:%.2f,cartridge_mm:%.2f,"                         // machine_steps -> machine_mm, etc.
+	    "dispensed_ml:%.2f,target_ml:%.2f,"
+        "peer_disc:%d,peer_ip:%s",                                   // NEW peer status fields
+	    mainStateStr(), homingStateStr(), homingPhaseStr(), feedStateStr(), errorStateStr(),
+	    // Motor 0 Data
+	    torque0Str, hlfb0_val, (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
+	    // Motor 1 Data
+	    torque1Str, hlfb1_val, (int)ConnectorM1.StatusReg().bit.Enabled, pos_mm_m1, is_homed1,
+	    // Motor 2 Data
+	    torque2Str, hlfb2_val, (int)ConnectorM2.StatusReg().bit.Enabled, pos_mm_m2, is_homed2,
+	    // Relative positions in mm
+	    machine_pos_mm, cartridge_pos_mm,
+	    // Dispense data
+	    current_dispensed_for_telemetry, current_target_for_telemetry,
+        // Peer data
+        (int)peerDiscovered, peerIp.StringValue());
 
-	sendToPC(msg);
+	sendStatus(TELEM_PREFIX_GUI, msg);
 }
 
-UserCommand Injector::parseUserCommand(const char *msg) {
-	if (strcmp(msg, USER_CMD_STR_REQUEST_TELEM) == 0) return USER_CMD_REQUEST_TELEM; // ADD THIS LINE
-	if (strncmp(msg, USER_CMD_STR_DISCOVER_TELEM, strlen(USER_CMD_STR_DISCOVER_TELEM)) == 0) return USER_CMD_DISCOVER_TELEM;
+UserCommand Injector::parseCommand(const char *msg) {
+	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM; // ADD THIS LINE
+	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 
-	if (strcmp(msg, USER_CMD_STR_ENABLE) == 0) return USER_CMD_ENABLE;
-	if (strcmp(msg, USER_CMD_STR_DISABLE) == 0) return USER_CMD_DISABLE;
-	if (strcmp(msg, USER_CMD_STR_ABORT) == 0) return USER_CMD_ABORT;
-	if (strcmp(msg, USER_CMD_STR_CLEAR_ERRORS) == 0) return USER_CMD_CLEAR_ERRORS;
+	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
+	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
+	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
+	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS;
 
-	if (strcmp(msg, USER_CMD_STR_STANDBY_MODE) == 0) return USER_CMD_STANDBY_MODE;
-	if (strcmp(msg, USER_CMD_STR_JOG_MODE) == 0) return USER_CMD_JOG_MODE;
-	if (strcmp(msg, USER_CMD_STR_HOMING_MODE) == 0) return USER_CMD_HOMING_MODE;
-	if (strcmp(msg, USER_CMD_STR_FEED_MODE) == 0) return USER_CMD_FEED_MODE;
+	if (strcmp(msg, CMD_STR_STANDBY_MODE) == 0) return CMD_STANDBY_MODE;
+	if (strcmp(msg, CMD_STR_JOG_MODE) == 0) return CMD_JOG_MODE;
+	if (strcmp(msg, CMD_STR_HOMING_MODE) == 0) return CMD_HOMING_MODE;
+	if (strcmp(msg, CMD_STR_FEED_MODE) == 0) return CMD_FEED_MODE;
 
-	if (strncmp(msg, USER_CMD_STR_SET_INJECTOR_TORQUE_OFFSET, strlen(USER_CMD_STR_SET_INJECTOR_TORQUE_OFFSET)) == 0) return USER_CMD_SET_TORQUE_OFFSET;
-	if (strncmp(msg, USER_CMD_STR_JOG_MOVE, strlen(USER_CMD_STR_JOG_MOVE)) == 0) return USER_CMD_JOG_MOVE;
-	if (strncmp(msg, USER_CMD_STR_MACHINE_HOME_MOVE, strlen(USER_CMD_STR_MACHINE_HOME_MOVE)) == 0) return USER_CMD_MACHINE_HOME_MOVE;
-	if (strncmp(msg, USER_CMD_STR_CARTRIDGE_HOME_MOVE, strlen(USER_CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return USER_CMD_CARTRIDGE_HOME_MOVE;
-	if (strncmp(msg, USER_CMD_STR_INJECT_MOVE, strlen(USER_CMD_STR_INJECT_MOVE)) == 0) return USER_CMD_INJECT_MOVE;
-	if (strncmp(msg, USER_CMD_STR_PURGE_MOVE, strlen(USER_CMD_STR_PURGE_MOVE)) == 0) return USER_CMD_PURGE_MOVE;
+	if (strncmp(msg, CMD_STR_SET_INJECTOR_TORQUE_OFFSET, strlen(CMD_STR_SET_INJECTOR_TORQUE_OFFSET)) == 0) return CMD_SET_TORQUE_OFFSET;
+	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
+	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
+	if (strncmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
+	if (strncmp(msg, CMD_STR_INJECT_MOVE, strlen(CMD_STR_INJECT_MOVE)) == 0) return CMD_INJECT_MOVE;
+	if (strncmp(msg, CMD_STR_PURGE_MOVE, strlen(CMD_STR_PURGE_MOVE)) == 0) return CMD_PURGE_MOVE;
 	
-	if (strcmp(msg, USER_CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return USER_CMD_MOVE_TO_CARTRIDGE_HOME;
-	if (strncmp(msg, USER_CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(USER_CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return USER_CMD_MOVE_TO_CARTRIDGE_RETRACT;
+	if (strcmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
+	if (strncmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
 
-	if (strcmp(msg, USER_CMD_STR_PAUSE_INJECTION) == 0) return USER_CMD_PAUSE_INJECTION;
-	if (strcmp(msg, USER_CMD_STR_RESUME_INJECTION) == 0) return USER_CMD_RESUME_INJECTION;
-	if (strcmp(msg, USER_CMD_STR_CANCEL_INJECTION) == 0) return USER_CMD_CANCEL_INJECTION;
+	if (strcmp(msg, CMD_STR_PAUSE_INJECTION) == 0) return CMD_PAUSE_INJECTION;
+	if (strcmp(msg, CMD_STR_RESUME_INJECTION) == 0) return CMD_RESUME_INJECTION;
+	if (strcmp(msg, CMD_STR_CANCEL_INJECTION) == 0) return CMD_CANCEL_INJECTION;
 
     // --- ADDED THIS LINE BACK ---
-	if (strcmp(msg, USER_CMD_STR_PINCH_HOME_MOVE) == 0) return USER_CMD_PINCH_HOME_MOVE;
-	if (strncmp(msg, USER_CMD_STR_PINCH_JOG_MOVE, strlen(USER_CMD_STR_PINCH_JOG_MOVE)) == 0) return USER_CMD_PINCH_JOG_MOVE;
-	if (strcmp(msg, USER_CMD_STR_PINCH_OPEN) == 0) return USER_CMD_PINCH_OPEN;
-	if (strcmp(msg, USER_CMD_STR_PINCH_CLOSE) == 0) return USER_CMD_PINCH_CLOSE;
-    if (strcmp(msg, USER_CMD_STR_ENABLE_PINCH) == 0) return USER_CMD_ENABLE_PINCH;
-    if (strcmp(msg, USER_CMD_STR_DISABLE_PINCH) == 0) return USER_CMD_DISABLE_PINCH;
+	if (strcmp(msg, CMD_STR_PINCH_HOME_MOVE) == 0) return CMD_PINCH_HOME_MOVE;
+	if (strncmp(msg, CMD_STR_PINCH_JOG_MOVE, strlen(CMD_STR_PINCH_JOG_MOVE)) == 0) return CMD_PINCH_JOG_MOVE;
+	if (strcmp(msg, CMD_STR_PINCH_OPEN) == 0) return CMD_PINCH_OPEN;
+	if (strcmp(msg, CMD_STR_PINCH_CLOSE) == 0) return CMD_PINCH_CLOSE;
+    if (strcmp(msg, CMD_STR_ENABLE_PINCH) == 0) return CMD_ENABLE_PINCH;
+    if (strcmp(msg, CMD_STR_DISABLE_PINCH) == 0) return CMD_DISABLE_PINCH;
+	
+	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
+	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
 
-	return USER_CMD_UNKNOWN;
+	return CMD_UNKNOWN;
 }
 
 
@@ -243,42 +212,77 @@ UserCommand Injector::parseUserCommand(const char *msg) {
  * @param msg The raw command string, needed for handlers that parse arguments.
  */
 void Injector::handleMessage(const char *msg) {
-	UserCommand command = parseUserCommand(msg);
+	UserCommand command = parseCommand(msg);
 
 	switch (command) {
-		case USER_CMD_REQUEST_TELEM:             sendTelem(); break;
-		case USER_CMD_DISCOVER_TELEM:            handleDiscoveryTelemPacket(msg, Udp.RemoteIp()); break;
-		case USER_CMD_ENABLE:                    handleEnable(); break;
-		case USER_CMD_DISABLE:                   handleDisable(); break;
-		case USER_CMD_ABORT:                     handleAbort(); break;
-		case USER_CMD_CLEAR_ERRORS:              handleClearErrors(); break;
-		case USER_CMD_STANDBY_MODE:              handleStandbyMode(); break;
-		case USER_CMD_JOG_MODE:                  handleJogMode(); break;
-		case USER_CMD_HOMING_MODE:               handleHomingMode(); break;
-		case USER_CMD_FEED_MODE:                 handleFeedMode(); break;
-		case USER_CMD_SET_TORQUE_OFFSET:         handleSetinjectorMotorsTorqueOffset(msg); break;
-		case USER_CMD_JOG_MOVE:                  handleJogMove(msg); break;
-		case USER_CMD_MACHINE_HOME_MOVE:         handleMachineHomeMove(msg); break;
-		case USER_CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHomeMove(msg); break;
-		case USER_CMD_INJECT_MOVE:               handleInjectMove(msg); break;
-		case USER_CMD_PURGE_MOVE:                handlePurgeMove(msg); break;
-		case USER_CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(); break;
-		case USER_CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(msg); break;
-		case USER_CMD_PAUSE_INJECTION:           handlePauseOperation(); break;
-		case USER_CMD_RESUME_INJECTION:          handleResumeOperation(); break;
-		case USER_CMD_CANCEL_INJECTION:          handleCancelOperation(); break;
+		case CMD_REQUEST_TELEM:             sendGuiTelemetry(); break;
+		case CMD_DISCOVER: {
+			char* portStr = strstr(msg, "PORT=");
+			if (portStr) {
+				guiIp = udp.RemoteIp();
+				guiPort = atoi(portStr + 5);
+				guiDiscovered = true;
+				sendStatus(STATUS_PREFIX_DISCOVERY, "INJECTOR DISCOVERED");
+			}
+			break;
+		}
+		case CMD_ENABLE:                    handleEnable(); break;
+		case CMD_DISABLE:                   handleDisable(); break;
+		case CMD_ABORT:                     handleAbort(); break;
+		case CMD_CLEAR_ERRORS:              handleClearErrors(); break;
+		case CMD_STANDBY_MODE:              handleStandbyMode(); break;
+		case CMD_JOG_MODE:                  handleJogMode(); break;
+		case CMD_HOMING_MODE:               handleHomingMode(); break;
+		case CMD_FEED_MODE:                 handleFeedMode(); break;
+		case CMD_SET_TORQUE_OFFSET:         handleSetinjectorMotorsTorqueOffset(msg); break;
+		case CMD_JOG_MOVE:                  handleJogMove(msg); break;
+		case CMD_MACHINE_HOME_MOVE:         handleMachineHomeMove(msg); break;
+		case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHomeMove(msg); break;
+		case CMD_INJECT_MOVE:               handleInjectMove(msg); break;
+		case CMD_PURGE_MOVE:                handlePurgeMove(msg); break;
+		case CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(); break;
+		case CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(msg); break;
+		case CMD_PAUSE_INJECTION:           handlePauseOperation(); break;
+		case CMD_RESUME_INJECTION:          handleResumeOperation(); break;
+		case CMD_CANCEL_INJECTION:          handleCancelOperation(); break;
 		
         // --- ADDED THIS CASE BACK ---
-        case USER_CMD_PINCH_HOME_MOVE:           handlePinchHomeMove(); break;
-		case USER_CMD_PINCH_JOG_MOVE:            handlePinchJogMove(msg); break;
-		case USER_CMD_PINCH_OPEN:                handlePinchOpen(); break;
-		case USER_CMD_PINCH_CLOSE:               handlePinchClose(); break;
-        case USER_CMD_ENABLE_PINCH:              handleEnablePinch(); break;
-        case USER_CMD_DISABLE_PINCH:             handleDisablePinch(); break;
+        case CMD_PINCH_HOME_MOVE:           handlePinchHomeMove(); break;
+		case CMD_PINCH_JOG_MOVE:            handlePinchJogMove(msg); break;
+		case CMD_PINCH_OPEN:                handlePinchOpen(); break;
+		case CMD_PINCH_CLOSE:               handlePinchClose(); break;
+        case CMD_ENABLE_PINCH:              handleEnablePinch(); break;
+        case CMD_DISABLE_PINCH:             handleDisablePinch(); break;
+		case CMD_SET_PEER_IP:
+            handleSetPeerIp(msg);
+            break;
+        case CMD_CLEAR_PEER_IP:
+            handleClearPeerIp();
+            break;
 
-		case USER_CMD_UNKNOWN:
+		case CMD_UNKNOWN:
 		default:
 			// be silent
 			break;
 	}
+}
+
+void Injector::handleSetPeerIp(const char* msg) {
+    const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
+    IpAddress newPeerIp(ipStr);
+    if (strcmp(newPeerIp.StringValue(), "0.0.0.0") == 0) {
+        peerDiscovered = false;
+        sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
+    } else {
+        peerIp = newPeerIp;
+        peerDiscovered = true;
+        char response[100];
+        snprintf(response, sizeof(response), "Peer IP set to %s", ipStr);
+        sendStatus(STATUS_PREFIX_INFO, response);
+    }
+}
+
+void Injector::handleClearPeerIp() {
+    peerDiscovered = false;
+    sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }

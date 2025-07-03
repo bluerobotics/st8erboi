@@ -25,14 +25,14 @@ void Injector::handleEnable() {
 		homingState = HOMING_NONE;
 		feedState = FEED_NONE;
 		errorState = ERROR_NONE;
-		sendToPC("System enabled: state is now STANDBY_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "System enabled: state is now STANDBY_MODE.");
 		} else {
 		// If already enabled, or in a state other than DISABLED_MODE,
 		// just ensure motors are enabled without changing main state.
 		if (!motorsAreEnabled) {
 			enableInjectorMotors("MOTORS re-enabled (state unchanged)");
 			} else {
-			sendToPC("Motors already enabled, system not in DISABLED_MODE.");
+			sendStatus(STATUS_PREFIX_INFO, "Motors already enabled, system not in DISABLED_MODE.");
 		}
 	}
 }
@@ -44,21 +44,21 @@ void Injector::handleDisable()
 	mainState = DISABLED_MODE;
 	errorState = ERROR_NONE;
 	disableInjectorMotors("MOTORS DISABLED (entered DISABLED state)");
-	sendToPC("System disabled: must ENABLE to return to standby.");
+	sendStatus(STATUS_PREFIX_INFO, "System disabled: must ENABLE to return to standby.");
 }
 
 void Injector::handleAbort() {
-	sendToPC("ABORT received. Stopping motion and resetting...");
+	sendStatus(STATUS_PREFIX_INFO, "ABORT received. Stopping motion and resetting...");
 
-	abortInjectorMove();  // Stop motors
+	abortInjectorMove();
 	Delay_ms(200);
 
-	handleStandbyMode();  // Fully resets system
+	handleStandbyMode();
 }
 
 void Injector::handleClearErrors() {
-	sendToPC("CLEAR_ERRORS received. Resetting system...");
-	handleStandbyMode();  // Goes to standby and clears errors
+	sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting system...");
+	handleStandbyMode();
 }
 
 
@@ -68,19 +68,23 @@ void Injector::handleStandbyMode() {
 	if (mainState != STANDBY_MODE) { // Only log/act if changing state
 		abortInjectorMove(); // Good practice to stop motion when changing to standby
 		Delay_ms(200);
-		reset();
+		mainState = STANDBY_MODE;
+		homingState = HOMING_NONE;
+		currentHomingPhase = HOMING_PHASE_IDLE;
+		feedState = FEED_STANDBY;
+		errorState = ERROR_NONE;
 
 		if (wasError) {
-			sendToPC("Exited previous state: State set to STANDBY_MODE and error cleared.");
+			sendStatus(STATUS_PREFIX_INFO, "Exited previous state: State set to STANDBY_MODE and error cleared.");
 			} else {
-			sendToPC("State set to STANDBY_MODE.");
+			sendStatus(STATUS_PREFIX_INFO, "State set to STANDBY_MODE.");
 		}
 		} else {
 		if (errorState != ERROR_NONE) { // If already in standby but error occurs and then standby is requested again
 			errorState = ERROR_NONE;
-			sendToPC("Still in STANDBY_MODE, error cleared.");
+			sendStatus(STATUS_PREFIX_INFO, "Still in STANDBY_MODE, error cleared.");
 			} else {
-			sendToPC("Already in STANDBY_MODE.");
+			sendStatus(STATUS_PREFIX_INFO, "Already in STANDBY_MODE.");
 		}
 	}
 }
@@ -92,10 +96,10 @@ void Injector::handleJogMode() {
 		mainState = JOG_MODE;
 		homingState = HOMING_NONE; // Reset other mode sub-injector
 		feedState = FEED_NONE;
-		errorState = ERROR_NONE;   // Clear errors
-		sendToPC("Entered JOG_MODE. Ready for JOG_MOVE commands.");
+		errorState = ERROR_NONE;
+		sendStatus(STATUS_PREFIX_INFO, "Entered JOG_MODE. Ready for JOG_MOVE commands.");
 		} else {
-		sendToPC("Already in JOG_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "Already in JOG_MODE.");
 	}
 }
 
@@ -105,11 +109,11 @@ void Injector::handleHomingMode() {
 		Delay_ms(200);
 		mainState = HOMING_MODE;
 		homingState = HOMING_NONE; // Initialize to no specific homing action
-		feedState = FEED_NONE;   // Reset other mode sub-injector
-		errorState = ERROR_NONE;   // Clear errors
-		sendToPC("Entered HOMING_MODE. Ready for homing operations.");
+		feedState = FEED_NONE;
+		errorState = ERROR_NONE;
+		sendStatus(STATUS_PREFIX_INFO, "Entered HOMING_MODE. Ready for homing operations.");
 		} else {
-		sendToPC("Already in HOMING_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "Already in HOMING_MODE.");
 	}
 }
 
@@ -118,117 +122,108 @@ void Injector::handleFeedMode() {
 		abortInjectorMove(); // Stop other activities
 		Delay_ms(200);
 		mainState = FEED_MODE;
-		feedState = FEED_STANDBY;  // Default sub-state for feed operations
+		feedState = FEED_STANDBY;
 		homingState = HOMING_NONE; // Reset other mode sub-injector
-		errorState = ERROR_NONE;   // Clear errors
-		sendToPC("Entered FEED_MODE. Ready for inject/purge/retract.");
+		errorState = ERROR_NONE;
+		sendStatus(STATUS_PREFIX_INFO, "Entered FEED_MODE. Ready for inject/purge/retract.");
 		} else {
-		sendToPC("Already in FEED_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "Already in FEED_MODE.");
 	}
 }
 
 void Injector::handleSetinjectorMotorsTorqueOffset(const char *msg) {
-	float newOffset = atof(msg + strlen(USER_CMD_STR_SET_INJECTOR_TORQUE_OFFSET));
+	float newOffset = atof(msg + strlen(CMD_STR_SET_INJECTOR_TORQUE_OFFSET));
 	injectorMotorsTorqueOffset = newOffset;
 	char response[64];
 	snprintf(response, sizeof(response), "Global torque offset set to %.2f", injectorMotorsTorqueOffset);
-	sendToPC(response);
+	sendStatus(STATUS_PREFIX_INFO, response);
 }
 
-void Injector::handleJogMove(const char *msg) {
+void Injector::handleJogMove(const char* msg) {
 	if (mainState != JOG_MODE) {
-		sendToPC("JOG_MOVE ignored: Not in JOG_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "JOG_MOVE ignored: Not in JOG_MODE.");
 		return;
 	}
 
-	long s0 = 0, s1 = 0;
-	int torque_percent = 0, velocity_sps = 0, accel_sps2 = 0;
+	float dist_mm1 = 0, dist_mm2 = 0, vel_mms = 0, accel_mms2 = 0;
+	int torque_percent = 0;
 
-	int parsed_count = sscanf(msg + strlen(USER_CMD_STR_JOG_MOVE), "%ld %ld %d %d %d",
-	&s0, &s1,
-	&torque_percent,
-	&velocity_sps,
-	&accel_sps2);
+	int parsed_count = sscanf(msg + strlen(CMD_STR_JOG_MOVE), "%f %f %f %f %d",
+	&dist_mm1, &dist_mm2, &vel_mms, &accel_mms2, &torque_percent);
 
 	if (parsed_count == 5) {
-		char response[150];
-		snprintf(response, sizeof(response),
-		"JOG_MOVE RX: s0:%ld s1:%ld TqL:%d%% Vel:%d Acc:%d",
-		s0, s1, torque_percent, velocity_sps, accel_sps2);
-		sendToPC(response);
+		char response[200];
+		snprintf(response, sizeof(response), "JOG_MOVE RX: M0:%.2fmm M1:%.2fmm Vel:%.1fmm/s Acc:%.1fmm/s2 Tq:%d%%",
+		dist_mm1, dist_mm2, vel_mms, accel_mms2, torque_percent);
+		sendStatus(STATUS_PREFIX_INFO, response);
 
 		if (!motorsAreEnabled) {
-			sendToPC("JOG_MOVE blocked: Motors are disabled.");
+			sendStatus(STATUS_PREFIX_INFO, "JOG_MOVE blocked: Motors are disabled.");
 			return;
 		}
 
-		if (torque_percent <= 0 || torque_percent > 100) {
-			torque_percent = 30;
-			char torqueWarn[80];
-			snprintf(torqueWarn, sizeof(torqueWarn), "Warning: Invalid jog torque in command, using %d%%.", torque_percent);
-			sendToPC(torqueWarn);
-		}
-		if (velocity_sps <= 0) {
-			velocity_sps = 800;
-			sendToPC("Warning: Invalid jog velocity, using default.");
-		}
-		if (accel_sps2 <= 0) {
-			accel_sps2 = 5000;
-			sendToPC("Warning: Invalid jog acceleration, using default.");
-		}
+		// Parameter validation
+		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 30;
+		if (vel_mms <= 0) vel_mms = 2.0f; // Default 2.0 mm/s
+		if (accel_mms2 <= 0) accel_mms2 = 10.0f; // Default 10.0 mm/s^2
 
-		moveInjectorMotors((int)s0, (int)s1, torque_percent, velocity_sps, accel_sps2);
+		// Convert metric units to step-based units for the motor driver
+		long steps1 = (long)(dist_mm1 * STEPS_PER_MM_M0);
+		long steps2 = (long)(dist_mm2 * STEPS_PER_MM_M1);
+		int velocity_sps = (int)(vel_mms * STEPS_PER_MM_M0); // Assuming M0/M1 have same mechanics
+		int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_M0);
+
+		moveInjectorMotors(steps1, steps2, torque_percent, velocity_sps, accel_sps2_val);
 		jogDone = false;
-
 		} else {
 		char errorMsg[100];
 		snprintf(errorMsg, sizeof(errorMsg), "Invalid JOG_MOVE format. Expected 5 params, got %d.", parsed_count);
-		sendToPC(errorMsg);
+		sendStatus(STATUS_PREFIX_INFO, errorMsg);
 	}
 }
 
 void Injector::handleMachineHomeMove(const char *msg) {
 	if (mainState != HOMING_MODE) {
-		sendToPC("MACHINE_HOME_MOVE ignored: Not in HOMING_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "MACHINE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
 	if (currentHomingPhase != HOMING_PHASE_IDLE && currentHomingPhase != HOMING_PHASE_COMPLETE && currentHomingPhase != HOMING_PHASE_ERROR) {
-		sendToPC("MACHINE_HOME_MOVE ignored: Homing operation already in progress.");
+		sendStatus(STATUS_PREFIX_INFO, "MACHINE_HOME_MOVE ignored: Homing operation already in progress.");
 		return;
 	}
 
 	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent;
 	
-	int parsed_count = sscanf(msg + strlen(USER_CMD_STR_MACHINE_HOME_MOVE), "%f %f %f %f %f %f",
+	int parsed_count = sscanf(msg + strlen(CMD_STR_MACHINE_HOME_MOVE), "%f %f %f %f %f %f",
 	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration_mm_s2, &retract_mm, &torque_percent);
 
 	if (parsed_count == 6) {
 		char response[250];
 		snprintf(response, sizeof(response), "MACHINE_HOME_MOVE RX: Strk:%.1f RpdV:%.1f TchV:%.1f Acc:%.1f Ret:%.1f Tq:%.1f%%",
 		stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent);
-		sendToPC(response);
+		sendStatus(STATUS_PREFIX_INFO, response);
 
-        if (PITCH_MM_PER_REV <= 0.0f) {
-            sendToPC("FATAL HOMING ERROR: PITCH_MM_PER_REV is not set or is zero. Cannot calculate steps.");
-            homingState = HOMING_MACHINE;
+		if (PITCH_MM_PER_REV <= 0.0f) {
+			sendStatus(STATUS_PREFIX_INFO, "FATAL HOMING ERROR: PITCH_MM_PER_REV is not set or is zero. Cannot calculate steps.");
+			homingState = HOMING_MACHINE;
 			currentHomingPhase = HOMING_PHASE_ERROR;
 			errorState = ERROR_INVALID_PARAMETERS;
-            return;
-        }
+			return;
+		}
 
 		if (!motorsAreEnabled) {
-			sendToPC("MACHINE_HOME_MOVE blocked: Motors disabled. Set to HOMING_PHASE_ERROR.");
+			sendStatus(STATUS_PREFIX_INFO, "MACHINE_HOME_MOVE blocked: Motors disabled. Set to HOMING_PHASE_ERROR.");
 			homingState = HOMING_MACHINE;
 			currentHomingPhase = HOMING_PHASE_ERROR;
 			errorState = ERROR_MOTORS_DISABLED;
 			return;
 		}
 		if (torque_percent <= 0 || torque_percent > 100) {
-			sendToPC("Warning: Invalid torque for Machine Home. Using default 20%.");
+			sendStatus(STATUS_PREFIX_INFO, "Warning: Invalid torque for Machine Home. Using default 20%.");
 			torque_percent = 20.0f;
 		}
 		if (rapid_vel_mm_s <= 0 || touch_vel_mm_s <= 0 || acceleration_mm_s2 <=0 || stroke_mm <= 0 || retract_mm < 0) {
-			sendToPC("Error: Invalid parameters for Machine Home (must be positive, retract >= 0). Set to HOMING_PHASE_ERROR.");
+			sendStatus(STATUS_PREFIX_INFO, "Error: Invalid parameters for Machine Home (must be positive, retract >= 0). Set to HOMING_PHASE_ERROR.");
 			homingState = HOMING_MACHINE;
 			currentHomingPhase = HOMING_PHASE_ERROR;
 			errorState = ERROR_INVALID_PARAMETERS;
@@ -257,12 +252,12 @@ void Injector::handleMachineHomeMove(const char *msg) {
 		homingStartTime = Milliseconds(); // For timeout tracking
 		errorState = ERROR_NONE; // Clear previous errors
 
-		sendToPC("Initiating Machine Homing: STARTING_MOVE phase.");
+		sendStatus(STATUS_PREFIX_INFO, "Initiating Machine Homing: STARTING_MOVE phase.");
 		long initial_move_steps = -1 * homing_actual_stroke_steps;
 		moveInjectorMotors(initial_move_steps, initial_move_steps, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
 		
 		} else {
-		sendToPC("Invalid MACHINE_HOME_MOVE format. Expected 6 parameters.");
+		sendStatus(STATUS_PREFIX_INFO, "Invalid MACHINE_HOME_MOVE format. Expected 6 parameters.");
 		homingState = HOMING_MACHINE;
 		currentHomingPhase = HOMING_PHASE_ERROR;
 	}
@@ -270,45 +265,45 @@ void Injector::handleMachineHomeMove(const char *msg) {
 
 void Injector::handleCartridgeHomeMove(const char *msg) {
 	if (mainState != HOMING_MODE) {
-		sendToPC("CARTRIDGE_HOME_MOVE ignored: Not in HOMING_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "CARTRIDGE_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
 	if (currentHomingPhase != HOMING_PHASE_IDLE && currentHomingPhase != HOMING_PHASE_COMPLETE && currentHomingPhase != HOMING_PHASE_ERROR) {
-		sendToPC("CARTRIDGE_HOME_MOVE ignored: Homing operation already in progress.");
+		sendStatus(STATUS_PREFIX_INFO, "CARTRIDGE_HOME_MOVE ignored: Homing operation already in progress.");
 		return;
 	}
 	
 	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent;
-	int parsed_count = sscanf(msg + strlen(USER_CMD_STR_CARTRIDGE_HOME_MOVE), "%f %f %f %f %f %f",
+	int parsed_count = sscanf(msg + strlen(CMD_STR_CARTRIDGE_HOME_MOVE), "%f %f %f %f %f %f",
 	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration_mm_s2, &retract_mm, &torque_percent);
 
 	if (parsed_count == 6) {
 		char response[250];
 		snprintf(response, sizeof(response), "CARTRIDGE_HOME_MOVE RX: Strk:%.1f RpdV:%.1f TchV:%.1f Acc:%.1f Ret:%.1f Tq:%.1f%%",
 		stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent);
-		sendToPC(response);
+		sendStatus(STATUS_PREFIX_INFO, response);
 
-        if (PITCH_MM_PER_REV <= 0.0f) {
-            sendToPC("FATAL HOMING ERROR: PITCH_MM_PER_REV is not set or is zero. Cannot calculate steps.");
-            homingState = HOMING_CARTRIDGE;
+		if (PITCH_MM_PER_REV <= 0.0f) {
+			sendStatus(STATUS_PREFIX_INFO, "FATAL HOMING ERROR: PITCH_MM_PER_REV is not set or is zero. Cannot calculate steps.");
+			homingState = HOMING_CARTRIDGE;
 			currentHomingPhase = HOMING_PHASE_ERROR;
 			errorState = ERROR_INVALID_PARAMETERS;
-            return;
-        }
+			return;
+		}
 
 		if (!motorsAreEnabled) {
-			sendToPC("CARTRIDGE_HOME_MOVE blocked: Motors disabled. Set to HOMING_PHASE_ERROR.");
+			sendStatus(STATUS_PREFIX_INFO, "CARTRIDGE_HOME_MOVE blocked: Motors disabled. Set to HOMING_PHASE_ERROR.");
 			homingState = HOMING_CARTRIDGE;
 			currentHomingPhase = HOMING_PHASE_ERROR;
 			errorState = ERROR_MOTORS_DISABLED;
 			return;
 		}
 		if (torque_percent <= 0 || torque_percent > 100) {
-			sendToPC("Warning: Invalid torque for Cartridge Home. Using default 20%.");
+			sendStatus(STATUS_PREFIX_INFO, "Warning: Invalid torque for Cartridge Home. Using default 20%.");
 			torque_percent = 20.0f;
 		}
 		if (rapid_vel_mm_s <= 0 || touch_vel_mm_s <= 0 || acceleration_mm_s2 <=0 || stroke_mm <= 0 || retract_mm < 0) {
-			sendToPC("Error: Invalid parameters for Cartridge Home (must be positive, retract >= 0). Set to HOMING_PHASE_ERROR.");
+			sendStatus(STATUS_PREFIX_INFO, "Error: Invalid parameters for Cartridge Home (must be positive, retract >= 0). Set to HOMING_PHASE_ERROR.");
 			homingState = HOMING_CARTRIDGE;
 			currentHomingPhase = HOMING_PHASE_ERROR;
 			errorState = ERROR_INVALID_PARAMETERS;
@@ -334,12 +329,12 @@ void Injector::handleCartridgeHomeMove(const char *msg) {
 		homingStartTime = Milliseconds();
 		errorState = ERROR_NONE;
 
-		sendToPC("Initiating Cartridge Homing: STARTING_MOVE phase.");
+		sendStatus(STATUS_PREFIX_INFO, "Initiating Cartridge Homing: STARTING_MOVE phase.");
 		long initial_move_steps = 1 * homing_actual_stroke_steps;
 		moveInjectorMotors(initial_move_steps, initial_move_steps, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
 
 		} else {
-		sendToPC("Invalid CARTRIDGE_HOME_MOVE format. Expected 6 parameters.");
+		sendStatus(STATUS_PREFIX_INFO, "Invalid CARTRIDGE_HOME_MOVE format. Expected 6 parameters.");
 		homingState = HOMING_CARTRIDGE;
 		currentHomingPhase = HOMING_PHASE_ERROR;
 	}
@@ -347,62 +342,75 @@ void Injector::handleCartridgeHomeMove(const char *msg) {
 
 void Injector::handlePinchHomeMove() {
 	if (mainState != HOMING_MODE) {
-		sendToPC("PINCH_HOME_MOVE ignored: Not in HOMING_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "PINCH_HOME_MOVE ignored: Not in HOMING_MODE.");
 		return;
 	}
-	
-	long homing_steps = -800;
+	if (currentHomingPhase != HOMING_PHASE_IDLE && currentHomingPhase != HOMING_PHASE_COMPLETE && currentHomingPhase != HOMING_PHASE_ERROR) {
+		sendStatus(STATUS_PREFIX_INFO, "PINCH_HOME_MOVE ignored: Homing operation already in progress.");
+		return;
+	}
+	if (ConnectorM2.HlfbState() != MotorDriver::HLFB_ASSERTED) {
+		sendStatus(STATUS_PREFIX_INFO, "PINCH_HOME_MOVE blocked: Pinch motor is disabled.");
+		return;
+	}
+
+	// Hardcoded parameters for pinch homing
+	long homing_steps = -800; // Move up to 1 revolution
 	int velocity = 400;
 	int acceleration = 5000;
 	int torque_percent = 10;
 	
-	if (ConnectorM2.HlfbState() != MotorDriver::HLFB_ASSERTED) {
-		sendToPC("PINCH_HOME_MOVE blocked: Pinch motor is disabled.");
-		return;
-	}
+	// Set up the state machine for pinch homing
+	homingState = HOMING_PINCH;
+	currentHomingPhase = HOMING_PHASE_STARTING_MOVE;
+	homingStartTime = Milliseconds();
+	errorState = ERROR_NONE;
 
-	sendToPC("Initiating Pinch Homing...");
+	sendStatus(STATUS_PREFIX_INFO, "Initiating Pinch Homing...");
 	movePinchMotor(homing_steps, torque_percent, velocity, acceleration);
 }
 
 void Injector::handlePinchJogMove(const char *msg) {
 	if (mainState != JOG_MODE) {
-		sendToPC("PINCH_JOG_MOVE ignored: Not in JOG_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "PINCH_JOG_MOVE ignored: Not in JOG_MODE.");
 		return;
 	}
 
-	long steps = 0;
+	float degrees = 0;
 	int torque_percent = 0, velocity_sps = 0, accel_sps2 = 0;
 
-	int parsed_count = sscanf(msg + strlen(USER_CMD_STR_PINCH_JOG_MOVE), "%ld %d %d %d",
-	&steps, &torque_percent, &velocity_sps, &accel_sps2);
+	int parsed_count = sscanf(msg + strlen(CMD_STR_PINCH_JOG_MOVE), "%f %d %d %d",
+	&degrees, &torque_percent, &velocity_sps, &accel_sps2);
 
 	if (parsed_count == 4) {
 		char response[150];
-		snprintf(response, sizeof(response), "PINCH_JOG_MOVE RX: s:%ld TqL:%d%% Vel:%d Acc:%d",
-		steps, torque_percent, velocity_sps, accel_sps2);
-		sendToPC(response);
+		snprintf(response, sizeof(response), "PINCH_JOG_MOVE RX: deg:%.1f TqL:%d%% Vel:%d Acc:%d",
+		degrees, torque_percent, velocity_sps, accel_sps2);
+		sendStatus(STATUS_PREFIX_INFO, response);
 
 		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 30;
 		if (velocity_sps <= 0) velocity_sps = 800;
 		if (accel_sps2 <= 0) accel_sps2 = 5000;
 
-		movePinchMotor(steps, torque_percent, velocity_sps, accel_sps2);
+		const float steps_per_degree = 800.0f / 360.0f;
+		long steps_to_move = (long)(degrees * steps_per_degree);
+
+		movePinchMotor(steps_to_move, torque_percent, velocity_sps, accel_sps2);
 		} else {
 		char errorMsg[100];
 		snprintf(errorMsg, sizeof(errorMsg), "Invalid PINCH_JOG_MOVE format. Expected 4 params, got %d.", parsed_count);
-		sendToPC(errorMsg);
+		sendStatus(STATUS_PREFIX_ERROR, errorMsg);
 	}
 }
 
 void Injector::handleEnablePinch() {
-    sendToPC("Enabling Pinch Motor (M2)...");
-    ConnectorM2.EnableRequest(true);
+	sendStatus(STATUS_PREFIX_INFO, "Enabling Pinch Motor (M2)...");
+	ConnectorM2.EnableRequest(true);
 }
 
 void Injector::handleDisablePinch() {
-    sendToPC("Disabling Pinch Motor (M2)...");
-    ConnectorM2.EnableRequest(false);
+	sendStatus(STATUS_PREFIX_INFO, "Disabling Pinch Motor (M2)...");
+	ConnectorM2.EnableRequest(false);
 }
 
 void Injector::handlePinchOpen(){
@@ -413,24 +421,16 @@ void Injector::handlePinchClose(){
 	// Implementation needed
 }
 
-void Injector::resetActiveDispenseOp() {
-	active_op_target_ml = 0.0f;
-	active_op_total_dispensed_ml = 0.0f;
-	active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-	active_op_steps_per_ml = 0.0f;
-	active_dispense_INJECTION_ongoing = false;
-}
-
 void Injector::handleMoveToCartridgeHome() {
 	if (mainState != FEED_MODE) { return; }
-	if (!homingCartridgeDone) { errorState = ERROR_NO_CARTRIDGE_HOME; sendToPC("Err: Cartridge not homed."); return; }
-	if (!motorsAreEnabled) { sendToPC("Err: Motors disabled."); return; }
+	if (!homingCartridgeDone) { errorState = ERROR_NO_CARTRIDGE_HOME; sendStatus(STATUS_PREFIX_INFO, "Err: Cartridge not homed."); return; }
+	if (!motorsAreEnabled) { sendStatus(STATUS_PREFIX_INFO, "Err: Motors disabled."); return; }
 	if (checkInjectorMoving() || feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE) {
-		sendToPC("Err: Busy. Cannot move to cart home now.");
+		sendStatus(STATUS_PREFIX_INFO, "Err: Busy. Cannot move to cart home now.");
 		errorState = ERROR_INVALID_INJECTION; return;
 	}
 
-	sendToPC("Cmd: Move to Cartridge Home...");
+	sendStatus(STATUS_PREFIX_INFO, "Cmd: Move to Cartridge Home...");
 	fullyResetActiveDispenseOperation();
 	feedState = FEED_MOVING_TO_HOME;
 	feedingDone = false;
@@ -444,16 +444,16 @@ void Injector::handleMoveToCartridgeHome() {
 
 void Injector::handleMoveToCartridgeRetract(const char *msg) {
 	if (mainState != FEED_MODE) { return; }
-	if (!homingCartridgeDone) { errorState = ERROR_NO_CARTRIDGE_HOME; sendToPC("Err: Cartridge not homed."); return; }
-	if (!motorsAreEnabled) { sendToPC("Err: Motors disabled."); return; }
+	if (!homingCartridgeDone) { errorState = ERROR_NO_CARTRIDGE_HOME; sendStatus(STATUS_PREFIX_INFO, "Err: Cartridge not homed."); return; }
+	if (!motorsAreEnabled) { sendStatus(STATUS_PREFIX_INFO, "Err: Motors disabled."); return; }
 	if (checkInjectorMoving() || feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE) {
-		sendToPC("Err: Busy. Cannot move to cart retract now.");
+		sendStatus(STATUS_PREFIX_INFO, "Err: Busy. Cannot move to cart retract now.");
 		errorState = ERROR_INVALID_INJECTION; return;
 	}
 
 	float offset_mm = 0.0f;
-	if (sscanf(msg + strlen(USER_CMD_STR_MOVE_TO_CARTRIDGE_RETRACT), "%f", &offset_mm) != 1 || offset_mm < 0) {
-		sendToPC("Err: Invalid offset for MOVE_TO_CARTRIDGE_RETRACT."); return;
+	if (sscanf(msg + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT), "%f", &offset_mm) != 1 || offset_mm < 0) {
+		sendStatus(STATUS_PREFIX_INFO, "Err: Invalid offset for MOVE_TO_CARTRIDGE_RETRACT."); return;
 	}
 	
 	fullyResetActiveDispenseOperation();
@@ -466,7 +466,7 @@ void Injector::handleMoveToCartridgeRetract(const char *msg) {
 
 	char response[150];
 	snprintf(response, sizeof(response), "Cmd: Move to Cart Retract (Offset: %.1fmm, Target: %ld steps)", offset_mm, target_absolute_axis_position);
-	sendToPC(response);
+	sendStatus(STATUS_PREFIX_INFO, response);
 
 	long current_axis_pos = ConnectorM0.PositionRefCommanded();
 	long steps_to_move_axis = target_absolute_axis_position - current_axis_pos;
@@ -478,25 +478,25 @@ void Injector::handleMoveToCartridgeRetract(const char *msg) {
 
 void Injector::handleInjectMove(const char *msg) {
 	if (mainState != FEED_MODE) {
-		sendToPC("INJECT ignored: Not in FEED_MODE.");
+		sendStatus(STATUS_PREFIX_INFO, "INJECT ignored: Not in FEED_MODE.");
 		return;
 	}
 	if (checkInjectorMoving() || active_dispense_INJECTION_ongoing) {
-		sendToPC("Error: Operation already in progress or motors busy.");
+		sendStatus(STATUS_PREFIX_INFO, "Error: Operation already in progress or motors busy.");
 		errorState = ERROR_INVALID_INJECTION;
 		return;
 	}
 
 	float volume_ml, speed_ml_s, acceleration_sps2_param, steps_per_ml_val, torque_percent;
-	if (sscanf(msg + strlen(USER_CMD_STR_INJECT_MOVE), "%f %f %f %f %f",
+	if (sscanf(msg + strlen(CMD_STR_INJECT_MOVE), "%f %f %f %f %f",
 	&volume_ml, &speed_ml_s, &acceleration_sps2_param, &steps_per_ml_val, &torque_percent) == 5) {
 		
-		if (!motorsAreEnabled) { sendToPC("INJECT blocked: Motors disabled."); return; }
-		if (steps_per_ml_val <= 0.0001f) { sendToPC("Error: Steps/ml must be positive and non-zero."); return; }
+		if (!motorsAreEnabled) { sendStatus(STATUS_PREFIX_INFO, "INJECT blocked: Motors disabled."); return; }
+		if (steps_per_ml_val <= 0.0001f) { sendStatus(STATUS_PREFIX_INFO, "Error: Steps/ml must be positive and non-zero."); return; }
 		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f;
-		if (volume_ml <= 0) { sendToPC("Error: Inject volume must be positive."); return; }
-		if (speed_ml_s <= 0) { sendToPC("Error: Inject speed must be positive."); return; }
-		if (acceleration_sps2_param <= 0) { sendToPC("Error: Inject acceleration must be positive."); return; }
+		if (volume_ml <= 0) { sendStatus(STATUS_PREFIX_INFO, "Error: Inject volume must be positive."); return; }
+		if (speed_ml_s <= 0) { sendStatus(STATUS_PREFIX_INFO, "Error: Inject speed must be positive."); return; }
+		if (acceleration_sps2_param <= 0) { sendStatus(STATUS_PREFIX_INFO, "Error: Inject acceleration must be positive."); return; }
 
 		fullyResetActiveDispenseOperation();
 		last_completed_dispense_ml = 0.0f;
@@ -522,34 +522,34 @@ void Injector::handleInjectMove(const char *msg) {
 		char response[200];
 		snprintf(response, sizeof(response), "RX INJECT: Vol:%.2fml, Speed:%.2fml/s (calc_vel_sps:%d), Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
 		volume_ml, speed_ml_s, active_op_velocity_sps, acceleration_sps2_param, steps_per_ml_val, torque_percent);
-		sendToPC(response);
-		sendToPC("Starting Inject operation...");
+		sendStatus(STATUS_PREFIX_INFO, response);
+		sendStatus(STATUS_PREFIX_INFO, "Starting Inject operation...");
 
 		moveInjectorMotors(active_op_remaining_steps, active_op_remaining_steps,
 		active_op_torque_percent, active_op_velocity_sps, active_op_accel_sps2);
 		} else {
-		sendToPC("Invalid INJECT_MOVE format. Expected 5 params.");
+		sendStatus(STATUS_PREFIX_INFO, "Invalid INJECT_MOVE format. Expected 5 params.");
 	}
 }
 
 void Injector::handlePurgeMove(const char *msg) {
-	if (mainState != FEED_MODE) { sendToPC("PURGE ignored: Not in FEED_MODE."); return; }
+	if (mainState != FEED_MODE) { sendStatus(STATUS_PREFIX_INFO, "PURGE ignored: Not in FEED_MODE."); return; }
 	if (checkInjectorMoving() || active_dispense_INJECTION_ongoing) {
-		sendToPC("Error: Operation already in progress or motors busy.");
+		sendStatus(STATUS_PREFIX_INFO, "Error: Operation already in progress or motors busy.");
 		errorState = ERROR_INVALID_INJECTION;
 		return;
 	}
 
 	float volume_ml, speed_ml_s, acceleration_sps2_param, steps_per_ml_val, torque_percent;
-	if (sscanf(msg + strlen(USER_CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
+	if (sscanf(msg + strlen(CMD_STR_PURGE_MOVE), "%f %f %f %f %f",
 	&volume_ml, &speed_ml_s, &acceleration_sps2_param, &steps_per_ml_val, &torque_percent) == 5) {
 		
-		if (!motorsAreEnabled) { sendToPC("PURGE blocked: Motors disabled."); return; }
-		if (steps_per_ml_val <= 0.0001f) { sendToPC("Error: Steps/ml must be positive and non-zero."); return;}
+		if (!motorsAreEnabled) { sendStatus(STATUS_PREFIX_INFO, "PURGE blocked: Motors disabled."); return; }
+		if (steps_per_ml_val <= 0.0001f) { sendStatus(STATUS_PREFIX_INFO, "Error: Steps/ml must be positive and non-zero."); return;}
 		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 50.0f;
-		if (volume_ml <= 0) { sendToPC("Error: Purge volume must be positive."); return; }
-		if (speed_ml_s <= 0) { sendToPC("Error: Purge speed must be positive."); return; }
-		if (acceleration_sps2_param <= 0) { sendToPC("Error: Purge acceleration must be positive."); return; }
+		if (volume_ml <= 0) { sendStatus(STATUS_PREFIX_INFO, "Error: Purge volume must be positive."); return; }
+		if (speed_ml_s <= 0) { sendStatus(STATUS_PREFIX_INFO, "Error: Purge speed must be positive."); return; }
+		if (acceleration_sps2_param <= 0) { sendStatus(STATUS_PREFIX_INFO, "Error: Purge acceleration must be positive."); return; }
 
 		fullyResetActiveDispenseOperation();
 		last_completed_dispense_ml = 0.0f;
@@ -575,47 +575,47 @@ void Injector::handlePurgeMove(const char *msg) {
 		char response[200];
 		snprintf(response, sizeof(response), "RX PURGE: Vol:%.2fml, Speed:%.2fml/s (calc_vel_sps:%d), Acc:%.0f, Steps/ml:%.2f, Tq:%.0f%%",
 		volume_ml, speed_ml_s, active_op_velocity_sps, acceleration_sps2_param, steps_per_ml_val, torque_percent);
-		sendToPC(response);
-		sendToPC("Starting Purge operation...");
+		sendStatus(STATUS_PREFIX_INFO, response);
+		sendStatus(STATUS_PREFIX_INFO, "Starting Purge operation...");
 		
 		moveInjectorMotors(active_op_remaining_steps, active_op_remaining_steps,
 		active_op_torque_percent, active_op_velocity_sps, active_op_accel_sps2);
 		} else {
-		sendToPC("Invalid PURGE_MOVE format. Expected 5 params.");
+		sendStatus(STATUS_PREFIX_INFO, "Invalid PURGE_MOVE format. Expected 5 params.");
 	}
 }
 
 void Injector::handlePauseOperation() {
 	if (!active_dispense_INJECTION_ongoing) {
-		sendToPC("PAUSE ignored: No active inject/purge operation.");
+		sendStatus(STATUS_PREFIX_INFO, "PAUSE ignored: No active inject/purge operation.");
 		return;
 	}
 
 	if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE) {
-		sendToPC("Cmd: Pausing operation...");
+		sendStatus(STATUS_PREFIX_INFO, "Cmd: Pausing operation...");
 		ConnectorM0.MoveStopDecel();
 		ConnectorM1.MoveStopDecel();
 
 		if (feedState == FEED_INJECT_ACTIVE) feedState = FEED_INJECT_PAUSED;
 		if (feedState == FEED_PURGE_ACTIVE) feedState = FEED_PURGE_PAUSED;
 		} else {
-		sendToPC("PAUSE ignored: Not in an active inject/purge state.");
+		sendStatus(STATUS_PREFIX_INFO, "PAUSE ignored: Not in an active inject/purge state.");
 	}
 }
 
 void Injector::handleResumeOperation() {
 	if (!active_dispense_INJECTION_ongoing) {
-		sendToPC("RESUME ignored: No operation was ongoing or paused.");
+		sendStatus(STATUS_PREFIX_INFO, "RESUME ignored: No operation was ongoing or paused.");
 		return;
 	}
 	if (feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) {
 		if (active_op_remaining_steps <= 0) {
-			sendToPC("RESUME ignored: No remaining volume/steps to dispense.");
+			sendStatus(STATUS_PREFIX_INFO, "RESUME ignored: No remaining volume/steps to dispense.");
 			fullyResetActiveDispenseOperation();
 			feedState = FEED_STANDBY;
 			return;
 		}
-		sendToPC("Cmd: Resuming operation...");
+		sendStatus(STATUS_PREFIX_INFO, "Cmd: Resuming operation...");
 		active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
 		feedingDone = false;
 
@@ -630,17 +630,17 @@ void Injector::handleResumeOperation() {
 
 
 		} else {
-		sendToPC("RESUME ignored: Operation not paused.");
+		sendStatus(STATUS_PREFIX_INFO, "RESUME ignored: Operation not paused.");
 	}
 }
 
 void Injector::handleCancelOperation() {
 	if (!active_dispense_INJECTION_ongoing) {
-		sendToPC("CANCEL ignored: No active inject/purge operation to cancel.");
+		sendStatus(STATUS_PREFIX_INFO, "CANCEL ignored: No active inject/purge operation to cancel.");
 		return;
 	}
 
-	sendToPC("Cmd: Cancelling current feed operation...");
+	sendStatus(STATUS_PREFIX_INFO, "Cmd: Cancelling current feed operation...");
 	abortInjectorMove();
 	Delay_ms(100);
 
@@ -658,7 +658,7 @@ void Injector::handleCancelOperation() {
 	feedingDone = true;
 	errorState = ERROR_NONE;
 
-	sendToPC("Operation Cancelled. Dispensed value for this attempt will show as 0 ml in idle telemetry.");
+	sendStatus(STATUS_PREFIX_INFO, "Operation Cancelled. Dispensed value for this attempt will show as 0 ml in idle telemetry.");
 }
 
 void Injector::finalizeAndResetActiveDispenseOperation(bool operationCompletedSuccessfully) {

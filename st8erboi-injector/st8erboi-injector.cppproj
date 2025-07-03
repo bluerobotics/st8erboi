@@ -266,9 +266,6 @@
     <None Include="Device_Startup\flash_without_bootloader.ld">
       <SubType>compile</SubType>
     </None>
-    <Compile Include="main.cpp">
-      <SubType>compile</SubType>
-    </Compile>
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Device_Startup\" />

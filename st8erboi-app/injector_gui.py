@@ -11,11 +11,13 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     injector_tab = tk.Frame(notebook, bg="#21232b")
     notebook.add(injector_tab, text='  Injector  ')
 
+    # --- Style and Font Definitions ---
     font_small = ('Segoe UI', 9)
     font_label = ('Segoe UI', 9)
     font_value = ('Segoe UI', 9, 'bold')
     font_motor_disp = ('Segoe UI', 9)
 
+    # --- Tkinter Variable Definitions ---
     main_state_var = tk.StringVar(value="UNKNOWN")
     homing_state_var = tk.StringVar(value="---")
     homing_phase_var = tk.StringVar(value="---")
@@ -38,16 +40,27 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     torque_value3 = tk.StringVar(value="---");
     position_cmd3_var = tk.StringVar(value="0");
     pinch_homed_var = tk.StringVar(value="N/A")
-    jog_steps_var = tk.StringVar(value="800");
-    jog_velocity_var = tk.StringVar(value="800");
-    jog_acceleration_var = tk.StringVar(value="5000");
+
+    # Jogging Variables (Metric for M0/M1)
+    jog_dist_mm_var = tk.StringVar(value="10.0")
+    jog_velocity_var = tk.StringVar(value="15.0")
+    jog_acceleration_var = tk.StringVar(value="50.0")
     jog_torque_percent_var = tk.StringVar(value="30")
+
+    # Jogging Variables (Degrees and SPS for M2/Pinch)
+    jog_pinch_degrees_var = tk.StringVar(value="90.0")
+    jog_pinch_velocity_sps_var = tk.StringVar(value="800")
+    jog_pinch_accel_sps2_var = tk.StringVar(value="5000")
+
+    # Homing Variables
     homing_stroke_len_var = tk.StringVar(value="500");
     homing_rapid_vel_var = tk.StringVar(value="20");
     homing_touch_vel_var = tk.StringVar(value="1");
     homing_acceleration_var = tk.StringVar(value="50");
     homing_retract_dist_var = tk.StringVar(value="20");
     homing_torque_percent_var = tk.StringVar(value="5")
+
+    # Feed/Dispense Variables
     feed_cyl1_dia_var = tk.StringVar(value="75.0");
     feed_cyl2_dia_var = tk.StringVar(value="33.0");
     feed_ballscrew_pitch_var = tk.StringVar(value="5.0");
@@ -66,66 +79,8 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     purge_dispensed_ml_var = tk.StringVar(value="0.00 ml")
     set_torque_offset_val_var = tk.StringVar(value="-2.4")
 
+    # --- GUI Update Functions ---
     ui_elements = {}
-
-    def update_ml_per_rev(*args):
-        try:
-            dia1_mm = float(feed_cyl1_dia_var.get());
-            dia2_mm = float(feed_cyl2_dia_var.get());
-            pitch_mm_per_rev = float(feed_ballscrew_pitch_var.get())
-            if dia1_mm <= 0 or dia2_mm <= 0 or pitch_mm_per_rev <= 0: feed_ml_per_rev_var.set(
-                "Invalid dims"); feed_steps_per_ml_var.set(0.0); return
-            area1_mm2 = math.pi * (dia1_mm / 2) ** 2;
-            area2_mm2 = math.pi * (dia2_mm / 2) ** 2;
-            total_area_mm2 = area1_mm2 + area2_mm2
-            vol_mm3_per_rev = total_area_mm2 * pitch_mm_per_rev;
-            vol_ml_per_rev = vol_mm3_per_rev / 1000.0
-            feed_ml_per_rev_var.set(f"{vol_ml_per_rev:.4f} ml/rev")
-            if vol_ml_per_rev > 0:
-                feed_steps_per_ml_var.set(round(MOTOR_STEPS_PER_REV / vol_ml_per_rev, 2))
-            else:
-                feed_steps_per_ml_var.set(0.0)
-        except (ValueError, Exception):
-            feed_ml_per_rev_var.set("Input Error");
-            feed_steps_per_ml_var.set(0.0)
-
-    for var in [feed_cyl1_dia_var, feed_cyl2_dia_var, feed_ballscrew_pitch_var]: var.trace_add('write',
-                                                                                               update_ml_per_rev)
-
-    def update_inject_time(*args):
-        try:
-            amount_ml = float(inject_amount_ml_var.get());
-            speed_ml_s = float(inject_speed_ml_s_var.get())
-        except (ValueError, Exception):
-            inject_time_var.set("Input Error");
-            return
-        if speed_ml_s > 0:
-            inject_time_var.set(f"{amount_ml / speed_ml_s:.2f} s")
-        else:
-            inject_time_var.set("N/A (Speed=0)")
-
-    for var in [inject_amount_ml_var, inject_speed_ml_s_var]: var.trace_add('write', update_inject_time)
-
-    def update_purge_time(*args):
-        try:
-            amount_ml = float(purge_amount_ml_var.get());
-            speed_ml_s = float(purge_speed_ml_s_var.get())
-        except (ValueError, Exception):
-            purge_time_var.set("Input Error");
-            return
-        if speed_ml_s > 0:
-            purge_time_var.set(f"{amount_ml / speed_ml_s:.2f} s")
-        else:
-            purge_time_var.set("N/A (Speed=0)")
-
-    for var in [purge_amount_ml_var, purge_speed_ml_s_var]: var.trace_add('write', update_purge_time)
-
-    def update_jog_button_state(current_main_state):
-        names = ['jog_m0_plus', 'jog_m0_minus', 'jog_m1_plus', 'jog_m1_minus', 'jog_both_plus', 'jog_both_minus',
-                 'jog_m2_pinch_plus', 'jog_m2_pinch_minus']
-        desired = tk.NORMAL if current_main_state == "JOG_MODE" else tk.DISABLED
-        for n in names:
-            if n in ui_elements and ui_elements[n].winfo_exists(): ui_elements[n].config(state=desired)
 
     def update_state(new_main_state_from_firmware):
         update_jog_button_state(new_main_state_from_firmware)
@@ -181,6 +136,73 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
             ui_elements['cancel_purge_btn'].config(
                 state=tk.NORMAL if is_purge_active or new_feed_state == "FEED_PURGE_PAUSED" else tk.DISABLED)
 
+    # --- Traces to link variables to GUI update functions ---
+    main_state_var.trace_add('write', lambda *args: update_state(main_state_var.get()))
+    feed_state_var.trace_add('write', lambda *args: update_feed_button_states(feed_state_var.get()))
+
+    # --- Calculation Functions ---
+    def update_ml_per_rev(*args):
+        try:
+            dia1_mm = float(feed_cyl1_dia_var.get());
+            dia2_mm = float(feed_cyl2_dia_var.get());
+            pitch_mm_per_rev = float(feed_ballscrew_pitch_var.get())
+            if dia1_mm <= 0 or dia2_mm <= 0 or pitch_mm_per_rev <= 0:
+                feed_ml_per_rev_var.set("Invalid dims");
+                feed_steps_per_ml_var.set(0.0);
+                return
+            area1_mm2 = math.pi * (dia1_mm / 2) ** 2;
+            area2_mm2 = math.pi * (dia2_mm / 2) ** 2;
+            total_area_mm2 = area1_mm2 + area2_mm2
+            vol_mm3_per_rev = total_area_mm2 * pitch_mm_per_rev;
+            vol_ml_per_rev = vol_mm3_per_rev / 1000.0
+            feed_ml_per_rev_var.set(f"{vol_ml_per_rev:.4f} ml/rev")
+            if vol_ml_per_rev > 0:
+                feed_steps_per_ml_var.set(round(MOTOR_STEPS_PER_REV / vol_ml_per_rev, 2))
+            else:
+                feed_steps_per_ml_var.set(0.0)
+        except (ValueError, Exception):
+            feed_ml_per_rev_var.set("Input Error");
+            feed_steps_per_ml_var.set(0.0)
+
+    for var in [feed_cyl1_dia_var, feed_cyl2_dia_var, feed_ballscrew_pitch_var]: var.trace_add('write',
+                                                                                               update_ml_per_rev)
+
+    def update_inject_time(*args):
+        try:
+            amount_ml = float(inject_amount_ml_var.get());
+            speed_ml_s = float(inject_speed_ml_s_var.get())
+        except (ValueError, Exception):
+            inject_time_var.set("Input Error");
+            return
+        if speed_ml_s > 0:
+            inject_time_var.set(f"{amount_ml / speed_ml_s:.2f} s")
+        else:
+            inject_time_var.set("N/A (Speed=0)")
+
+    for var in [inject_amount_ml_var, inject_speed_ml_s_var]: var.trace_add('write', update_inject_time)
+
+    def update_purge_time(*args):
+        try:
+            amount_ml = float(purge_amount_ml_var.get());
+            speed_ml_s = float(purge_speed_ml_s_var.get())
+        except (ValueError, Exception):
+            purge_time_var.set("Input Error");
+            return
+        if speed_ml_s > 0:
+            purge_time_var.set(f"{amount_ml / speed_ml_s:.2f} s")
+        else:
+            purge_time_var.set("N/A (Speed=0)")
+
+    for var in [purge_amount_ml_var, purge_speed_ml_s_var]: var.trace_add('write', update_purge_time)
+
+    def update_jog_button_state(current_main_state):
+        names = ['jog_m0_plus', 'jog_m0_minus', 'jog_m1_plus', 'jog_m1_minus', 'jog_both_plus', 'jog_both_minus',
+                 'jog_m2_pinch_plus', 'jog_m2_pinch_minus']
+        desired = tk.NORMAL if current_main_state == "JOG_MODE" else tk.DISABLED
+        for n in names:
+            if n in ui_elements and ui_elements[n].winfo_exists(): ui_elements[n].config(state=desired)
+
+    # --- GUI Layout ---
     content_frame = tk.Frame(injector_tab, bg="#21232b");
     content_frame.pack(side=tk.TOP, expand=True, fill=tk.BOTH, padx=0)
 
@@ -218,11 +240,11 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
                                           pady=5);
     global_counters_frame.pack(side=tk.TOP, fill=tk.X, expand=False, pady=(0, 5), ipady=3);
     global_counters_frame.grid_columnconfigure(1, weight=1)
-    tk.Label(global_counters_frame, text="Machine (M0) from Home:", bg=global_counters_frame['bg'], fg="white",
+    tk.Label(global_counters_frame, text="Machine (mm):", bg=global_counters_frame['bg'], fg="white",
              font=font_label).grid(row=0, column=0, sticky="e", padx=2, pady=2);
     tk.Label(global_counters_frame, textvariable=machine_steps_var, bg=global_counters_frame['bg'], fg="#00bfff",
              font=font_value).grid(row=0, column=1, sticky="w", padx=2, pady=2)
-    tk.Label(global_counters_frame, text="Cartridge (M1) from Home:", bg=global_counters_frame['bg'], fg="white",
+    tk.Label(global_counters_frame, text="Cartridge (mm):", bg=global_counters_frame['bg'], fg="white",
              font=font_label).grid(row=1, column=0, sticky="e", padx=2, pady=2);
     tk.Label(global_counters_frame, textvariable=cartridge_steps_var, bg=global_counters_frame['bg'], fg="yellow",
              font=font_value).grid(row=1, column=1, sticky="w", padx=2, pady=2)
@@ -314,7 +336,8 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         row=2, column=0, sticky="w");
     tk.Label(m1_display_section, textvariable=torque_value1, bg=m1_display_section['bg'], fg="#00bfff",
              font=font_motor_disp).grid(row=2, column=1, sticky="ew", padx=2)
-    tk.Label(m1_display_section, text="Abs Pos:", bg=m1_display_section['bg'], fg="white", font=font_motor_disp).grid(
+    tk.Label(m1_display_section, text="Abs Pos (mm):", bg=m1_display_section['bg'], fg="white",
+             font=font_motor_disp).grid(
         row=3, column=0, sticky="w");
     tk.Label(m1_display_section, textvariable=position_cmd1_var, bg=m1_display_section['bg'], fg="#00bfff",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
@@ -336,7 +359,8 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         row=2, column=0, sticky="w");
     tk.Label(m2_display_section, textvariable=torque_value2, bg=m2_display_section['bg'], fg="yellow",
              font=font_motor_disp).grid(row=2, column=1, sticky="ew", padx=2)
-    tk.Label(m2_display_section, text="Abs Pos:", bg=m2_display_section['bg'], fg="white", font=font_motor_disp).grid(
+    tk.Label(m2_display_section, text="Abs Pos (mm):", bg=m2_display_section['bg'], fg="white",
+             font=font_motor_disp).grid(
         row=3, column=0, sticky="w");
     tk.Label(m2_display_section, textvariable=position_cmd2_var, bg=m2_display_section['bg'], fg="yellow",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
@@ -358,7 +382,8 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         row=2, column=0, sticky="w");
     tk.Label(m3_display_section, textvariable=torque_value3, bg=m3_display_section['bg'], fg="#ff8888",
              font=font_motor_disp).grid(row=2, column=1, sticky="ew", padx=2)
-    tk.Label(m3_display_section, text="Abs Pos:", bg=m3_display_section['bg'], fg="white", font=font_motor_disp).grid(
+    tk.Label(m3_display_section, text="Abs Pos (mm):", bg=m3_display_section['bg'], fg="white",
+             font=font_motor_disp).grid(
         row=3, column=0, sticky="w");
     tk.Label(m3_display_section, textvariable=position_cmd3_var, bg=m3_display_section['bg'], fg="#ff8888",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
@@ -385,31 +410,33 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
                                             font=("Segoe UI", 10, "bold"), bd=2, relief="ridge");
     ui_elements['settings_controls_frame'] = settings_controls_frame
 
-    # Populate Jog Frame
+    # --- Populate Jog Frame ---
     jog_params_frame = tk.Frame(jog_controls_frame, bg=jog_controls_frame['bg']);
     jog_params_frame.pack(fill=tk.X, pady=5, padx=5);
     jog_params_frame.grid_columnconfigure(1, weight=1);
     jog_params_frame.grid_columnconfigure(3, weight=1)
-    tk.Label(jog_params_frame, text="Steps:", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
-                                                                                                           column=0,
-                                                                                                           sticky="w",
-                                                                                                           pady=1,
-                                                                                                           padx=2);
-    ttk.Entry(jog_params_frame, textvariable=jog_steps_var, width=8, font=font_small).grid(row=0, column=1, sticky="ew",
-                                                                                           pady=1, padx=(0, 10));
-    tk.Label(jog_params_frame, text="Vel (sps):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
-                                                                                                               column=2,
+    tk.Label(jog_params_frame, text="Dist (mm):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
+                                                                                                               column=0,
                                                                                                                sticky="w",
                                                                                                                pady=1,
                                                                                                                padx=2);
+    ttk.Entry(jog_params_frame, textvariable=jog_dist_mm_var, width=8, font=font_small).grid(row=0, column=1,
+                                                                                             sticky="ew",
+                                                                                             pady=1, padx=(0, 10));
+    tk.Label(jog_params_frame, text="Vel (mm/s):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
+                                                                                                                column=2,
+                                                                                                                sticky="w",
+                                                                                                                pady=1,
+                                                                                                                padx=2);
     ttk.Entry(jog_params_frame, textvariable=jog_velocity_var, width=8, font=font_small).grid(row=0, column=3,
                                                                                               sticky="ew", pady=1,
                                                                                               padx=(0, 10));
-    tk.Label(jog_params_frame, text="Accel (sps²):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=1,
-                                                                                                                  column=0,
-                                                                                                                  sticky="w",
-                                                                                                                  pady=1,
-                                                                                                                  padx=2);
+    tk.Label(jog_params_frame, text="Accel (mm/s²):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(
+        row=1,
+        column=0,
+        sticky="w",
+        pady=1,
+        padx=2);
     ttk.Entry(jog_params_frame, textvariable=jog_acceleration_var, width=8, font=font_small).grid(row=1, column=1,
                                                                                                   sticky="ew", pady=1,
                                                                                                   padx=(0, 10));
@@ -427,43 +454,44 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     m0_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
     ui_elements['jog_m0_plus'] = ttk.Button(m0_jog_frame, text="▲ M0", style="Jog.TButton", state=tk.DISABLED,
                                             command=lambda: send_injector_cmd(
-                                                f"JOG_MOVE {jog_steps_var.get()} 0 {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+                                                f"JOG_MOVE {jog_dist_mm_var.get()} 0 {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
     ui_elements['jog_m0_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
     ui_elements['jog_m0_minus'] = ttk.Button(m0_jog_frame, text="▼ M0", style="Jog.TButton", state=tk.DISABLED,
                                              command=lambda: send_injector_cmd(
-                                                 f"JOG_MOVE -{jog_steps_var.get()} 0 {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+                                                 f"JOG_MOVE -{jog_dist_mm_var.get()} 0 {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
     ui_elements['jog_m0_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
     m1_jog_frame = tk.Frame(jog_buttons_area, bg=jog_controls_frame['bg']);
     m1_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
     ui_elements['jog_m1_plus'] = ttk.Button(m1_jog_frame, text="▲ M1", style="Jog.TButton", state=tk.DISABLED,
                                             command=lambda: send_injector_cmd(
-                                                f"JOG_MOVE 0 {jog_steps_var.get()} {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+                                                f"JOG_MOVE 0 {jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
     ui_elements['jog_m1_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
     ui_elements['jog_m1_minus'] = ttk.Button(m1_jog_frame, text="▼ M1", style="Jog.TButton", state=tk.DISABLED,
                                              command=lambda: send_injector_cmd(
-                                                 f"JOG_MOVE 0 -{jog_steps_var.get()} {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+                                                 f"JOG_MOVE 0 -{jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
     ui_elements['jog_m1_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
     both_jog_frame = tk.Frame(jog_buttons_area, bg=jog_controls_frame['bg']);
     both_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
     ui_elements['jog_both_plus'] = ttk.Button(both_jog_frame, text="▲ Both", style="Jog.TButton", state=tk.DISABLED,
                                               command=lambda: send_injector_cmd(
-                                                  f"JOG_MOVE {jog_steps_var.get()} {jog_steps_var.get()} {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+                                                  f"JOG_MOVE {jog_dist_mm_var.get()} {jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
     ui_elements['jog_both_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
     ui_elements['jog_both_minus'] = ttk.Button(both_jog_frame, text="▼ Both", style="Jog.TButton", state=tk.DISABLED,
                                                command=lambda: send_injector_cmd(
-                                                   f"JOG_MOVE -{jog_steps_var.get()} -{jog_steps_var.get()} {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+                                                   f"JOG_MOVE -{jog_dist_mm_var.get()} -{jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
     ui_elements['jog_both_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
     m2_jog_frame = tk.Frame(jog_buttons_area, bg=jog_controls_frame['bg']);
     m2_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
     ui_elements['jog_m2_pinch_plus'] = ttk.Button(m2_jog_frame, text="▲ M2 (Pinch)", style="Jog.TButton",
                                                   state=tk.DISABLED, command=lambda: send_injector_cmd(
-            f"PINCH_JOG_MOVE {jog_steps_var.get()} {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+            f"PINCH_JOG_MOVE {jog_pinch_degrees_var.get()} {jog_torque_percent_var.get()} {jog_pinch_velocity_sps_var.get()} {jog_pinch_accel_sps2_var.get()}"));
     ui_elements['jog_m2_pinch_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
     ui_elements['jog_m2_pinch_minus'] = ttk.Button(m2_jog_frame, text="▼ M2 (Pinch)", style="Jog.TButton",
                                                    state=tk.DISABLED, command=lambda: send_injector_cmd(
-            f"PINCH_JOG_MOVE -{jog_steps_var.get()} {jog_torque_percent_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()}"));
+            f"PINCH_JOG_MOVE -{jog_pinch_degrees_var.get()} {jog_torque_percent_var.get()} {jog_pinch_velocity_sps_var.get()} {jog_pinch_accel_sps2_var.get()}"));
     ui_elements['jog_m2_pinch_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
 
+    # --- Populate Homing Frame ---
     homing_controls_frame.grid_columnconfigure(1, weight=1);
     homing_controls_frame.grid_columnconfigure(3, weight=1);
     h_row = 0;
@@ -506,6 +534,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     ttk.Button(home_btn_frame, text="Execute Pinch Home", style='Small.TButton',
                command=lambda: send_injector_cmd("PINCH_HOME_MOVE")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
 
+    # --- Populate Feed Frame ---
     feed_controls_frame.grid_columnconfigure(1, weight=1);
     feed_controls_frame.grid_columnconfigure(3, weight=1);
     f_row = 0;
@@ -638,6 +667,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
                                                  command=lambda: send_injector_cmd("CANCEL_INJECTION"));
     ui_elements['cancel_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 10))
 
+    # --- Populate Settings Frame ---
     settings_controls_frame.grid_columnconfigure(1, weight=1);
     s_row = 0
     tk.Label(settings_controls_frame, text="Torque Offset:", bg=settings_controls_frame['bg'], fg='white',
@@ -650,6 +680,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
 
     settings_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=(10, 5))
 
+    # --- Torque Plot ---
     plot_frame = tk.Frame(content_frame, bg="#21232b")
     plot_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(10, 0))
 
@@ -676,10 +707,12 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     ui_elements['injector_torque_plot_ax'] = ax
     ui_elements['injector_torque_plot_lines'] = [line1, line2, line3]
 
+    # --- Initial Calculations ---
     update_ml_per_rev()
     update_inject_time()
     update_purge_time()
 
+    # --- Return Dictionary ---
     final_return_dict = {
         'update_state': update_state,
         'update_feed_buttons': update_feed_button_states,

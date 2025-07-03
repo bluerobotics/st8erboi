@@ -25,8 +25,6 @@ Fillhead::Fillhead() {
 	smoothedTorqueM1 = 0.0f;
 	smoothedTorqueM2 = 0.0f;
 	smoothedTorqueM3 = 0.0f;
-	lastGuiTelemetryTime = 0;
-	lastGuiMessageTime = 0;
 }
 
 void Fillhead::setup() {
@@ -43,13 +41,4 @@ const char* Fillhead::stateToString() {
 		case STATE_HOMING:  return "HOMING";
 		default:            return "UNKNOWN";
 	}
-}
-
-bool Fillhead::checkSlowCodeInterval() {
-	uint32_t now = Milliseconds();
-	if (now - lastGuiTelemetryTime >= SLOW_CODE_INTERVAL_MS) {
-		lastGuiTelemetryTime = now; // Update the time for the next check
-		return true;
-	}
-	return false;
 }

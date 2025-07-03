@@ -7,15 +7,15 @@ void Fillhead::sendStatus(const char* statusType, const char* message) {
 	snprintf(msg, sizeof(msg), "%s%s", statusType, message);
 	
 	if (guiDiscovered) {
-		Udp.Connect(guiIp, guiPort);
-		Udp.PacketWrite(msg);
-		Udp.PacketSend();
+		udp.Connect(guiIp, guiPort);
+		udp.PacketWrite(msg);
+		udp.PacketSend();
 	}
 
     if (peerDiscovered) {
-        Udp.Connect(peerIp, LOCAL_PORT); 
-        Udp.PacketWrite(msg);
-        Udp.PacketSend();
+        udp.Connect(peerIp, LOCAL_PORT); 
+        udp.PacketWrite(msg);
+        udp.PacketSend();
     }
 }
 
@@ -45,9 +45,9 @@ void Fillhead::sendGuiTelemetry() {
 	    (int)MotorZ.StatusReg().bit.Enabled, (int)homedZ,
         (int)peerDiscovered, peerIp.StringValue()); // <-- NEW VALUES
 
-	Udp.Connect(guiIp, guiPort);
-	Udp.PacketWrite(telemetryBuffer);
-	Udp.PacketSend();
+	udp.Connect(guiIp, guiPort);
+	udp.PacketWrite(telemetryBuffer);
+	udp.PacketSend();
 }
 
 // --- REPLACED FUNCTION ---
@@ -74,10 +74,10 @@ void Fillhead::handleMessage(const char* msg) {
 		case CMD_DISCOVER: {
 			char* portStr = strstr(msg, "PORT=");
 			if (portStr) {
-				guiIp = Udp.RemoteIp();
+				guiIp = udp.RemoteIp();
 				guiPort = atoi(portStr + 5);
 				guiDiscovered = true;
-				sendStatus("DISCOVERY: ", "FILLHEAD DISCOVERED");
+				sendStatus(STATUS_PREFIX_DISCOVERY, "FILLHEAD DISCOVERED");
 			}
 			break;
 		}
@@ -88,8 +88,8 @@ void Fillhead::handleMessage(const char* msg) {
 }
 
 void Fillhead::processUdp() {
-	if (Udp.PacketParse()) {
-		int32_t bytesRead = Udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
+	if (udp.PacketParse()) {
+		int32_t bytesRead = udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
 		if (bytesRead > 0) {
 			packetBuffer[bytesRead] = '\0';
 			handleMessage((char*)packetBuffer);
@@ -130,7 +130,7 @@ void Fillhead::setupEthernet() {
 	}
 	ConnectorUsb.SendLine("Fillhead: PhyLink is Active.");
 
-	Udp.Begin(LOCAL_PORT);
+	udp.Begin(LOCAL_PORT);
 	ConnectorUsb.SendLine("Fillhead: UDP Port 8888 is open. Setup complete.");
 }
 

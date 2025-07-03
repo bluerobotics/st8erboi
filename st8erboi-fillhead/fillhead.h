@@ -33,10 +33,11 @@
 #define CMD_STR_HOME_Z            "HOME_Z "
 
 // --- Telemetry & Status Prefixes ---
-#define TELEM_PREFIX_GUI      "FH_TELEM_GUI:"
-#define STATUS_PREFIX_INFO    "INFO:"
-#define STATUS_PREFIX_DONE    "DONE:"
-#define STATUS_PREFIX_ERROR   "ERROR:"
+#define TELEM_PREFIX_GUI      "FH_TELEM_GUI: "
+#define STATUS_PREFIX_INFO    "INFO: "
+#define STATUS_PREFIX_DONE    "DONE: "
+#define STATUS_PREFIX_ERROR   "ERROR: "
+#define STATUS_PREFIX_DISCOVERY		"DISCOVERY: "
 #define EWMA_ALPHA 0.2f
 #define SLOW_CODE_INTERVAL_MS 50
 
@@ -65,7 +66,7 @@ typedef enum {
 
 class Fillhead {
 	public:
-	EthernetUdp Udp;
+	EthernetUdp udp;
 	IpAddress guiIp;
 	uint16_t guiPort;
 	bool guiDiscovered;
@@ -90,19 +91,26 @@ class Fillhead {
 
 	bool homedX, homedY1, homedY2, homedZ;
 
+	// Constructor
 	Fillhead();
-
+    
+	// Core Functions
 	void setup();
 	void loop();
-	void setupEthernet();
-	void setupMotors();
-	void setupUsbSerial();
-
-	void processUdp();
 	void updateState();
+	
+	// Communication
+	void setupUsbSerial();
+	void setupEthernet();
+	void processUdp();
 	void sendGuiTelemetry();
 	void sendInternalTelemetry();
 	
+	//--- Motor Functions ---//
+	void setupMotors();
+	// FUTURE: disable / enabled motor functions
+	
+	// Command Handlers
 	void handleMessage(const char* msg);
 	void handleMove(const char* msg);
 	void handleHome(const char* msg);
@@ -121,9 +129,6 @@ class Fillhead {
 	bool checkTorqueLimit(MotorDriver* motor);
 	
 	// interval
-	bool checkSlowCodeInterval();
-	uint32_t lastGuiTelemetryTime;
-	uint32_t lastGuiMessageTime;
 	char telemetryBuffer[256]; // Moved from stack to static memory
 
 	unsigned char packetBuffer[MAX_PACKET_LENGTH];

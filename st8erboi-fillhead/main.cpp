@@ -153,14 +153,8 @@ void Fillhead::updateState() {
 }
 
 void Fillhead::loop() {
-    // --- Fast Code ---
     processUdp();
     updateState();
-
-    // --- Slow Code ---
-    if (checkSlowCodeInterval()) {
-        sendGuiTelemetry();
-    }
 }
 
 /*
