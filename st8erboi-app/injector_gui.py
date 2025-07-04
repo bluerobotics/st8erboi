@@ -82,7 +82,11 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     # --- GUI Update Functions ---
     ui_elements = {}
 
+    # Variable to track the currently displayed contextual frame to prevent flickering
+    current_active_mode_frame = None
+
     def update_state(new_main_state_from_firmware):
+        nonlocal current_active_mode_frame
         update_jog_button_state(new_main_state_from_firmware)
         active_map = {"STANDBY_MODE": ('standby_mode_btn', 'ActiveBlue.TButton', 'Blue.TButton'),
                       "JOG_MODE": ('jog_mode_btn', 'ActiveGray.TButton', 'Gray.TButton'),
@@ -97,22 +101,28 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         if new_main_state_from_firmware == "UNKNOWN":
             return
 
-        current_ui_mode = "Unknown"
-        for fw_state, (btn_key, _, _) in active_map.items():
-            if new_main_state_from_firmware == fw_state:
-                current_ui_mode = fw_state.replace("_MODE", "").capitalize()
-                break
+        # Determine which frame *should* be visible
+        target_frame_key = None
+        if new_main_state_from_firmware == "JOG_MODE":
+            target_frame_key = 'jog_controls_frame'
+        elif new_main_state_from_firmware == "HOMING_MODE":
+            target_frame_key = 'homing_controls_frame'
+        elif new_main_state_from_firmware == "FEED_MODE":
+            target_frame_key = 'feed_controls_frame'
 
-        for fk in ['jog_controls_frame', 'homing_controls_frame', 'feed_controls_frame']:
-            if fk in ui_elements and ui_elements[fk].winfo_exists():
-                ui_elements[fk].pack_forget()
+        # Only update the layout if the required frame has changed
+        if target_frame_key != current_active_mode_frame:
+            # Hide all contextual frames
+            for fk in ['jog_controls_frame', 'homing_controls_frame', 'feed_controls_frame']:
+                if fk in ui_elements and ui_elements[fk].winfo_exists():
+                    ui_elements[fk].pack_forget()
 
-        if current_ui_mode == "Jog" and 'jog_controls_frame' in ui_elements:
-            ui_elements['jog_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        elif current_ui_mode == "Homing" and 'homing_controls_frame' in ui_elements:
-            ui_elements['homing_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        elif current_ui_mode == "Feed" and 'feed_controls_frame' in ui_elements:
-            ui_elements['feed_controls_frame'].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            # Show the correct frame if one is needed
+            if target_frame_key and target_frame_key in ui_elements:
+                ui_elements[target_frame_key].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+            # Update the tracker for the currently visible frame
+            current_active_mode_frame = target_frame_key
 
     def update_feed_button_states(new_feed_state):
         is_inject_active = new_feed_state in ["FEED_INJECT_STARTING", "FEED_INJECT_ACTIVE", "FEED_INJECT_RESUMING"]
