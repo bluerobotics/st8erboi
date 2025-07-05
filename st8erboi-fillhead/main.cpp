@@ -52,8 +52,8 @@ void Fillhead::updateState() {
                 case HOMING_START:
                     torqueLimit = (float)homingTorque;
                     homingBackoffSteps = 400;
-                    if (activeMotor1) moveAxis(activeMotor1, -homingDistanceSteps, homingRapidSps, 200000, homingTorque);
-                    if (activeMotor2) moveAxis(activeMotor2, -homingDistanceSteps, homingRapidSps, 200000, homingTorque);
+                    if (activeMotor1) moveAxis(activeMotor1, -homingDistanceSteps, homingRapidSps, 10000, homingTorque);
+                    if (activeMotor2) moveAxis(activeMotor2, -homingDistanceSteps, homingRapidSps, 10000, homingTorque);
 
                     // Transition to the specific wait state for the rapid move
                     homingPhase = HOMING_WAIT_FOR_RAPID_START;

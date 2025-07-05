@@ -6,26 +6,26 @@ void Fillhead::setupMotors() {
 
 	MotorX.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	MotorX.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	MotorX.VelMax(25000);
-	MotorX.AccelMax(100000);
+	MotorX.VelMax(10000);
+	MotorX.AccelMax(10000);
 	MotorX.EnableRequest(true);
 
 	MotorY1.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	MotorY1.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	MotorY1.VelMax(25000);
-	MotorY1.AccelMax(100000);
+	MotorY1.VelMax(10000);
+	MotorY1.AccelMax(10000);
 	MotorY1.EnableRequest(true);
 
     MotorY2.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	MotorY2.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	MotorY2.VelMax(25000);
-	MotorY2.AccelMax(100000);
+	MotorY2.VelMax(10000);
+	MotorY2.AccelMax(10000);
 	MotorY2.EnableRequest(true);
 
 	MotorZ.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	MotorZ.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	MotorZ.VelMax(15000);
-	MotorZ.AccelMax(80000);
+	MotorZ.VelMax(10000);
+	MotorZ.AccelMax(10000);
 	MotorZ.EnableRequest(true);
 
 	uint32_t timeout = Milliseconds() + 2000;
@@ -57,7 +57,10 @@ void Fillhead::moveAxis(MotorDriver* motor, long steps, int vel, int accel, int 
     if (!motor) return;
 
     torqueLimit = (float)torque;
-
+	
+	if(vel > 10000) vel = 10000;
+	sendStatus(STATUS_PREFIX_INFO, "Commanded speed over 10000sps, using max");
+	
     motor->VelMax(vel);
     motor->AccelMax(accel);
 
