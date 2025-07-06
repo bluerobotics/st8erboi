@@ -54,17 +54,5 @@ typedef enum {
 	STATE_HOMING
 } AxisState;
 
-typedef enum {
-	HOMING_IDLE,
-	HOMING_START,
-	HOMING_RAPID,
-	HOMING_Y_GANTRY_SQUARING,
-	HOMING_Y_ALIGNING,
-	HOMING_BACK_OFF,
-	HOMING_TOUCH,
-	HOMING_DE_STRESS,
-	HOMING_SET_ZERO,
-	HOMING_FINAL_RETRACT,
-	HOMING_AWAIT_RETRACT_FINISH,
-	HOMING_ERROR
-} HomingPhase;
+// CORRECTED: Removed the duplicate and outdated HomingPhase enum.
+// The single source of truth is now in axis.h.
