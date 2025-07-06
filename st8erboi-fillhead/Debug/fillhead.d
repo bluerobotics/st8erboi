@@ -160,7 +160,7 @@ fillhead.d fillhead.o: .././fillhead.cpp .././fillhead.h \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
  ../../libClearCore/inc/XBeeDriver.h ../../libClearCore/inc/EthernetUdp.h \
- ../../libClearCore/inc/IpAddress.h
+ ../../libClearCore/inc/IpAddress.h .././config.h .././axis.h
 
 .././fillhead.h:
 
@@ -505,3 +505,7 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 ../../libClearCore/inc/EthernetUdp.h:
 
 ../../libClearCore/inc/IpAddress.h:
+
+.././config.h:
+
+.././axis.h:
