@@ -10,8 +10,9 @@
 #define MotorY2 ConnectorM2
 #define MotorZ  ConnectorM3
 
-#define MAX_VEL 10000 // sps
-#define MAX_ACC 100000 // sps^2
+#define MAX_VEL 20000 // sps
+#define MAX_ACC 200000 // sps^2
+#define MAX_TRQ 90 // sps^2
 
 // --- Command Definitions ---
 #define CMD_STR_REQUEST_TELEM     "REQUEST_TELEM"
@@ -42,9 +43,9 @@
 
 // --- Physics & Control ---
 #define EWMA_ALPHA 0.2f
-#define STEPS_PER_MM_X 400.0f
-#define STEPS_PER_MM_Y 400.0f
-#define STEPS_PER_MM_Z 400.0f
+#define STEPS_PER_MM_X 200.0f
+#define STEPS_PER_MM_Y 200.0f
+#define STEPS_PER_MM_Z 200.0f
 
 // --- Type Definitions ---
 typedef enum {

@@ -10,7 +10,19 @@ Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDri
     m_motor1 = motor1;
     m_motor2 = motor2;
     m_stepsPerMm = stepsPerMm;
-    resetHomingState();
+    
+    // Explicitly initialize all state variables to a known starting condition.
+    // This is crucial for preventing "works once, then fails" bugs.
+    m_state = STATE_STANDBY;
+    homingPhase = HOMING_NONE;
+    m_homed = false;
+    
+    // Initialize torque-related variables to ensure the filter starts clean.
+    m_smoothedTorqueM1 = 0.0f;
+    m_smoothedTorqueM2 = 0.0f;
+    m_firstTorqueReadM1 = true;
+    m_firstTorqueReadM2 = true;
+    m_torqueLimit = 0.0f;
 }
 
 void Axis::enable() {
@@ -55,8 +67,12 @@ void Axis::moveSteps(long steps, int velSps, int accelSps2, int torque) {
 }
 
 void Axis::handleMove(const char* args) {
-    if (isMoving()) {
-        sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Axis is already moving.");
+    if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
+		return;
+	}
+	if (isMoving()) {
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Axis already moving");
         return;
     }
     
@@ -71,16 +87,20 @@ void Axis::handleMove(const char* args) {
     int accel_sps2 = (int)fabs(accel_mms2 * m_stepsPerMm);
     
     sendStatus(STATUS_PREFIX_INFO, "MOVE command received");
-    moveSteps(steps, velocity_sps, accel_sps2, torque);
+	moveSteps(steps,velocity_sps,accel_sps2,torque);
     m_state = STATE_STARTING_MOVE;
-    m_delay_target_ms = Milliseconds() + 5; // Set 5ms timer to prevent race condition
 }
 
 void Axis::handleHome(const char* args) {
-    if (isMoving()) {
-        sendStatus(STATUS_PREFIX_ERROR, "Cannot start home: Axis is already moving.");
+    if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
+		return;
+	}
+	if (isMoving()) {
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Axis already moving");
         return;
     }
+	
     float max_dist_mm;
     if (!args || sscanf(args, "%d %f", &m_homingTorque, &max_dist_mm) != 2) {
         sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format.");
@@ -88,13 +108,11 @@ void Axis::handleHome(const char* args) {
     }
     sendStatus(STATUS_PREFIX_INFO, "HOME command received");
 
-    m_homingType = m_motor2 ? HOMING_TYPE_DUAL : HOMING_TYPE_SINGLE;
     m_homed = false;
     m_state = STATE_HOMING;
-    m_singleHomingPhase = S_START;
-    m_dualHomingPhase = D_START;
+    homingPhase = RAPID_START;
     
-    float rapid_vel_mms = 15.0; 
+    float rapid_vel_mms = 15; 
     float touch_vel_mms = 5.0;
     float backoff_mm = 5.0;
     float final_retract_mm = 5.0;
@@ -111,157 +129,197 @@ void Axis::updateState() {
         case STATE_STANDBY:
             break;
 			
-		case STATE_STARTING_MOVE: {
-            if (isMoving()){
-				m_state = STATE_MOVING;
-				sendStatus(STATUS_PREFIX_INFO, "MOVE STARTED");
+		case STATE_STARTING_MOVE:
+            if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
+				sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
+				return;
 			}
-			if (m_motor1->StatusReg().bit.MotorInFault) {
-                sendStatus(STATUS_PREFIX_ERROR, "Homing aborted due to motor fault.");
-                abort();
-                return;
-            }
+			if (isMoving()){
+				sendStatus(STATUS_PREFIX_INFO, "Move started, entering MOVING_STATE");
+				m_state = STATE_MOVING;
+				break;
+			}
             break;
-        }
 		
-        case STATE_MOVING: {
-            // This is the known-good logic that works for jogging.
-            bool torque_exceeded = false;
-            if (m_motor1 && checkTorqueLimit(m_motor1)) {
-                torque_exceeded = true;
-            }
-            // Ensure both motors are checked every time, no short-circuiting.
-            if (m_motor2 && checkTorqueLimit(m_motor2)) {
-                torque_exceeded = true;
-            }
+        case STATE_MOVING:
+            if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
+				abort();
+				sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit, entering STANDBY.");
+				m_state = STATE_STANDBY;
+			}
+            else if (!isMoving()) {
+				sendStatus(STATUS_PREFIX_DONE, "Move done, entering STANDBY");
+				m_state = STATE_STANDBY;
+			}
+            break;
+		
+        case STATE_HOMING:
+            switch (homingPhase) {
+                case RAPID_START:
+					moveSteps(-m_homingDistanceSteps, m_homingRapidSps, MAX_ACC, m_homingTorque);
+					homingPhase = RAPID_WAIT_TO_START;
+					break;
+				
+				case RAPID_WAIT_TO_START:
+					if (isMoving()) {
+						sendStatus(STATUS_PREFIX_INFO, "HOMING STARTED, entering RAPID_MOVING");
+						homingPhase = RAPID_MOVING;
+						break;
+					}
+                    break;
 
-            if (torque_exceeded) {
-                abort();
-                sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit");
-                m_state = STATE_STANDBY;
-                m_motor1 = nullptr;
-				m_motor2 = nullptr;
-            } else if (!isMoving()) {
-                sendStatus(STATUS_PREFIX_DONE, "MOVE DONE");
-                m_state = STATE_STANDBY;
-                m_motor1 = nullptr;
-                m_motor2 = nullptr;
-            }
-            break;
-        }
-		
-        case STATE_HOMING: {
-            if (m_motor1->StatusReg().bit.MotorInFault) {
-                sendStatus(STATUS_PREFIX_ERROR, "Homing aborted due to motor fault.");
-                abort();
-                return;
-            }
-            // RESTORED: Full state machine for homing
-            switch (m_homingType) {
-                case HOMING_TYPE_SINGLE:
-                    switch (m_singleHomingPhase) {
-                        case S_START:
-                            moveSteps(-m_homingDistanceSteps, m_homingRapidSps, 200000, m_homingTorque);
-                            m_singleHomingPhase = S_RAPID_TO_ENDSTOP;
-                            break;
-                        case S_RAPID_TO_ENDSTOP:
-                            if (fabsf(m_motor1->HlfbPercent()) > m_torqueLimit) {
-                                m_motor1->MoveStopAbrupt();
-                                m_singleHomingPhase = S_DESTRESS_DISABLE;
-                            } else if (!isMoving()) {
-                                sendStatus(STATUS_PREFIX_ERROR, "Homing(S): Did not hit endstop during rapid move.");
-                                abort();
-                            }
-                            break;
-                        case S_DESTRESS_DISABLE:
-                            disable();
-                            m_delay_target_ms = Milliseconds() + 250;
-                            m_singleHomingPhase = S_AWAIT_DESTRESS_TIMER;
-                            break;
-                        case S_AWAIT_DESTRESS_TIMER:
-                            if(Milliseconds() >= m_delay_target_ms) {
-                                m_singleHomingPhase = S_DESTRESS_ENABLE;
-                            }
-                            break;
-                        case S_DESTRESS_ENABLE:
-                            enable();
-                            m_delay_target_ms = Milliseconds() + 250;
-                            m_singleHomingPhase = S_AWAIT_ENABLE_TIMER;
-                            break;
-                        case S_AWAIT_ENABLE_TIMER:
-                            if(Milliseconds() >= m_delay_target_ms) {
-                                m_singleHomingPhase = S_FIRST_BACKOFF;
-                            }
-                            break;
-                        case S_FIRST_BACKOFF:
-                             moveSteps(m_homingBackoffSteps, m_homingRapidSps, 200000, 100);
-                             m_singleHomingPhase = S_AWAIT_BACKOFF_MOVE;
-                            break;
-                        case S_AWAIT_BACKOFF_MOVE:
-                            if (!isMoving()) {
-                                moveSteps(-m_homingBackoffSteps * 2, m_homingTouchSps, 200000, m_homingTorque);
-                                m_singleHomingPhase = S_AWAIT_TOUCH_MOVE;
-                            }
-                            break;
-                        case S_AWAIT_TOUCH_MOVE:
-                            if (fabsf(m_motor1->HlfbPercent()) > m_torqueLimit) {
-                                m_motor1->MoveStopAbrupt();
-                                m_singleHomingPhase = S_FINAL_DESTRESS;
-                            } else if (!isMoving()) {
-                                sendStatus(STATUS_PREFIX_ERROR, "Homing(S): Did not hit endstop during touch move.");
-                                abort();
-                            }
-                            break;
-                        case S_FINAL_DESTRESS:
-                            disable();
-                            m_delay_target_ms = Milliseconds() + 250;
-                            m_singleHomingPhase = S_AWAIT_FINAL_DESTRESS_TIMER;
-                            break;
-                        case S_AWAIT_FINAL_DESTRESS_TIMER:
-                            if(Milliseconds() >= m_delay_target_ms) {
-                                m_singleHomingPhase = S_SET_ZERO;
-                            }
-                            break;
-                        case S_SET_ZERO:
-                            m_motor1->PositionRefSet(0);
-                            m_singleHomingPhase = S_FINAL_ENABLE;
-                            break;
-                        case S_FINAL_ENABLE:
-                            enable();
-                            m_delay_target_ms = Milliseconds() + 250;
-                            m_singleHomingPhase = S_AWAIT_FINAL_ENABLE_TIMER;
-                            break;
-                        case S_AWAIT_FINAL_ENABLE_TIMER:
-                            if(Milliseconds() >= m_delay_target_ms) {
-                                m_singleHomingPhase = S_FINAL_RETRACT;
-                            }
-                            break;
-                        case S_FINAL_RETRACT:
-                            moveSteps(m_finalRetractSteps, m_homingRapidSps, 200000, 100);
-                            m_singleHomingPhase = S_AWAIT_FINAL_RETRACT_MOVE;
-                            break;
-                        case S_AWAIT_FINAL_RETRACT_MOVE:
-                            if (!isMoving()) { m_singleHomingPhase = S_COMPLETE; }
-                            break;
-                        case S_COMPLETE:
-                            m_homed = true;
-                            sendStatus(STATUS_PREFIX_DONE, "HOME");
-                            resetHomingState();
-                            break;
-                        default:
-                            abort();
-                            break;
+                case RAPID_MOVING: { // Use braces to create a local scope
+					// Determine the status of each motor first
+					bool motor1_at_limit = (m_motor1 && checkTorqueLimit(m_motor1));
+					bool motor2_at_limit = (m_motor2 && checkTorqueLimit(m_motor2));
+
+					// Stop any motor that has hit its limit
+					if (motor1_at_limit) {
+						m_motor1->MoveStopAbrupt();
+					}
+					if (motor2_at_limit) {
+						m_motor2->MoveStopAbrupt();
+					}
+
+					// Now, check if the overall phase is complete
+					// This is true if (motor1 is at limit OR doesn't exist) AND (motor2 is at limit OR doesn't exist)
+					if ((motor1_at_limit || !m_motor1) && (motor2_at_limit || !m_motor2)) {
+						sendStatus(STATUS_PREFIX_INFO, "Endstops hit on rapid, entering BACKOFF_START");
+						homingPhase = BACKOFF_START;
+					}
+					break;
+				}
+					
+				case BACKOFF_START:
+					moveSteps(m_homingBackoffSteps, m_homingRapidSps, MAX_ACC, MAX_TRQ);
+					homingPhase = BACKOFF_WAIT_TO_START;
+					break;
+					
+				case BACKOFF_WAIT_TO_START:
+					if (isMoving()) {
+							sendStatus(STATUS_PREFIX_INFO, "BACKOFF STARTED, entering BACKOFF_MOVING");
+							homingPhase = BACKOFF_MOVING;
+							break;
+						}
+					break;
+					
+                case BACKOFF_MOVING:
+					if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
+						abort();
+						sendStatus(STATUS_PREFIX_ERROR, "Backoff aborted due to torque limit, entering STANDBY.");
+						m_state = STATE_STANDBY;
+						homingPhase = HOMING_NONE;
+					}
+					else if (!isMoving()) {
+						sendStatus(STATUS_PREFIX_DONE, "Backoff done, entering TOUCH_START");
+						homingPhase = TOUCH_START;
+					}
+					break;
+
+                case TOUCH_START:
+                    moveSteps(-m_homingBackoffSteps*2, m_homingTouchSps, MAX_ACC, m_homingTorque);
+					homingPhase = TOUCH_WAIT_TO_START;
+                    break;
+					
+                case TOUCH_WAIT_TO_START:
+                    if (isMoving()) {
+							sendStatus(STATUS_PREFIX_INFO, "TOUCH STARTED, entering TOUCH_MOVING");
+							homingPhase = TOUCH_MOVING;
+							break;
+						}
+                    break;
+					
+				case TOUCH_MOVING: { // Use braces to create a local scope
+					// Determine the status of each motor first
+					bool motor1_at_limit = (m_motor1 && checkTorqueLimit(m_motor1));
+					bool motor2_at_limit = (m_motor2 && checkTorqueLimit(m_motor2));
+
+					// Stop any motor that has hit its limit
+					if (motor1_at_limit) {
+						m_motor1->MoveStopAbrupt();
+					}
+					if (motor2_at_limit) {
+						m_motor2->MoveStopAbrupt();
+					}
+
+					// Now, check if the overall phase is complete
+					// This is true if (motor1 is at limit OR doesn't exist) AND (motor2 is at limit OR doesn't exist)
+					if ((motor1_at_limit || !m_motor1) && (motor2_at_limit || !m_motor2)) {
+						sendStatus(STATUS_PREFIX_INFO, "Endstops hit on touch, entering DESTRESS_DISABLE");
+						homingPhase = DESTRESS_DISABLE;
+					}
+					break;
+				}
+					
+				 case DESTRESS_DISABLE:
+                    disable();
+                    m_delay_target_ms = Milliseconds() + 250;
+                    homingPhase = AWAIT_DESTRESS_TIMER;
+                    break;
+					
+                case AWAIT_DESTRESS_TIMER:
+                    if(Milliseconds() >= m_delay_target_ms) {
+                        homingPhase = DESTRESS_ENABLE;
                     }
                     break;
-                case HOMING_TYPE_DUAL:
+					
+                case DESTRESS_ENABLE:
+                    enable();
+                    m_delay_target_ms = Milliseconds() + 250;
+                    homingPhase = AWAIT_ENABLE_TIMER;
                     break;
-                case HOMING_TYPE_NONE:
+					
+                case AWAIT_ENABLE_TIMER:
+                    if(Milliseconds() >= m_delay_target_ms) {
+                        homingPhase = RETRACT_START;
+                    }
+                    break;
+					
+				case RETRACT_START:
+					moveSteps(m_homingBackoffSteps, m_homingRapidSps, MAX_ACC, MAX_TRQ);
+					homingPhase = RETRACT_WAIT_TO_START;
+					break;
+					
+				case RETRACT_WAIT_TO_START:
+					if (isMoving()) {
+							sendStatus(STATUS_PREFIX_INFO, "RETRACT STARTED, entering RETRACT_MOVING");
+							homingPhase = RETRACT_MOVING;
+							break;
+						}
+					break;
+					
+                case RETRACT_MOVING:
+					if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
+						abort();
+						sendStatus(STATUS_PREFIX_ERROR, "RETRACT aborted due to torque limit, entering STANDBY.");
+						m_state = STATE_STANDBY;
+						homingPhase = HOMING_NONE;
+					}
+					else if (!isMoving()) {
+						sendStatus(STATUS_PREFIX_DONE, "Retract done, entering SET_ZERO");
+						homingPhase = SET_ZERO;
+					}
+					break;
+					
+				case SET_ZERO:
+                    m_motor1->PositionRefSet(0);
+					if(m_motor2) m_motor2->PositionRefSet(0);
+					sendStatus(STATUS_PREFIX_DONE, "Zero set, homing complete, entering STANDBY");
+                    m_homed = true;
+					homingPhase = HOMING_NONE;
+					m_state = STATE_STANDBY;
+					
+                    break;
+	
                 default:
-                    break;
-            }
-            break; 
-        }
-    }
+					abort();
+					sendStatus(STATUS_PREFIX_ERROR, "Unknown homing phase, entering STANDBY");
+					m_state = STATE_STANDBY;
+					homingPhase = HOMING_NONE;
+					break;
+                }
+                break;
+	}
 }
 
 void Axis::abort() {
@@ -269,16 +327,11 @@ void Axis::abort() {
     if (m_motor2) m_motor2->MoveStopAbrupt();
 }
 
-void Axis::resetHomingState() {
-    m_state = STATE_STANDBY;
-    m_homingType = HOMING_TYPE_NONE;
-    m_singleHomingPhase = S_IDLE;
-    m_dualHomingPhase = D_IDLE;
-}
-
 bool Axis::isMoving() {
-    bool motor1Moving = m_motor1->StatusReg().bit.StepsActive || !m_motor1->StatusReg().bit.AtTargetPosition;
-    bool motor2Moving = m_motor2 ? (m_motor2->StatusReg().bit.StepsActive || !m_motor2->StatusReg().bit.AtTargetPosition) : false;
+    // A move is active if the motor controller is actively outputting steps.
+    // This is the most reliable and simplest indicator of motion.
+    bool motor1Moving = m_motor1->StatusReg().bit.StepsActive;
+    bool motor2Moving = m_motor2 ? m_motor2->StatusReg().bit.StepsActive : false;
     return motor1Moving || motor2Moving;
 }
 
@@ -318,14 +371,6 @@ float Axis::getSmoothedTorque() {
 }
 
 bool Axis::checkTorqueLimit(MotorDriver* motor) {
-    if (!motor || !motor->StatusReg().bit.Enabled) {
-        return false;
-    }
-    
-    if (!isMoving()) {
-        return false;
-    }
-
     float torque;
     if (motor == m_motor1) {
         torque = getRawTorque(motor, &m_smoothedTorqueM1, &m_firstTorqueReadM1);

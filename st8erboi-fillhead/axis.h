@@ -28,7 +28,6 @@ private:
     bool checkTorqueLimit(MotorDriver* motor);
     float getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
     void sendStatus(const char* statusType, const char* message);
-    void resetHomingState();
 
     Fillhead* m_controller;
     const char* m_name;
@@ -45,60 +44,42 @@ private:
 
     uint32_t m_delay_target_ms;
 
-    typedef enum {
-        HOMING_TYPE_NONE,
-        HOMING_TYPE_SINGLE,
-        HOMING_TYPE_DUAL
-    } HomingType;
-
     // RESTORED: The full, detailed homing sequence
-    typedef enum {
-        S_IDLE,
-        S_START,
-        S_RAPID_TO_ENDSTOP,
-        S_DESTRESS_DISABLE,
-        S_AWAIT_DESTRESS_TIMER,
-        S_DESTRESS_ENABLE,
-        S_AWAIT_ENABLE_TIMER,
-        S_FIRST_BACKOFF,
-        S_AWAIT_BACKOFF_MOVE,
-        S_TOUCH_TO_ENDSTOP,
-        S_AWAIT_TOUCH_MOVE,
-        S_FINAL_DESTRESS,
-        S_AWAIT_FINAL_DESTRESS_TIMER,
-        S_SET_ZERO,
-        S_FINAL_ENABLE,
-        S_AWAIT_FINAL_ENABLE_TIMER,
-        S_FINAL_RETRACT,
-        S_AWAIT_FINAL_RETRACT_MOVE,
-        S_COMPLETE
-    } SingleHomingPhase;
+	typedef enum {
+		// Initial fast move to find the endstop
+		RAPID_START,
+		RAPID_WAIT_TO_START,
+		RAPID_MOVING,
 
-    typedef enum {
-        D_IDLE,
-        D_START,
-        D_GANTRY_SQUARING,
-        D_DESTRESS_DISABLE,
-        D_AWAIT_DESTRESS_TIMER,
-        D_DESTRESS_ENABLE,
-        D_AWAIT_ENABLE_TIMER,
-        D_FIRST_BACKOFF,
-        D_AWAIT_BACKOFF_MOVE,
-        D_TOUCH_TO_ENDSTOP,
-        D_AWAIT_TOUCH_MOVE,
-        D_FINAL_DESTRESS,
-        D_AWAIT_FINAL_DESTRESS_TIMER,
-        D_SET_ZERO,
-        D_FINAL_ENABLE,
-        D_AWAIT_FINAL_ENABLE_TIMER,
-        D_FINAL_RETRACT,
-        D_AWAIT_FINAL_RETRACT_MOVE,
-        D_COMPLETE
-    } DualHomingPhase;
+		// Move away from the endstop
+		BACKOFF_START,
+		BACKOFF_WAIT_TO_START,
+		BACKOFF_MOVING,
+
+		// Slower, more accurate move to touch the endstop again
+		TOUCH_START,
+		TOUCH_WAIT_TO_START,
+		TOUCH_MOVING,
+
+		// De-energize motors to release mechanical stress
+		DESTRESS_DISABLE,
+		AWAIT_DESTRESS_TIMER,
+		DESTRESS_ENABLE,
+		AWAIT_ENABLE_TIMER, // Waits for motors to be ready after re-enabling
+
+		// Set the zero position
+		SET_ZERO,
+
+		// Final move to a known offset from home
+		RETRACT_START,
+		RETRACT_WAIT_TO_START,
+		RETRACT_MOVING,
+
+		// Sentinel for when homing is not active
+		HOMING_NONE
+	} HomingPhase;
     
-    HomingType m_homingType;
-    SingleHomingPhase m_singleHomingPhase;
-    DualHomingPhase m_dualHomingPhase;
+    HomingPhase homingPhase;
 
     float m_stepsPerMm;
     bool m_homed;

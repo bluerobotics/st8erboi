@@ -11,7 +11,7 @@ Fillhead::Fillhead() :
 }
 
 void Fillhead::setup() {
-    setupUsbSerial();
+    //setupUsbSerial();
     
     // Set all motors to step/dir mode before initializing axes
     MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
