@@ -1,9 +1,9 @@
 #include "fillhead.h"
 
 Fillhead::Fillhead() :
-    xAxis(this, "X", &MotorX, nullptr, -STEPS_PER_MM_X),
-    yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y),
-    zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z)
+    xAxis(this, "X", &MotorX, nullptr, -STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS),
+    yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS),
+    zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS)
 {
     m_guiDiscovered = false;
     m_guiPort = 0;

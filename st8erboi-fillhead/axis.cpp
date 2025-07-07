@@ -4,12 +4,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm) {
+Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm) {
     m_controller = controller;
     m_name = name;
     m_motor1 = motor1;
     m_motor2 = motor2;
     m_stepsPerMm = stepsPerMm;
+    m_minPosMm = minPosMm;
+    m_maxPosMm = maxPosMm;
     
     // Explicitly initialize all state variables to a known starting condition.
     // This is crucial for preventing "works once, then fails" bugs.
@@ -82,6 +84,25 @@ void Axis::handleMove(const char* args) {
         sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format.");
         return;
     }
+    
+    // --- ADDED: Pre-move safety checks ---
+    if (!m_homed) {
+        sendStatus(STATUS_PREFIX_ERROR, "Cannot MOVE: Axis must be homed first.");
+        return;
+    }
+
+    float currentPosMm = getPositionMm();
+    float targetPosMm = currentPosMm + distance_mm;
+
+    if (targetPosMm < m_minPosMm || targetPosMm > m_maxPosMm) {
+        char errorMsg[128];
+        snprintf(errorMsg, sizeof(errorMsg), "Move command (%.2fmm) exceeds limits [%.2f, %.2f]. Target: %.2f", 
+                 distance_mm, m_minPosMm, m_maxPosMm, targetPosMm);
+        sendStatus(STATUS_PREFIX_ERROR, errorMsg);
+        return;
+    }
+    // --- END: Pre-move safety checks ---
+
     long steps = (long)(distance_mm * m_stepsPerMm);
     int velocity_sps = (int)fabs(vel_mms * m_stepsPerMm);
     int accel_sps2 = (int)fabs(accel_mms2 * m_stepsPerMm);

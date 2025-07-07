@@ -7,7 +7,7 @@ class Fillhead;
 
 class Axis {
 public:
-    Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm);
+    Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm);
     void setupMotors();
     void updateState();
     void handleMove(const char* args);
@@ -92,6 +92,9 @@ private:
     int m_homingTorque;
     bool m_motor1_hit_rapid;
     bool m_motor2_hit_rapid;
+	
+    float m_minPosMm;
+    float m_maxPosMm;
 
     float m_smoothedTorqueM1;
     float m_smoothedTorqueM2;
