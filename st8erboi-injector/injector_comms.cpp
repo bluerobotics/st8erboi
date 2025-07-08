@@ -28,11 +28,11 @@ void Injector::sendStatus(const char* statusType, const char* message) {
 		udp.PacketSend();
 	}
 
-    if (peerDiscovered) {
-        udp.Connect(peerIp, LOCAL_PORT); 
-        udp.PacketWrite(msg);
-        udp.PacketSend();
-    }
+	if (peerDiscovered) {
+		udp.Connect(peerIp, LOCAL_PORT);
+		udp.PacketWrite(msg);
+		udp.PacketSend();
+	}
 }
 
 void Injector::setupSerial(void)
@@ -82,8 +82,6 @@ void Injector::processUdp() {
 	}
 }
 
-
-// This is the full, updated function for injector_comms.cpp
 void Injector::sendGuiTelemetry(void){
 	
 	// --- Data gathering for motors 0, 1, 2 ---
@@ -99,17 +97,17 @@ void Injector::sendGuiTelemetry(void){
 	long current_pos_steps_m1 = ConnectorM1.PositionRefCommanded();
 	long current_pos_steps_m2 = ConnectorM2.PositionRefCommanded();
 
-    // --- NEW: Convert absolute positions to millimeters ---
-    float pos_mm_m0 = (float)current_pos_steps_m0 / STEPS_PER_MM_M0;
-    float pos_mm_m1 = (float)current_pos_steps_m1 / STEPS_PER_MM_M1;
-    float pos_mm_m2 = (float)current_pos_steps_m2 / STEPS_PER_MM_M2;
+	// --- Convert absolute positions to millimeters ---
+	float pos_mm_m0 = (float)current_pos_steps_m0 / STEPS_PER_MM_M0;
+	float pos_mm_m1 = (float)current_pos_steps_m1 / STEPS_PER_MM_M1;
+	float pos_mm_m2 = (float)current_pos_steps_m2 / STEPS_PER_MM_M2;
 
 	// Homing status for each motor
 	int is_homed0 = homingMachineDone ? 1 : 0;
 	int is_homed1 = homingMachineDone ? 1 : 0;
 	int is_homed2 = homingPinchDone ? 1 : 0;
 
-	// --- MODIFIED: Calculate relative positions in millimeters ---
+	// --- Calculate relative positions in millimeters ---
 	float machine_pos_mm = (float)(current_pos_steps_m0 - machineHomeReferenceSteps) / STEPS_PER_MM_M0;
 	float cartridge_pos_mm = (float)(current_pos_steps_m0 - cartridgeHomeReferenceSteps) / STEPS_PER_MM_M0;
 
@@ -119,15 +117,15 @@ void Injector::sendGuiTelemetry(void){
 	if (active_dispense_INJECTION_ongoing) {
 		current_target_for_telemetry = active_op_target_ml;
 		if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE ||
-		    feedState == FEED_INJECT_RESUMING || feedState == FEED_PURGE_RESUMING ) {
+		feedState == FEED_INJECT_RESUMING || feedState == FEED_PURGE_RESUMING ) {
 			if (active_op_steps_per_ml > 0.0001f) {
 				long total_steps_moved_for_op = current_pos_steps_m0 - active_op_initial_axis_steps;
 				current_dispensed_for_telemetry = fabs(total_steps_moved_for_op) / active_op_steps_per_ml;
 			}
-		} else if (feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) {
+			} else if (feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) {
 			current_dispensed_for_telemetry = active_op_total_dispensed_ml;
 		}
-	} else {
+		} else {
 		current_dispensed_for_telemetry = last_completed_dispense_ml;
 		current_target_for_telemetry = 0.0f;
 	}
@@ -137,35 +135,38 @@ void Injector::sendGuiTelemetry(void){
 	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "---"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
 	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "---"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
 
-	// --- MODIFIED: Assemble new telemetry packet with mm units and peer status ---
+	// --- MODIFIED: Assemble new telemetry packet with environmental data ---
 	char msg[512];
 	snprintf(msg, sizeof(msg),
-	    "MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
-	    "torque0:%s,hlfb0:%d,enabled0:%d,pos_mm0:%.2f,homed0:%d,"      // pos_cmd -> pos_mm
-	    "torque1:%s,hlfb1:%d,enabled1:%d,pos_mm1:%.2f,homed1:%d,"      // pos_cmd -> pos_mm
-	    "torque2:%s,hlfb2:%d,enabled2:%d,pos_mm2:%.2f,homed2:%d,"      // pos_cmd -> pos_mm
-	    "machine_mm:%.2f,cartridge_mm:%.2f,"                         // machine_steps -> machine_mm, etc.
-	    "dispensed_ml:%.2f,target_ml:%.2f,"
-        "peer_disc:%d,peer_ip:%s",                                   // NEW peer status fields
-	    mainStateStr(), homingStateStr(), homingPhaseStr(), feedStateStr(), errorStateStr(),
-	    // Motor 0 Data
-	    torque0Str, hlfb0_val, (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
-	    // Motor 1 Data
-	    torque1Str, hlfb1_val, (int)ConnectorM1.StatusReg().bit.Enabled, pos_mm_m1, is_homed1,
-	    // Motor 2 Data
-	    torque2Str, hlfb2_val, (int)ConnectorM2.StatusReg().bit.Enabled, pos_mm_m2, is_homed2,
-	    // Relative positions in mm
-	    machine_pos_mm, cartridge_pos_mm,
-	    // Dispense data
-	    current_dispensed_for_telemetry, current_target_for_telemetry,
-        // Peer data
-        (int)peerDiscovered, peerIp.StringValue());
+	"MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
+	"torque0:%s,hlfb0:%d,enabled0:%d,pos_mm0:%.2f,homed0:%d,"
+	"torque1:%s,hlfb1:%d,enabled1:%d,pos_mm1:%.2f,homed1:%d,"
+	"torque2:%s,hlfb2:%d,enabled2:%d,pos_mm2:%.2f,homed2:%d,"
+	"machine_mm:%.2f,cartridge_mm:%.2f,"
+	"dispensed_ml:%.2f,target_ml:%.2f,"
+	"peer_disc:%d,peer_ip:%s,"
+	"temp_c:%.1f,heater:%d,vacuum:%d", // NEW environmental fields
+	mainStateStr(), homingStateStr(), homingPhaseStr(), feedStateStr(), errorStateStr(),
+	// Motor 0 Data
+	torque0Str, hlfb0_val, (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
+	// Motor 1 Data
+	torque1Str, hlfb1_val, (int)ConnectorM1.StatusReg().bit.Enabled, pos_mm_m1, is_homed1,
+	// Motor 2 Data
+	torque2Str, hlfb2_val, (int)ConnectorM2.StatusReg().bit.Enabled, pos_mm_m2, is_homed2,
+	// Relative positions in mm
+	machine_pos_mm, cartridge_pos_mm,
+	// Dispense data
+	current_dispensed_for_telemetry, current_target_for_telemetry,
+	// Peer data
+	(int)peerDiscovered, peerIp.StringValue(),
+	// NEW Environmental data
+	temperatureCelsius, (int)heaterOn, (int)vacuumOn);
 
 	sendStatus(TELEM_PREFIX_GUI, msg);
 }
 
 UserCommand Injector::parseCommand(const char *msg) {
-	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM; // ADD THIS LINE
+	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 
 	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
@@ -192,25 +193,26 @@ UserCommand Injector::parseCommand(const char *msg) {
 	if (strcmp(msg, CMD_STR_RESUME_INJECTION) == 0) return CMD_RESUME_INJECTION;
 	if (strcmp(msg, CMD_STR_CANCEL_INJECTION) == 0) return CMD_CANCEL_INJECTION;
 
-    // --- ADDED THIS LINE BACK ---
 	if (strcmp(msg, CMD_STR_PINCH_HOME_MOVE) == 0) return CMD_PINCH_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_PINCH_JOG_MOVE, strlen(CMD_STR_PINCH_JOG_MOVE)) == 0) return CMD_PINCH_JOG_MOVE;
 	if (strcmp(msg, CMD_STR_PINCH_OPEN) == 0) return CMD_PINCH_OPEN;
 	if (strcmp(msg, CMD_STR_PINCH_CLOSE) == 0) return CMD_PINCH_CLOSE;
-    if (strcmp(msg, CMD_STR_ENABLE_PINCH) == 0) return CMD_ENABLE_PINCH;
-    if (strcmp(msg, CMD_STR_DISABLE_PINCH) == 0) return CMD_DISABLE_PINCH;
+	if (strcmp(msg, CMD_STR_ENABLE_PINCH) == 0) return CMD_ENABLE_PINCH;
+	if (strcmp(msg, CMD_STR_DISABLE_PINCH) == 0) return CMD_DISABLE_PINCH;
 	
 	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
 	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
+
+	// --- NEW: Parse environmental commands ---
+	if (strcmp(msg, CMD_STR_HEATER_ON) == 0) return CMD_HEATER_ON;
+	if (strcmp(msg, CMD_STR_HEATER_OFF) == 0) return CMD_HEATER_OFF;
+	if (strcmp(msg, CMD_STR_VACUUM_ON) == 0) return CMD_VACUUM_ON;
+	if (strcmp(msg, CMD_STR_VACUUM_OFF) == 0) return CMD_VACUUM_OFF;
 
 	return CMD_UNKNOWN;
 }
 
 
-/**
- * @brief Routes a parsed command to the appropriate handler function.
- * @param msg The raw command string, needed for handlers that parse arguments.
- */
 void Injector::handleMessage(const char *msg) {
 	UserCommand command = parseCommand(msg);
 
@@ -246,43 +248,48 @@ void Injector::handleMessage(const char *msg) {
 		case CMD_RESUME_INJECTION:          handleResumeOperation(); break;
 		case CMD_CANCEL_INJECTION:          handleCancelOperation(); break;
 		
-        // --- ADDED THIS CASE BACK ---
-        case CMD_PINCH_HOME_MOVE:           handlePinchHomeMove(); break;
+		case CMD_PINCH_HOME_MOVE:           handlePinchHomeMove(); break;
 		case CMD_PINCH_JOG_MOVE:            handlePinchJogMove(msg); break;
 		case CMD_PINCH_OPEN:                handlePinchOpen(); break;
 		case CMD_PINCH_CLOSE:               handlePinchClose(); break;
-        case CMD_ENABLE_PINCH:              handleEnablePinch(); break;
-        case CMD_DISABLE_PINCH:             handleDisablePinch(); break;
+		case CMD_ENABLE_PINCH:              handleEnablePinch(); break;
+		case CMD_DISABLE_PINCH:             handleDisablePinch(); break;
 		case CMD_SET_PEER_IP:
-            handleSetPeerIp(msg);
-            break;
-        case CMD_CLEAR_PEER_IP:
-            handleClearPeerIp();
-            break;
+		handleSetPeerIp(msg);
+		break;
+		case CMD_CLEAR_PEER_IP:
+		handleClearPeerIp();
+		break;
+
+		// --- NEW: Route to new handlers ---
+		case CMD_HEATER_ON:                 handleHeaterOn(); break;
+		case CMD_HEATER_OFF:                handleHeaterOff(); break;
+		case CMD_VACUUM_ON:                 handleVacuumOn(); break;
+		case CMD_VACUUM_OFF:                handleVacuumOff(); break;
 
 		case CMD_UNKNOWN:
 		default:
-			// be silent
-			break;
+		// be silent
+		break;
 	}
 }
 
 void Injector::handleSetPeerIp(const char* msg) {
-    const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
-    IpAddress newPeerIp(ipStr);
-    if (strcmp(newPeerIp.StringValue(), "0.0.0.0") == 0) {
-        peerDiscovered = false;
-        sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
-    } else {
-        peerIp = newPeerIp;
-        peerDiscovered = true;
-        char response[100];
-        snprintf(response, sizeof(response), "Peer IP set to %s", ipStr);
-        sendStatus(STATUS_PREFIX_INFO, response);
-    }
+	const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
+	IpAddress newPeerIp(ipStr);
+	if (strcmp(newPeerIp.StringValue(), "0.0.0.0") == 0) {
+		peerDiscovered = false;
+		sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
+		} else {
+		peerIp = newPeerIp;
+		peerDiscovered = true;
+		char response[100];
+		snprintf(response, sizeof(response), "Peer IP set to %s", ipStr);
+		sendStatus(STATUS_PREFIX_INFO, response);
+	}
 }
 
 void Injector::handleClearPeerIp() {
-    peerDiscovered = false;
-    sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
+	peerDiscovered = false;
+	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }

@@ -9,34 +9,35 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// --- UPDATED: Command parsing enum ---
+// --- Command parsing enum ---
 typedef enum {
 	CMD_UNKNOWN, CMD_REQUEST_TELEM, CMD_DISCOVER, CMD_SET_PEER_IP,
 	CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z,
 	CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z,
-	// Add the new command identifiers here
 	CMD_ENABLE_X, CMD_DISABLE_X, CMD_ENABLE_Y, CMD_DISABLE_Y,
-	CMD_ENABLE_Z, CMD_DISABLE_Z
+	CMD_ENABLE_Z, CMD_DISABLE_Z, CMD_START_DEMO
 } FillheadCommand;
+
+// UPDATED: State machine for the demo routine now includes centering and edge-finding states.
+typedef enum {
+    FH_STATE_IDLE,
+    FH_STATE_DEMO_START,
+    FH_STATE_DEMO_CENTERING,
+    FH_STATE_DEMO_MOVING_TO_EDGE,
+    FH_STATE_DEMO_RUNNING
+} FillheadState;
+
 
 class Fillhead {
 	public:
-	// Constructor
 	Fillhead();
-
-	// Core Functions
 	void setup();
 	void update();
-
-	// Public for Axis to use
 	void sendStatus(const char* statusType, const char* message);
 
 	private:
-	// Setup
 	void setupEthernet();
 	void setupUsbSerial();
-
-	// Communication
 	void processUdp();
 	void handleMessage(const char* msg);
 	void sendGuiTelemetry();
@@ -45,8 +46,11 @@ class Fillhead {
 	void handleSetPeerIp(const char* msg);
 	void handleClearPeerIp();
 	void abortAll();
+    void handleStartDemo();
+
+    // State updaters
+    void updateDemoState();
 	
-	// Helper
 	FillheadCommand parseCommand(const char* msg);
 
 	// Member Variables
@@ -57,12 +61,13 @@ class Fillhead {
 	IpAddress m_peerIp;
 	bool m_peerDiscovered;
 	
-	// Axis objects
 	Axis xAxis;
 	Axis yAxis;
 	Axis zAxis;
 
-	// Buffers
+    FillheadState m_fillheadState;
+    float m_demoAngleRad;
+
 	char m_telemetryBuffer[300];
 	unsigned char m_packetBuffer[MAX_PACKET_LENGTH];
 };

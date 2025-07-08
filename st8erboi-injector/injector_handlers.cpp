@@ -421,6 +421,31 @@ void Injector::handlePinchClose(){
 	// Implementation needed
 }
 
+// --- NEW: Handlers for heater and vacuum relays ---
+void Injector::handleHeaterOn() {
+	PIN_HEATER_RELAY.State(true); // CORRECTED from StateSet
+	heaterOn = true;
+	sendStatus(STATUS_PREFIX_INFO, "Heater relay turned ON.");
+}
+
+void Injector::handleHeaterOff() {
+	PIN_HEATER_RELAY.State(false); // CORRECTED from StateSet
+	heaterOn = false;
+	sendStatus(STATUS_PREFIX_INFO, "Heater relay turned OFF.");
+}
+
+void Injector::handleVacuumOn() {
+	PIN_VACUUM_RELAY.State(true); // CORRECTED from StateSet
+	vacuumOn = true;
+	sendStatus(STATUS_PREFIX_INFO, "Vacuum relay turned ON.");
+}
+
+void Injector::handleVacuumOff() {
+	PIN_VACUUM_RELAY.State(false); // CORRECTED from StateSet
+	vacuumOn = false;
+	sendStatus(STATUS_PREFIX_INFO, "Vacuum relay turned OFF.");
+}
+
 void Injector::handleMoveToCartridgeHome() {
 	if (mainState != FEED_MODE) { return; }
 	if (!homingCartridgeDone) { errorState = ERROR_NO_CARTRIDGE_HOME; sendStatus(STATUS_PREFIX_INFO, "Err: Cartridge not homed."); return; }

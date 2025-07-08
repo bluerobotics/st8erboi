@@ -4,9 +4,7 @@ import threading
 import time
 import datetime
 import math
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
+# Removed matplotlib and numpy imports
 
 # Import our communications module
 import comms
@@ -17,8 +15,8 @@ from injector_gui import create_injector_tab
 from fillhead_gui import create_fillhead_tab
 from peer_comms_gui import create_peer_comms_tab
 
-# --- CONFIGURATION CONSTANT ---
-GUI_UPDATE_INTERVAL_MS = 100
+# --- CONFIGURATION CONSTANTS ---
+GUI_UPDATE_INTERVAL_MS = 100  # Update all lightweight UI elements 10 times/sec
 
 
 # --- UPDATED: More robust style configuration ---
@@ -26,13 +24,11 @@ def configure_styles():
     """Defines custom colors and styles for ttk widgets."""
     style = ttk.Style()
 
-    # Use the 'clam' theme, which is known to be more customizable for colors.
     try:
         style.theme_use('clam')
     except tk.TclError:
         print("Warning: 'clam' theme not available. Using default.")
 
-    # A helper to remove the dotted focus outline on buttons
     style.layout('TButton',
                  [('Button.button', {'children':
                                          [('Button.focus', {'children':
@@ -44,8 +40,6 @@ def configure_styles():
                                                             })]
                                      })]
                  )
-
-    # Style for a button that is currently "ON" or "ACTIVE"
     style.configure("Green.TButton",
                     background='#21ba45',
                     foreground='white',
@@ -54,7 +48,6 @@ def configure_styles():
     style.map("Green.TButton",
               background=[('pressed', '#198734'), ('active', '#25cc4c')])
 
-    # Style for a button that indicates the "OFF" state
     style.configure("Red.TButton",
                     background='#db2828',
                     foreground='white',
@@ -63,7 +56,6 @@ def configure_styles():
     style.map("Red.TButton",
               background=[('pressed', '#b32424'), ('active', 'red')])
 
-    # Style for a neutral, unselected button in a group
     style.configure("Neutral.TButton",
                     background='#495057',
                     foreground='#f8f9fa',
@@ -80,12 +72,8 @@ def main():
 
     configure_styles()
 
-    shared_gui_refs = {
-        "injector_torque_times": [], "injector_torque_history1": [], "injector_torque_history2": [],
-        "injector_torque_history3": [],
-        "fillhead_torque_times": [], "fillhead_torque_history0": [], "fillhead_torque_history1": [],
-        "fillhead_torque_history2": [], "fillhead_torque_history3": [],
-    }
+    # This dictionary no longer needs to store plot history
+    shared_gui_refs = {}
 
     send_injector_cmd = lambda msg: comms.send_to_device("injector", msg, shared_gui_refs)
     send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
@@ -119,87 +107,84 @@ def main():
     notebook.pack(expand=True, fill="both", padx=10, pady=5)
     shared_widgets['shared_bottom_frame'].pack(fill=tk.X, expand=False, padx=10, pady=(0, 10))
 
-    def update_injector_torque_plot():
-        ax = shared_gui_refs.get('injector_torque_plot_ax')
-        canvas = shared_gui_refs.get('injector_torque_plot_canvas')
-        lines = shared_gui_refs.get('injector_torque_plot_lines')
-        if not all([ax, canvas, lines]): return
-        ts = shared_gui_refs.get('injector_torque_times', [])
-        histories = [
-            shared_gui_refs.get("injector_torque_history1", []),
-            shared_gui_refs.get("injector_torque_history2", []),
-            shared_gui_refs.get("injector_torque_history3", [])
-        ]
-        if not ts: return
-        try:
-            latest_time = ts[-1]
-            ax.set_xlim(latest_time - 10, latest_time)
-            for i in range(3):
-                if len(ts) == len(histories[i]):
-                    lines[i].set_data(ts, histories[i])
-            all_data = [item for sublist in histories for item in sublist if sublist]
-            if not all_data: return
-            min_y_data, max_y_data = min(all_data), max(all_data)
-            nmin, nmax = max(min_y_data - 10, -10), min(max_y_data + 10, 110)
-            ax.set_ylim(nmin, nmax)
-            canvas.draw_idle()
-        except (IndexError, ValueError):
-            pass
+    def update_torque_bar(canvas, bar_item, text_item, torque_val):
+        """Updates a single torque bar and its text."""
+        if not all([canvas, bar_item, text_item]):
+            return
 
-    def update_fillhead_torque_plot():
-        ax = shared_gui_refs.get('fillhead_torque_plot_ax')
-        canvas = shared_gui_refs.get('fillhead_torque_plot_canvas')
-        lines = shared_gui_refs.get('fillhead_torque_plot_lines')
-        if not all([ax, canvas, lines]): return
-        ts = shared_gui_refs['fillhead_torque_times']
-        histories = [shared_gui_refs[f'fillhead_torque_history{i}'] for i in range(4)]
-        if not ts: return
-        try:
-            latest_time = ts[-1]
-            ax.set_xlim(latest_time - 10, latest_time)
-            for i in range(4):
-                if len(ts) == len(histories[i]): lines[i].set_data(ts, histories[i])
-            all_data = [item for sublist in histories for item in sublist if sublist]
-            if not all_data: return
-            min_y_data, max_y_data = min(all_data), max(all_data)
-            nmin, nmax = max(min_y_data - 10, -10), min(max_y_data + 10, 110)
-            ax.set_ylim(nmin, nmax)
-            canvas.draw_idle()
-        except (IndexError, ValueError):
-            pass
+        # Clamp torque value between 0 and 100 for bar display
+        clamped_torque = max(0, min(100, torque_val))
 
-    def update_fillhead_position_plot():
-        canvas = shared_gui_refs.get('fh_pos_viz_canvas')
-        xy_marker = shared_gui_refs.get('fh_xy_marker')
-        z_bar = shared_gui_refs.get('fh_z_bar')
-        if not all([canvas, xy_marker, z_bar]): return
-        try:
-            x_pos = float(shared_gui_refs.get('fh_pos_m0_var').get())
-            y_pos = float(shared_gui_refs.get('fh_pos_m1_var').get())
-            z_pos = float(shared_gui_refs.get('fh_pos_m3_var').get())
-            xy_marker.set_data([x_pos], [y_pos])
-            z_bar.set_height(z_pos)
-            canvas.draw_idle()
-        except (ValueError, tk.TclError):
-            pass
+        # Calculate bar height (canvas is 100px high, from y=10 to y=110)
+        bar_height = (clamped_torque / 100.0) * 100
+        y0 = 110 - bar_height
+
+        # Update bar coordinates
+        canvas.coords(bar_item, 10, y0, 30, 110)
+
+        # Update text
+        canvas.itemconfig(text_item, text=f"{torque_val:.1f}%")
+
+        # Update color based on value
+        if torque_val > 85:
+            color = '#db2828'  # Red
+        elif torque_val > 60:
+            color = '#f2c037'  # Yellow
+        else:
+            color = '#21ba45'  # Green
+        canvas.itemconfig(bar_item, fill=color)
+
+    def update_injector_torque_bars():
+        for i in range(1, 4):
+            try:
+                torque_str = shared_gui_refs.get(f'torque_value{i}_var').get()
+                torque_val = float(torque_str)
+                update_torque_bar(
+                    shared_gui_refs.get(f'injector_torque_canvas{i}'),
+                    shared_gui_refs.get(f'injector_torque_bar{i}'),
+                    shared_gui_refs.get(f'injector_torque_text{i}'),
+                    torque_val
+                )
+            except (ValueError, AttributeError, tk.TclError):
+                continue  # Skip if widgets or vars don't exist yet
+
+    def update_fillhead_torque_bars():
+        for i in range(4):
+            try:
+                torque_str = shared_gui_refs.get(f'fh_torque_m{i}_var').get()
+                torque_val = float(torque_str)
+                update_torque_bar(
+                    shared_gui_refs.get(f'fh_torque_canvas{i}'),
+                    shared_gui_refs.get(f'fh_torque_bar{i}'),
+                    shared_gui_refs.get(f'fh_torque_text{i}'),
+                    torque_val
+                )
+            except (ValueError, AttributeError, tk.TclError):
+                continue
 
     def periodic_gui_updater():
-        update_injector_torque_plot()
-        update_fillhead_torque_plot()
-        update_fillhead_position_plot()
+        """Handles all lightweight GUI updates."""
+        update_injector_torque_bars()
+        update_fillhead_torque_bars()
+        # The position plot was removed, so this is no longer needed
+        # update_fillhead_position_plot()
         root.after(GUI_UPDATE_INTERVAL_MS, periodic_gui_updater)
 
     def telemetry_requester_loop():
+        """Requests new data from devices."""
         if comms.devices["injector"]["connected"]:
             comms.send_to_device("injector", "REQUEST_TELEM", shared_gui_refs)
         if comms.devices["fillhead"]["connected"]:
             comms.send_to_device("fillhead", "REQUEST_TELEM", shared_gui_refs)
         root.after(GUI_UPDATE_INTERVAL_MS, telemetry_requester_loop)
 
+    # --- Start all loops ---
     threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()
     threading.Thread(target=comms.monitor_connections, args=(shared_gui_refs,), daemon=True).start()
+
     root.after(250, periodic_gui_updater)
     root.after(1000, telemetry_requester_loop)
+
     root.mainloop()
 
 

@@ -17,6 +17,17 @@
 #define STEPS_PER_MM_M2 160.0f
 #define MAX_HOMING_DURATION_MS 30000 // 30 seconds
 
+// --- Hardware Pin Definitions (Corrected from user table) ---
+#define PIN_THERMOCOUPLE ConnectorA12  // Analog input for thermocouple
+#define PIN_HEATER_RELAY ConnectorIO1  // CORRECTED: Digital output for heater relay
+#define PIN_VACUUM_RELAY ConnectorIO0  // CORRECTED: Digital output for vacuum relay
+
+// --- Thermocouple Conversion Coefficients (Corrected for 0-10V Range) ---
+#define TC_V_REF 10.0f          // ADC reference voltage is 10V for ClearCore analog inputs.
+#define TC_V_OFFSET 1.25f       // The sensor's voltage at 0 degrees C (from user spec).
+#define TC_GAIN 100.0f          // Gain (e.g., degrees C per Volt).
+
+
 // --- Command Strings & Prefixes ---
 #define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
 #define CMD_STR_DISCOVER "DISCOVER_INJECTOR"
@@ -48,6 +59,11 @@
 #define CMD_STR_PAUSE_INJECTION "PAUSE_INJECTION"
 #define CMD_STR_RESUME_INJECTION "RESUME_INJECTION"
 #define CMD_STR_CANCEL_INJECTION "CANCEL_INJECTION"
+// --- NEW: Command strings for environmental controls ---
+#define CMD_STR_HEATER_ON "HEATER_ON"
+#define CMD_STR_HEATER_OFF "HEATER_OFF"
+#define CMD_STR_VACUUM_ON "VACUUM_ON"
+#define CMD_STR_VACUUM_OFF "VACUUM_OFF"
 
 #define TELEM_PREFIX_GUI "INJ_TELEM_GUI:"
 #define STATUS_PREFIX_INFO "INJ_INFO: "
@@ -101,7 +117,12 @@ typedef enum {
 	CMD_STANDBY_MODE,
 	CMD_JOG_MODE,
 	CMD_HOMING_MODE,
-	CMD_FEED_MODE
+	CMD_FEED_MODE,
+	// --- NEW: Enum values for commands ---
+	CMD_HEATER_ON,
+	CMD_HEATER_OFF,
+	CMD_VACUUM_ON,
+	CMD_VACUUM_OFF
 } UserCommand;
 
 class Injector {
@@ -127,6 +148,11 @@ class Injector {
 	uint32_t homingStartTime;
 	bool motorsAreEnabled;
 	
+	// --- NEW: State variables for new components ---
+	bool heaterOn;
+	bool vacuumOn;
+	float temperatureCelsius;
+
 	float homing_stroke_mm_param;
 	float homing_rapid_vel_mm_s_param;
 	float homing_touch_vel_mm_s_param;
@@ -161,8 +187,9 @@ class Injector {
 	void sendStatus(const char* statusType, const char* message);
 	UserCommand parseCommand(const char* msg);
 	
-	//--- Motor Functions ---//
+	//--- Hardware & Peripheral Functions ---//
 	void setupMotors(void);
+	void setupPeripherals(void); // NEW
 	void enableInjectorMotors(const char* reason_message);
 	void disableInjectorMotors(const char* reason_message);
 	void moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel);
@@ -171,6 +198,7 @@ class Injector {
 	float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);
 	bool checkInjectorTorqueLimit(void);
 	void abortInjectorMove(void);
+	void updateTemperature(void); // NEW
 
 	// Command Handlers
 	void handleMessage(const char* msg);
@@ -201,6 +229,11 @@ class Injector {
 	void handleClearPeerIp();
 	void handlePinchOpen();
 	void handlePinchClose();
+	// --- NEW: Handlers for environmental controls ---
+	void handleHeaterOn();
+	void handleHeaterOff();
+	void handleVacuumOn();
+	void handleVacuumOff();
 
 	//--- State Trigger Functions ---//
 	void onHomingMachineDone(void);

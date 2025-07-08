@@ -10,7 +10,6 @@ CLIENT_PORT = 6272
 HEARTBEAT_INTERVAL = 0.5
 DISCOVERY_INTERVAL = 2.0
 TIMEOUT_THRESHOLD = 3.0
-TORQUE_HISTORY_LENGTH = 200
 
 # --- Global State ---
 last_fw_main_state_for_gui_update = None
@@ -27,8 +26,8 @@ except OSError as e:
     exit()
 
 devices = {
-    "injector": {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0},
-    "fillhead": {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0}
+    "injector": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0},
+    "fillhead": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0}
 }
 
 
@@ -75,8 +74,8 @@ def send_to_device(device_key, msg, gui_refs):
 
 def monitor_connections(gui_refs):
     """
-    Runs in a thread to monitor device connection status and handle auto-discovery
-    for any disconnected devices.
+    Runs in a thread to monitor device connection status, handle auto-discovery,
+    and re-establish peer-to-peer links if they drop.
     """
     terminal_cb = gui_refs.get('terminal_cb')
     while True:
@@ -86,7 +85,8 @@ def monitor_connections(gui_refs):
 
             if prev_conn_status and (now - device["last_rx"]) > TIMEOUT_THRESHOLD:
                 device["connected"] = False
-                device["ip"] = None  # Clear IP on disconnect
+                device["peer_connected"] = False
+                device["ip"] = None
 
             if prev_conn_status and not device["connected"]:
                 status_text = f"🔌 {key.capitalize()} Disconnected"
@@ -103,6 +103,21 @@ def monitor_connections(gui_refs):
                     discover(key, gui_refs)
                     device["last_discovery_attempt"] = now
 
+        injector = devices["injector"]
+        fillhead = devices["fillhead"]
+
+        if injector["connected"] and fillhead["connected"]:
+            if not injector["peer_connected"] or not fillhead["peer_connected"]:
+                if now - injector["last_discovery_attempt"] > DISCOVERY_INTERVAL:
+                    log_to_terminal("INFO: Peer connection lost while devices are active. Re-brokering IPs.",
+                                    terminal_cb)
+
+                    if injector["ip"] and fillhead["ip"]:
+                        send_to_device("injector", f"SET_PEER_IP {fillhead['ip']}", gui_refs)
+                        send_to_device("fillhead", f"SET_PEER_IP {injector['ip']}", gui_refs)
+
+                    injector["last_discovery_attempt"] = now
+
         time.sleep(HEARTBEAT_INTERVAL)
 
 
@@ -118,7 +133,6 @@ def handle_connection(device_key, source_ip, gui_refs):
         log_to_terminal(status_text, gui_refs.get('terminal_cb'))
         gui_refs[f'status_var_{device_key}'].set(status_text)
 
-        # Send one request on initial connection, then let the timed loop take over.
         send_to_device(device_key, "REQUEST_TELEM", gui_refs)
 
         other_key = "fillhead" if device_key == "injector" else "injector"
@@ -138,50 +152,30 @@ def parse_injector_telemetry(msg, gui_refs):
         payload = msg.split("INJ_TELEM_GUI:")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
-        fw_main_state = parts.get("MAIN_STATE", "---")
-        fw_feed_state = parts.get("FEED_STATE", "IDLE")
-
-        if 'main_state_var' in gui_refs: gui_refs['main_state_var'].set(fw_main_state)
-        if 'feed_state_var' in gui_refs: gui_refs['feed_state_var'].set(fw_feed_state)
-
+        if 'main_state_var' in gui_refs: gui_refs['main_state_var'].set(parts.get("MAIN_STATE", "---"))
+        if 'feed_state_var' in gui_refs: gui_refs['feed_state_var'].set(parts.get("FEED_STATE", "IDLE"))
         if 'homing_state_var' in gui_refs: gui_refs['homing_state_var'].set(parts.get("HOMING_STATE", "---"))
         if 'homing_phase_var' in gui_refs: gui_refs['homing_phase_var'].set(parts.get("HOMING_PHASE", "---"))
         if 'error_state_var' in gui_refs: gui_refs['error_state_var'].set(parts.get("ERROR_STATE", "No Error"))
 
-        torque_floats = []
-        for i in range(3):
-            try:
-                torque_val = float(parts.get(f'torque{i}', '0.0'))
-            except (ValueError, TypeError):
-                torque_val = 0.0
-            torque_floats.append(torque_val)
+        # The torque history lists are no longer used, so appending is commented out to prevent errors.
+        # current_time = time.time()
+        # if 'injector_torque_times' in gui_refs and gui_refs['injector_torque_times'] is not None:
+        #     gui_refs.get('injector_torque_times').append(current_time)
 
-        current_time = time.time()
-        gui_refs.get('injector_torque_times', []).append(current_time)
-        gui_refs.get('injector_torque_history1', []).append(torque_floats[0])
-        gui_refs.get('injector_torque_history2', []).append(torque_floats[1])
-        gui_refs.get('injector_torque_history3', []).append(torque_floats[2])
-
-        cutoff_time = current_time - 15
-        timestamps = gui_refs.get('injector_torque_times', [])
-        start_index = 0
-        for i, ts in enumerate(timestamps):
-            if ts >= cutoff_time:
-                start_index = i
-                break
-
-        if start_index > 0:
-            gui_refs['injector_torque_times'] = timestamps[start_index:]
-            gui_refs['injector_torque_history1'] = gui_refs.get('injector_torque_history1', [])[start_index:]
-            gui_refs['injector_torque_history2'] = gui_refs.get('injector_torque_history2', [])[start_index:]
-            gui_refs['injector_torque_history3'] = gui_refs.get('injector_torque_history3', [])[start_index:]
+        # for i in range(3):
+        #     try:
+        #         torque_val = float(parts.get(f'torque{i}', '0.0'))
+        #     except (ValueError, TypeError):
+        #         torque_val = 0.0
+        #     if f'injector_torque_history{i+1}' in gui_refs and gui_refs[f'injector_torque_history{i+1}'] is not None:
+        #         gui_refs.get(f'injector_torque_history{i+1}').append(torque_val)
 
         for i in range(3):
             gui_var_index = i + 1
             torque_str = parts.get(f'torque{i}', '0.0')
             if f'torque_value{gui_var_index}_var' in gui_refs:
                 gui_refs[f'torque_value{gui_var_index}_var'].set(torque_str)
-
             if f'position_cmd{gui_var_index}_var' in gui_refs: gui_refs[f'position_cmd{gui_var_index}_var'].set(
                 parts.get(f'pos_mm{i}', '0.0'))
             if f'motor_state{gui_var_index}_var' in gui_refs: gui_refs[f'motor_state{gui_var_index}_var'].set(
@@ -191,14 +185,26 @@ def parse_injector_telemetry(msg, gui_refs):
 
         if 'pinch_homed_var' in gui_refs: gui_refs['pinch_homed_var'].set(
             "Homed" if parts.get("homed2", "0") == "1" else "Not Homed")
-
         if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("machine_mm", "N/A"))
         if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("cartridge_mm", "N/A"))
         if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
             f'{float(parts.get("dispensed_ml", 0.0)):.2f} ml')
 
+        temp_c = parts.get("temp_c", "0.0")
+        if 'temp_c_var' in gui_refs:
+            gui_refs['temp_c_var'].set(f"{float(temp_c):.1f} °C")
+
+        heater_on = parts.get("heater", "0") == "1"
+        if 'heater_state_var' in gui_refs:
+            gui_refs['heater_state_var'].set("On" if heater_on else "Off")
+
+        vacuum_on = parts.get("vacuum", "0") == "1"
+        if 'vacuum_state_var' in gui_refs:
+            gui_refs['vacuum_state_var'].set("On" if vacuum_on else "Off")
+
         if 'peer_status_injector_var' in gui_refs:
             is_peer_discovered = parts.get("peer_disc", "0") == "1"
+            devices["injector"]["peer_connected"] = is_peer_discovered
             peer_ip = parts.get("peer_ip", "0.0.0.0")
             if is_peer_discovered:
                 gui_refs['peer_status_injector_var'].set(f"Peer: {peer_ip}")
@@ -206,85 +212,54 @@ def parse_injector_telemetry(msg, gui_refs):
                 gui_refs['peer_status_injector_var'].set("Peer: Not Connected")
 
     except Exception as e:
-        log_to_terminal(f"Injector telemetry parse error: {e}", gui_refs.get('terminal_cb'))
+        log_to_terminal(f"Injector telemetry parse error: {e}\n", gui_refs.get('terminal_cb'))
 
 
-# --- REWRITTEN FUNCTION ---
 def parse_fillhead_telemetry(msg, gui_refs):
     try:
-        # The telemetry message starts with "FH_TELEM_GUI: " - remove it to get to the payload
         payload = msg.split("FH_TELEM_GUI: ")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
-        # Update the individual axis states
-        if 'fh_state_x_var' in gui_refs:
-            gui_refs['fh_state_x_var'].set(parts.get("x_s", "UNKNOWN"))
-        if 'fh_state_y_var' in gui_refs:
-            gui_refs['fh_state_y_var'].set(parts.get("y_s", "UNKNOWN"))
-        if 'fh_state_z_var' in gui_refs:
-            gui_refs['fh_state_z_var'].set(parts.get("z_s", "UNKNOWN"))
+        if 'fh_state_x_var' in gui_refs: gui_refs['fh_state_x_var'].set(parts.get("x_s", "UNKNOWN"))
+        if 'fh_state_y_var' in gui_refs: gui_refs['fh_state_y_var'].set(parts.get("y_s", "UNKNOWN"))
+        if 'fh_state_z_var' in gui_refs: gui_refs['fh_state_z_var'].set(parts.get("z_s", "UNKNOWN"))
 
-        # --- Define the mapping from axis prefix to motor index ---
-        # This allows us to loop through the motors and get the right data from the parsed dictionary
-        # Y-axis data (y_*) will be mapped to both motor 1 and 2
-        axis_to_motor_map = {
-            'x': [0],
-            'y': [1, 2],
-            'z': [3]
-        }
-
-        torque_floats = [0.0] * 4  # A list to hold torque values for plotting
+        axis_to_motor_map = {'x': [0], 'y': [1, 2], 'z': [3]}
 
         for axis_prefix, motor_indices in axis_to_motor_map.items():
-            # Get the values for the current axis from the parsed data
             pos_val = parts.get(f'{axis_prefix}_p', '0.00')
             torque_str = parts.get(f'{axis_prefix}_t', '0.0')
             enabled_val = "Enabled" if parts.get(f'{axis_prefix}_e', '0') == "1" else "Disabled"
             homed_val = "Homed" if parts.get(f'{axis_prefix}_h', '0') == "1" else "Not Homed"
-
-            # Apply these values to all motors controlled by this axis
             for motor_index in motor_indices:
-                # Update GUI variables for this motor
-                if f'fh_pos_m{motor_index}_var' in gui_refs:
-                    gui_refs[f'fh_pos_m{motor_index}_var'].set(f"{float(pos_val):.2f}")
-                if f'fh_torque_m{motor_index}_var' in gui_refs:
-                    gui_refs[f'fh_torque_m{motor_index}_var'].set(f"{float(torque_str):.1f} %")
-                if f'fh_enabled_m{motor_index}_var' in gui_refs:
-                    gui_refs[f'fh_enabled_m{motor_index}_var'].set(enabled_val)
-                if f'fh_homed_m{motor_index}_var' in gui_refs:
-                    gui_refs[f'fh_homed_m{motor_index}_var'].set(homed_val)
+                if f'fh_pos_m{motor_index}_var' in gui_refs: gui_refs[f'fh_pos_m{motor_index}_var'].set(
+                    f"{float(pos_val):.2f}")
+                if f'fh_torque_m{motor_index}_var' in gui_refs: gui_refs[f'fh_torque_m{motor_index}_var'].set(
+                    f"{float(torque_str):.1f}")
+                if f'fh_enabled_m{motor_index}_var' in gui_refs: gui_refs[f'fh_enabled_m{motor_index}_var'].set(
+                    enabled_val)
+                if f'fh_homed_m{motor_index}_var' in gui_refs: gui_refs[f'fh_homed_m{motor_index}_var'].set(homed_val)
 
-                # Store torque for the plot
-                try:
-                    torque_floats[motor_index] = float(torque_str)
-                except ValueError:
-                    torque_floats[motor_index] = 0.0
+        # The torque history lists are no longer used, so appending is commented out to prevent errors.
+        # current_time = time.time()
+        # if 'fillhead_torque_times' in gui_refs and gui_refs['fillhead_torque_times'] is not None:
+        #     gui_refs.get('fillhead_torque_times').append(current_time)
 
-        # Update torque history for plotting
-        current_time = time.time()
-        gui_refs.get('fillhead_torque_times', []).append(current_time)
-        for i in range(4):
-            gui_refs.get(f'fillhead_torque_history{i}', []).append(torque_floats[i])
+        # for i in range(4):
+        #     if i == 0: torque_str = parts.get('x_t', '0.0')
+        #     elif i in [1, 2]: torque_str = parts.get('y_t', '0.0')
+        #     else: torque_str = parts.get('z_t', '0.0')
 
-        # Trim old history data to keep the plot responsive
-        cutoff_time = current_time - 15
-        timestamps = gui_refs['fillhead_torque_times']
-        start_index = 0
-        for i, ts in enumerate(timestamps):
-            if ts >= cutoff_time:
-                start_index = i
-                break
+        #     try:
+        #         torque_val = float(torque_str)
+        #     except ValueError:
+        #         torque_val = 0.0
+        #     if f'fillhead_torque_history{i}' in gui_refs and gui_refs[f'fillhead_torque_history{i}'] is not None:
+        #         gui_refs.get(f'fillhead_torque_history{i}').append(torque_val)
 
-        if start_index > 0:
-            gui_refs['fillhead_torque_times'] = timestamps[start_index:]
-            for i in range(4):
-                history_key = f'fillhead_torque_history{i}'
-                if history_key in gui_refs:
-                    gui_refs[history_key] = gui_refs[history_key][start_index:]
-
-        # Update Peer Status
         if 'peer_status_fillhead_var' in gui_refs:
             is_peer_discovered = parts.get("pd", "0") == "1"
+            devices["fillhead"]["peer_connected"] = is_peer_discovered
             peer_ip = parts.get("pip", "0.0.0.0")
             if is_peer_discovered:
                 gui_refs['peer_status_fillhead_var'].set(f"Peer: {peer_ip}")
@@ -292,10 +267,7 @@ def parse_fillhead_telemetry(msg, gui_refs):
                 gui_refs['peer_status_fillhead_var'].set("Peer: Not Connected")
 
     except Exception as e:
-        log_to_terminal(f"Fillhead telemetry parse error: {e} -> on msg: {msg}", gui_refs.get('terminal_cb'))
-
-
-# --- END REWRITTEN FUNCTION ---
+        log_to_terminal(f"Fillhead telemetry parse error: {e} -> on msg: {msg}\n", gui_refs.get('terminal_cb'))
 
 
 def recv_loop(gui_refs):
@@ -308,39 +280,30 @@ def recv_loop(gui_refs):
             source_ip = addr[0]
             log_telemetry = gui_refs.get('show_telemetry_var', tk.BooleanVar(value=False)).get()
 
-            # Discovery messages have a unique prefix and are not telemetry
             if msg == "DISCOVERY: INJECTOR DISCOVERED":
                 handle_connection("injector", source_ip, gui_refs)
             elif msg == "DISCOVERY: FILLHEAD DISCOVERED":
                 handle_connection("fillhead", source_ip, gui_refs)
-
-            # Check for telemetry prefixes
             elif msg.startswith("INJ_TELEM_GUI:"):
                 handle_connection("injector", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_injector_telemetry(msg, gui_refs)
-
             elif msg.startswith("FH_TELEM_GUI:"):
                 handle_connection("fillhead", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_fillhead_telemetry(msg, gui_refs)
-
-            # Handle generic status messages from either device
             elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "Axis X:", "Axis Y:", "Axis Z:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
-                # Update last receive time for whichever device sent the message
                 for key, device in devices.items():
                     if device["ip"] == source_ip:
                         device["last_rx"] = time.time()
                         break
             else:
-                # This can be used for debugging unknown packet formats
-                # log_to_terminal(f"[UNKNOWN @{source_ip}]: {msg}", terminal_cb)
                 pass
 
         except socket.timeout:
             continue
         except Exception as e:
-            log_to_terminal(f"Recv_loop error: {e}", terminal_cb)
+            log_to_terminal(f"Recv_loop error: {e}\n", terminal_cb)

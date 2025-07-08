@@ -38,6 +38,11 @@ Injector::Injector() {
 	firstTorqueReading2 = true;
 	motorsAreEnabled = false;
 
+	// --- NEW: Initialize new state variables ---
+	heaterOn = false;
+	vacuumOn = false;
+	temperatureCelsius = 0.0f;
+
 	machineHomeReferenceSteps = 0;
 	cartridgeHomeReferenceSteps = 0;
 	homingDefaultBackoffSteps = 200;
@@ -53,7 +58,33 @@ void Injector::setup() {
 	setupSerial();
 	setupEthernet();
 	setupMotors();
+	setupPeripherals();
 }
+
+// --- Function to set up non-motor peripherals ---
+void Injector::setupPeripherals(void) {
+	// Set pin modes based on hardware connections
+	PIN_THERMOCOUPLE.Mode(Connector::INPUT_ANALOG);
+	PIN_HEATER_RELAY.Mode(Connector::OUTPUT_DIGITAL);
+	PIN_VACUUM_RELAY.Mode(Connector::OUTPUT_DIGITAL);
+
+	// Ensure relays are off at startup
+	PIN_HEATER_RELAY.State(false); // CORRECTED from StateSet
+	PIN_VACUUM_RELAY.State(false); // CORRECTED from StateSet
+}
+
+// --- Function to read and convert thermocouple value ---
+void Injector::updateTemperature(void) {
+	// Read the raw 12-bit ADC value (0-4095)
+	uint16_t adc_val = PIN_THERMOCOUPLE.State();
+
+	// Convert ADC value directly to the 0-10V sensor voltage
+	float voltage_from_sensor = (float)adc_val * (TC_V_REF / 4095.0f);
+
+	// Convert the sensor voltage to temperature
+	temperatureCelsius = (voltage_from_sensor - TC_V_OFFSET) * TC_GAIN;
+}
+
 
 void Injector::onHomingMachineDone(){
 	homingMachineDone = true;
@@ -340,6 +371,7 @@ void Injector::updateState() {
 void Injector::loop() {
 	processUdp();
 	updateState();
+	updateTemperature();
 }
 
 Injector injector;

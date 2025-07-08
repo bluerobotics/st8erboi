@@ -86,7 +86,7 @@ void Injector::disableInjectorMotors(const char* reason_message){
 	motorsAreEnabled = false;
 	sendStatus(STATUS_PREFIX_INFO, reason_message);
 
-    // Reset torque smoothing on disable for all motors
+	// Reset torque smoothing on disable for all motors
 	smoothedTorqueValue0 = 0.0f;
 	smoothedTorqueValue1 = 0.0f;
 	smoothedTorqueValue2 = 0.0f;
@@ -131,7 +131,7 @@ void Injector::moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit_per
 	ConnectorM0.AccelMax(accel_sps2);
 	ConnectorM1.AccelMax(accel_sps2);
 	
-	char msg[128]; 
+	char msg[128];
 	snprintf(msg, sizeof(msg), "moveInjectorMotors: M0s:%d M1s:%d TqL: %d%% V:%d A:%d",
 	stepsM0, stepsM1, torque_limit_percent, velocity_sps, accel_sps2);
 	sendStatus(STATUS_PREFIX_INFO, msg);
@@ -181,7 +181,7 @@ void Injector::movePinchMotor(int stepsM2, int torque_limit_percent, int velocit
 
 bool Injector::checkInjectorMoving(void)
 {
-    // Return true if ANY of the three motors are currently moving.
+	// Return true if ANY of the three motors are currently moving.
 	bool m0_moving = !ConnectorM0.StepsComplete() && ConnectorM0.StatusReg().bit.Enabled;
 	bool m1_moving = !ConnectorM1.StepsComplete() && ConnectorM1.StatusReg().bit.Enabled;
 	bool m2_moving = !ConnectorM2.StepsComplete() && ConnectorM2.StatusReg().bit.Enabled;
@@ -222,8 +222,8 @@ bool Injector::checkInjectorTorqueLimit(void){
 			Delay_ms(200);
 			
 			char torque_msg[128];
-			snprintf(torque_msg, sizeof(torque_msg), "TORQUE LIMIT REACHED (%.1f%%). M0:%.1f, M1:%.1f, M2:%.1f", 
-					injectorMotorsTorqueLimit, torque0, torque1, torque2);
+			snprintf(torque_msg, sizeof(torque_msg), "TORQUE LIMIT REACHED (%.1f%%). M0:%.1f, M1:%.1f, M2:%.1f",
+			injectorMotorsTorqueLimit, torque0, torque1, torque2);
 			sendStatus(STATUS_PREFIX_INFO, torque_msg);
 
 			return true; // Limit exceeded
@@ -231,4 +231,3 @@ bool Injector::checkInjectorTorqueLimit(void){
 	}
 	return false; // Limit not exceeded or not applicable
 }
-

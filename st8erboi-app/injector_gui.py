@@ -1,10 +1,34 @@
 import tkinter as tk
 from tkinter import ttk
 import math
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+# Removed matplotlib imports
 
 MOTOR_STEPS_PER_REV = 800
+
+
+def create_torque_bar(parent, label_text, bar_color):
+    """Helper function to create a single torque bar indicator."""
+    frame = tk.Frame(parent, bg=parent['bg'])
+
+    # Label for the motor
+    label = tk.Label(frame, text=label_text, bg=parent['bg'], fg='white', font=('Segoe UI', 8))
+    label.pack(pady=(0, 2))
+
+    # Canvas for the bar
+    canvas = tk.Canvas(frame, width=40, height=120, bg='#1b1e2b', highlightthickness=0)
+    canvas.pack()
+
+    # Background for the bar
+    canvas.create_rectangle(10, 10, 30, 110, fill='#333', outline='')
+
+    # The bar itself (initially at zero height)
+    bar_item = canvas.create_rectangle(10, 110, 30, 110, fill=bar_color, outline='')
+
+    # Text for the value
+    text_item = canvas.create_text(20, 60, text="0%", fill='white', font=('Segoe UI', 9, 'bold'))
+
+    return frame, canvas, bar_item, text_item
 
 
 def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
@@ -29,17 +53,20 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     enable_disable_pinch_var = tk.StringVar(value="Disabled")
     motor_state1 = tk.StringVar(value="N/A");
     enabled_state1 = tk.StringVar(value="N/A");
-    torque_value1 = tk.StringVar(value="---");
+    torque_value1 = tk.StringVar(value="0.0");
     position_cmd1_var = tk.StringVar(value="0")
     motor_state2 = tk.StringVar(value="N/A");
     enabled_state2 = tk.StringVar(value="N/A");
-    torque_value2 = tk.StringVar(value="---");
+    torque_value2 = tk.StringVar(value="0.0");
     position_cmd2_var = tk.StringVar(value="0")
     motor_state3 = tk.StringVar(value="N/A");
     enabled_state3 = tk.StringVar(value="N/A");
-    torque_value3 = tk.StringVar(value="---");
+    torque_value3 = tk.StringVar(value="0.0");
     position_cmd3_var = tk.StringVar(value="0");
     pinch_homed_var = tk.StringVar(value="N/A")
+    temp_c_var = tk.StringVar(value="--- °C")
+    heater_state_var = tk.StringVar(value="Off")
+    vacuum_state_var = tk.StringVar(value="Off")
 
     # Jogging Variables (Metric for M0/M1)
     jog_dist_mm_var = tk.StringVar(value="10.0")
@@ -82,7 +109,6 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     # --- GUI Update Functions ---
     ui_elements = {}
 
-    # Variable to track the currently displayed contextual frame to prevent flickering
     current_active_mode_frame = None
 
     def update_state(new_main_state_from_firmware):
@@ -101,7 +127,6 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         if new_main_state_from_firmware == "UNKNOWN":
             return
 
-        # Determine which frame *should* be visible
         target_frame_key = None
         if new_main_state_from_firmware == "JOG_MODE":
             target_frame_key = 'jog_controls_frame'
@@ -110,18 +135,14 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         elif new_main_state_from_firmware == "FEED_MODE":
             target_frame_key = 'feed_controls_frame'
 
-        # Only update the layout if the required frame has changed
         if target_frame_key != current_active_mode_frame:
-            # Hide all contextual frames
             for fk in ['jog_controls_frame', 'homing_controls_frame', 'feed_controls_frame']:
                 if fk in ui_elements and ui_elements[fk].winfo_exists():
                     ui_elements[fk].pack_forget()
 
-            # Show the correct frame if one is needed
             if target_frame_key and target_frame_key in ui_elements:
                 ui_elements[target_frame_key].pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-            # Update the tracker for the currently visible frame
             current_active_mode_frame = target_frame_key
 
     def update_feed_button_states(new_feed_state):
@@ -146,11 +167,9 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
             ui_elements['cancel_purge_btn'].config(
                 state=tk.NORMAL if is_purge_active or new_feed_state == "FEED_PURGE_PAUSED" else tk.DISABLED)
 
-    # --- Traces to link variables to GUI update functions ---
     main_state_var.trace_add('write', lambda *args: update_state(main_state_var.get()))
     feed_state_var.trace_add('write', lambda *args: update_feed_button_states(feed_state_var.get()))
 
-    # --- Calculation Functions ---
     def update_ml_per_rev(*args):
         try:
             dia1_mm = float(feed_cyl1_dia_var.get());
@@ -245,6 +264,11 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         row=4, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=error_state_var, bg=sub_state_display_frame['bg'], fg="orange red",
              font=font_small).grid(row=4, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, text="Temp:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
+        row=5, column=0, padx=(5, 2), pady=1, sticky="e");
+    tk.Label(sub_state_display_frame, textvariable=temp_c_var, bg=sub_state_display_frame['bg'], fg="orange",
+             font=font_small).grid(row=5, column=1, padx=(0, 5), pady=1, sticky="w")
+
     global_counters_frame = tk.LabelFrame(left_column_frame, text="Position Relative to Home", bg="#2a2d3b",
                                           fg="#aaddff", font=("Segoe UI", 10, "bold"), bd=1, relief="groove", padx=5,
                                           pady=5);
@@ -279,6 +303,33 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
 
     right_of_modes_area = tk.Frame(controls_area_frame, bg="#21232b");
     right_of_modes_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    env_controls_frame = tk.LabelFrame(right_of_modes_area, text="Environmental Controls", bg="#2a2d3b", fg="#aaddff",
+                                       font=("Segoe UI", 10, "bold"), padx=10, pady=5)
+    env_controls_frame.pack(fill=tk.X, pady=(5, 5))
+
+    def create_on_off_buttons(parent, text, state_var, on_cmd, off_cmd):
+        frame = tk.Frame(parent, bg=parent['bg'])
+        tk.Label(frame, text=text, bg=parent['bg'], fg='white', width=8, anchor='w').pack(side=tk.LEFT)
+
+        on_btn = ttk.Button(frame, text="ON", style="Green.TButton", command=lambda: send_injector_cmd(on_cmd))
+        on_btn.pack(side=tk.LEFT, padx=2)
+
+        off_btn = ttk.Button(frame, text="OFF", style="Red.TButton", command=lambda: send_injector_cmd(off_cmd))
+        off_btn.pack(side=tk.LEFT, padx=2)
+
+        def update_styles(*args):
+            is_on = state_var.get() == "On"
+            on_btn.config(style="Green.TButton" if is_on else "Neutral.TButton")
+            off_btn.config(style="Red.TButton" if not is_on else "Neutral.TButton")
+
+        state_var.trace_add('write', update_styles)
+        update_styles()
+        return frame
+
+    create_on_off_buttons(env_controls_frame, "Heater:", heater_state_var, "HEATER_ON", "HEATER_OFF").pack(fill=tk.X)
+    create_on_off_buttons(env_controls_frame, "Vacuum:", vacuum_state_var, "VACUUM_ON", "VACUUM_OFF").pack(fill=tk.X,
+                                                                                                           pady=(5, 0))
 
     enable_disable_master_frame = tk.Frame(right_of_modes_area, bg="#21232b")
     enable_disable_master_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
@@ -418,7 +469,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     ui_elements['feed_controls_frame'] = feed_controls_frame
     settings_controls_frame = tk.LabelFrame(right_of_modes_area, text="Global Settings", bg="#303030", fg="#DDD",
                                             font=("Segoe UI", 10, "bold"), bd=2, relief="ridge");
-    ui_elements['settings_controls_frame'] = settings_controls_frame
+    settings_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=(10, 5))
 
     # --- Populate Jog Frame ---
     jog_params_frame = tk.Frame(jog_controls_frame, bg=jog_controls_frame['bg']);
@@ -688,34 +739,27 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
                command=lambda: send_injector_cmd(f"SET_INJECTOR_TORQUE_OFFSET {set_torque_offset_val_var.get()}")).grid(
         row=s_row, column=2, padx=(5, 2), pady=2)
 
-    settings_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=(10, 5))
+    # --- Torque Indicators ---
+    torque_bar_frame = tk.LabelFrame(content_frame, text="Injector Torque", bg="#21232b", fg="white", font=font_label)
+    torque_bar_frame.pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(10, 0), padx=10)
 
-    # --- Torque Plot ---
-    plot_frame = tk.Frame(content_frame, bg="#21232b")
-    plot_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(10, 0))
+    bar_frame1, bar_canvas1, bar_item1, bar_text1 = create_torque_bar(torque_bar_frame, "Motor 0", "#00bfff")
+    bar_frame2, bar_canvas2, bar_item2, bar_text2 = create_torque_bar(torque_bar_frame, "Motor 1", "yellow")
+    bar_frame3, bar_canvas3, bar_item3, bar_text3 = create_torque_bar(torque_bar_frame, "Pinch M2", "#ff8888")
 
-    fig, ax = plt.subplots(figsize=(7, 2.5), facecolor='#21232b')
-    line1, = ax.plot([], [], color='#00bfff', label="M0");
-    line2, = ax.plot([], [], color='yellow', label="M1")
-    line3, = ax.plot([], [], color='#ff8888', label="M2 (Pinch)")
-    ax.set_title("Injector Torque", color='white')
-    ax.set_facecolor('#1b1e2b');
-    ax.tick_params(axis='x', colors='white');
-    ax.tick_params(axis='y', colors='white')
-    ax.spines['bottom'].set_color('white');
-    ax.spines['left'].set_color('white');
-    ax.spines['top'].set_visible(False);
-    ax.spines['right'].set_visible(False)
-    ax.set_ylabel("Torque (%)", color='white');
-    ax.set_ylim(-10, 110);
-    ax.legend(facecolor='#21232b', edgecolor='white', labelcolor='white')
-    canvas = FigureCanvasTkAgg(fig, master=plot_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    bar_frame1.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    bar_frame2.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    bar_frame3.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
 
-    ui_elements['injector_torque_plot_canvas'] = canvas
-    ui_elements['injector_torque_plot_ax'] = ax
-    ui_elements['injector_torque_plot_lines'] = [line1, line2, line3]
+    ui_elements['injector_torque_canvas1'] = bar_canvas1
+    ui_elements['injector_torque_bar1'] = bar_item1
+    ui_elements['injector_torque_text1'] = bar_text1
+    ui_elements['injector_torque_canvas2'] = bar_canvas2
+    ui_elements['injector_torque_bar2'] = bar_item2
+    ui_elements['injector_torque_text2'] = bar_text2
+    ui_elements['injector_torque_canvas3'] = bar_canvas3
+    ui_elements['injector_torque_bar3'] = bar_item3
+    ui_elements['injector_torque_text3'] = bar_text3
 
     # --- Initial Calculations ---
     update_ml_per_rev()
@@ -737,6 +781,9 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         'motor_state3_var': motor_state3, 'enabled_state3_var': enabled_state3, 'torque_value3_var': torque_value3,
         'position_cmd3_var': position_cmd3_var, 'pinch_homed_var': pinch_homed_var,
         'inject_dispensed_ml_var': inject_dispensed_ml_var, 'purge_dispensed_ml_var': purge_dispensed_ml_var,
+        'temp_c_var': temp_c_var,
+        'heater_state_var': heater_state_var,
+        'vacuum_state_var': vacuum_state_var,
     }
     final_return_dict.update(ui_elements)
     return final_return_dict
