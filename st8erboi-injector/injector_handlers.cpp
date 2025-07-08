@@ -711,3 +711,42 @@ void Injector::fullyResetActiveDispenseOperation() {
 	active_op_initial_axis_steps = 0;
 	active_op_steps_per_ml = 0.0f;
 }
+
+void Injector::handleSetHeaterGains(const char* msg) {
+	float kp, ki, kd;
+	int parsed_count = sscanf(msg + strlen(CMD_STR_SET_HEATER_GAINS), "%f %f %f", &kp, &ki, &kd);
+	if (parsed_count == 3) {
+		pid_kp = kp;
+		pid_ki = ki;
+		pid_kd = kd;
+		char response[100];
+		snprintf(response, sizeof(response), "PID gains set: Kp=%.2f, Ki=%.2f, Kd=%.2f", pid_kp, pid_ki, pid_kd);
+		sendStatus(STATUS_PREFIX_INFO, response);
+		} else {
+		sendStatus(STATUS_PREFIX_ERROR, "Invalid SET_HEATER_GAINS format.");
+	}
+}
+
+void Injector::handleSetHeaterSetpoint(const char* msg) {
+	float sp = atof(msg + strlen(CMD_STR_SET_HEATER_SETPOINT));
+	pid_setpoint = sp;
+	char response[64];
+	snprintf(response, sizeof(response), "PID setpoint set to %.1f C", pid_setpoint);
+	sendStatus(STATUS_PREFIX_INFO, response);
+}
+
+void Injector::handleHeaterPidOn() {
+	if (heaterState != HEATER_PID_ACTIVE) {
+		resetPid();
+		heaterState = HEATER_PID_ACTIVE;
+		sendStatus(STATUS_PREFIX_INFO, "Heater PID control ENABLED.");
+	}
+}
+
+void Injector::handleHeaterPidOff() {
+	if (heaterState == HEATER_PID_ACTIVE) {
+		heaterState = HEATER_OFF;
+		PIN_HEATER_RELAY.State(false);
+		sendStatus(STATUS_PREFIX_INFO, "Heater PID control DISABLED.");
+	}
+}

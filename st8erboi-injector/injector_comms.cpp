@@ -84,7 +84,6 @@ void Injector::processUdp() {
 
 void Injector::sendGuiTelemetry(void){
 	
-	// --- Data gathering for motors 0, 1, 2 ---
 	float displayTorque0 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue0, &firstTorqueReading0);
 	float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue1, &firstTorqueReading1);
 	float displayTorque2 = getSmoothedTorqueEWMA(&ConnectorM2, &smoothedTorqueValue2, &firstTorqueReading2);
@@ -97,21 +96,17 @@ void Injector::sendGuiTelemetry(void){
 	long current_pos_steps_m1 = ConnectorM1.PositionRefCommanded();
 	long current_pos_steps_m2 = ConnectorM2.PositionRefCommanded();
 
-	// --- Convert absolute positions to millimeters ---
 	float pos_mm_m0 = (float)current_pos_steps_m0 / STEPS_PER_MM_M0;
 	float pos_mm_m1 = (float)current_pos_steps_m1 / STEPS_PER_MM_M1;
 	float pos_mm_m2 = (float)current_pos_steps_m2 / STEPS_PER_MM_M2;
 
-	// Homing status for each motor
 	int is_homed0 = homingMachineDone ? 1 : 0;
 	int is_homed1 = homingMachineDone ? 1 : 0;
 	int is_homed2 = homingPinchDone ? 1 : 0;
 
-	// --- Calculate relative positions in millimeters ---
 	float machine_pos_mm = (float)(current_pos_steps_m0 - machineHomeReferenceSteps) / STEPS_PER_MM_M0;
 	float cartridge_pos_mm = (float)(current_pos_steps_m0 - cartridgeHomeReferenceSteps) / STEPS_PER_MM_M0;
 
-	// Dispense status logic (unchanged)
 	float current_dispensed_for_telemetry = 0.0f;
 	float current_target_for_telemetry = 0.0f;
 	if (active_dispense_INJECTION_ongoing) {
@@ -135,7 +130,7 @@ void Injector::sendGuiTelemetry(void){
 	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "---"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
 	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "---"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
 
-	// --- MODIFIED: Assemble new telemetry packet with environmental data ---
+	// --- MODIFIED: Assemble new telemetry packet with PID data ---
 	char msg[512];
 	snprintf(msg, sizeof(msg),
 	"MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
@@ -145,22 +140,17 @@ void Injector::sendGuiTelemetry(void){
 	"machine_mm:%.2f,cartridge_mm:%.2f,"
 	"dispensed_ml:%.2f,target_ml:%.2f,"
 	"peer_disc:%d,peer_ip:%s,"
-	"temp_c:%.1f,heater:%d,vacuum:%d", // NEW environmental fields
+	"temp_c:%.1f,vacuum:%d,"
+	"heater_mode:%s,pid_setpoint:%.1f,pid_kp:%.2f,pid_ki:%.2f,pid_kd:%.2f,pid_output:%.1f", // NEW PID fields
 	mainStateStr(), homingStateStr(), homingPhaseStr(), feedStateStr(), errorStateStr(),
-	// Motor 0 Data
 	torque0Str, hlfb0_val, (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
-	// Motor 1 Data
 	torque1Str, hlfb1_val, (int)ConnectorM1.StatusReg().bit.Enabled, pos_mm_m1, is_homed1,
-	// Motor 2 Data
 	torque2Str, hlfb2_val, (int)ConnectorM2.StatusReg().bit.Enabled, pos_mm_m2, is_homed2,
-	// Relative positions in mm
 	machine_pos_mm, cartridge_pos_mm,
-	// Dispense data
 	current_dispensed_for_telemetry, current_target_for_telemetry,
-	// Peer data
 	(int)peerDiscovered, peerIp.StringValue(),
-	// NEW Environmental data
-	temperatureCelsius, (int)heaterOn, (int)vacuumOn);
+	temperatureCelsius, (int)vacuumOn,
+	heaterStateStr(), pid_setpoint, pid_kp, pid_ki, pid_kd, pid_output);
 
 	sendStatus(TELEM_PREFIX_GUI, msg);
 }
@@ -168,46 +158,39 @@ void Injector::sendGuiTelemetry(void){
 UserCommand Injector::parseCommand(const char *msg) {
 	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
-
 	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
 	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS;
-
 	if (strcmp(msg, CMD_STR_STANDBY_MODE) == 0) return CMD_STANDBY_MODE;
 	if (strcmp(msg, CMD_STR_JOG_MODE) == 0) return CMD_JOG_MODE;
 	if (strcmp(msg, CMD_STR_HOMING_MODE) == 0) return CMD_HOMING_MODE;
 	if (strcmp(msg, CMD_STR_FEED_MODE) == 0) return CMD_FEED_MODE;
-
 	if (strncmp(msg, CMD_STR_SET_INJECTOR_TORQUE_OFFSET, strlen(CMD_STR_SET_INJECTOR_TORQUE_OFFSET)) == 0) return CMD_SET_TORQUE_OFFSET;
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
 	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_INJECT_MOVE, strlen(CMD_STR_INJECT_MOVE)) == 0) return CMD_INJECT_MOVE;
 	if (strncmp(msg, CMD_STR_PURGE_MOVE, strlen(CMD_STR_PURGE_MOVE)) == 0) return CMD_PURGE_MOVE;
-	
 	if (strcmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
 	if (strncmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
-
 	if (strcmp(msg, CMD_STR_PAUSE_INJECTION) == 0) return CMD_PAUSE_INJECTION;
 	if (strcmp(msg, CMD_STR_RESUME_INJECTION) == 0) return CMD_RESUME_INJECTION;
 	if (strcmp(msg, CMD_STR_CANCEL_INJECTION) == 0) return CMD_CANCEL_INJECTION;
-
 	if (strcmp(msg, CMD_STR_PINCH_HOME_MOVE) == 0) return CMD_PINCH_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_PINCH_JOG_MOVE, strlen(CMD_STR_PINCH_JOG_MOVE)) == 0) return CMD_PINCH_JOG_MOVE;
-	if (strcmp(msg, CMD_STR_PINCH_OPEN) == 0) return CMD_PINCH_OPEN;
-	if (strcmp(msg, CMD_STR_PINCH_CLOSE) == 0) return CMD_PINCH_CLOSE;
 	if (strcmp(msg, CMD_STR_ENABLE_PINCH) == 0) return CMD_ENABLE_PINCH;
 	if (strcmp(msg, CMD_STR_DISABLE_PINCH) == 0) return CMD_DISABLE_PINCH;
-	
 	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
 	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
-
-	// --- NEW: Parse environmental commands ---
 	if (strcmp(msg, CMD_STR_HEATER_ON) == 0) return CMD_HEATER_ON;
 	if (strcmp(msg, CMD_STR_HEATER_OFF) == 0) return CMD_HEATER_OFF;
 	if (strcmp(msg, CMD_STR_VACUUM_ON) == 0) return CMD_VACUUM_ON;
 	if (strcmp(msg, CMD_STR_VACUUM_OFF) == 0) return CMD_VACUUM_OFF;
+	if (strncmp(msg, CMD_STR_SET_HEATER_GAINS, strlen(CMD_STR_SET_HEATER_GAINS)) == 0) return CMD_SET_HEATER_GAINS;
+	if (strncmp(msg, CMD_STR_SET_HEATER_SETPOINT, strlen(CMD_STR_SET_HEATER_SETPOINT)) == 0) return CMD_SET_HEATER_SETPOINT;
+	if (strcmp(msg, CMD_STR_HEATER_PID_ON) == 0) return CMD_HEATER_PID_ON;
+	if (strcmp(msg, CMD_STR_HEATER_PID_OFF) == 0) return CMD_HEATER_PID_OFF;
 
 	return CMD_UNKNOWN;
 }
@@ -247,29 +230,23 @@ void Injector::handleMessage(const char *msg) {
 		case CMD_PAUSE_INJECTION:           handlePauseOperation(); break;
 		case CMD_RESUME_INJECTION:          handleResumeOperation(); break;
 		case CMD_CANCEL_INJECTION:          handleCancelOperation(); break;
-		
 		case CMD_PINCH_HOME_MOVE:           handlePinchHomeMove(); break;
 		case CMD_PINCH_JOG_MOVE:            handlePinchJogMove(msg); break;
-		case CMD_PINCH_OPEN:                handlePinchOpen(); break;
-		case CMD_PINCH_CLOSE:               handlePinchClose(); break;
 		case CMD_ENABLE_PINCH:              handleEnablePinch(); break;
 		case CMD_DISABLE_PINCH:             handleDisablePinch(); break;
-		case CMD_SET_PEER_IP:
-		handleSetPeerIp(msg);
-		break;
-		case CMD_CLEAR_PEER_IP:
-		handleClearPeerIp();
-		break;
-
-		// --- NEW: Route to new handlers ---
+		case CMD_SET_PEER_IP:               handleSetPeerIp(msg); break;
+		case CMD_CLEAR_PEER_IP:             handleClearPeerIp(); break;
 		case CMD_HEATER_ON:                 handleHeaterOn(); break;
 		case CMD_HEATER_OFF:                handleHeaterOff(); break;
 		case CMD_VACUUM_ON:                 handleVacuumOn(); break;
 		case CMD_VACUUM_OFF:                handleVacuumOff(); break;
+		case CMD_SET_HEATER_GAINS:          handleSetHeaterGains(msg); break;
+		case CMD_SET_HEATER_SETPOINT:       handleSetHeaterSetpoint(msg); break;
+		case CMD_HEATER_PID_ON:             handleHeaterPidOn(); break;
+		case CMD_HEATER_PID_OFF:            handleHeaterPidOff(); break;
 
 		case CMD_UNKNOWN:
 		default:
-		// be silent
 		break;
 	}
 }

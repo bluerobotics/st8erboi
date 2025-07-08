@@ -27,6 +27,9 @@
 #define TC_V_OFFSET 1.25f       // The sensor's voltage at 0 degrees C (from user spec).
 #define TC_GAIN 100.0f          // Gain (e.g., degrees C per Volt).
 
+// --- NEW: PID Control Parameters ---
+#define PID_UPDATE_INTERVAL_MS 100 // How often to run the PID calculation
+#define PID_PWM_PERIOD_MS 1000     // Time window for time-proportioned relay control
 
 // --- Command Strings & Prefixes ---
 #define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
@@ -59,11 +62,18 @@
 #define CMD_STR_PAUSE_INJECTION "PAUSE_INJECTION"
 #define CMD_STR_RESUME_INJECTION "RESUME_INJECTION"
 #define CMD_STR_CANCEL_INJECTION "CANCEL_INJECTION"
-// --- NEW: Command strings for environmental controls ---
-#define CMD_STR_HEATER_ON "HEATER_ON"
-#define CMD_STR_HEATER_OFF "HEATER_OFF"
+
+// --- Vacuum controls ---
 #define CMD_STR_VACUUM_ON "VACUUM_ON"
 #define CMD_STR_VACUUM_OFF "VACUUM_OFF"
+
+// --- Environmental controls ---
+#define CMD_STR_HEATER_ON "HEATER_ON"
+#define CMD_STR_HEATER_OFF "HEATER_OFF"
+#define CMD_STR_SET_HEATER_GAINS "SET_HEATER_GAINS "
+#define CMD_STR_SET_HEATER_SETPOINT "SET_HEATER_SETPOINT "
+#define CMD_STR_HEATER_PID_ON "HEATER_PID_ON"
+#define CMD_STR_HEATER_PID_OFF "HEATER_PID_OFF"
 
 #define TELEM_PREFIX_GUI "INJ_TELEM_GUI:"
 #define STATUS_PREFIX_INFO "INJ_INFO: "
@@ -83,6 +93,8 @@ enum HomingState : uint8_t { HOMING_NONE, HOMING_MACHINE, HOMING_CARTRIDGE, HOMI
 enum HomingPhase : uint8_t { HOMING_PHASE_IDLE, HOMING_PHASE_STARTING_MOVE, HOMING_PHASE_RAPID_MOVE, HOMING_PHASE_BACK_OFF, HOMING_PHASE_TOUCH_OFF, HOMING_PHASE_RETRACT, HOMING_PHASE_COMPLETE, HOMING_PHASE_ERROR, HOMING_PHASE_COUNT };
 enum FeedState : uint8_t { FEED_NONE, FEED_STANDBY, FEED_INJECT_STARTING, FEED_INJECT_ACTIVE, FEED_INJECT_PAUSED, FEED_INJECT_RESUMING, FEED_PURGE_STARTING, FEED_PURGE_ACTIVE, FEED_PURGE_PAUSED, FEED_PURGE_RESUMING, FEED_MOVING_TO_HOME, FEED_MOVING_TO_RETRACT, FEED_INJECTION_CANCELLED, FEED_INJECTION_COMPLETED, FEED_STATE_COUNT };
 enum ErrorState : uint8_t { ERROR_NONE, ERROR_MANUAL_ABORT, ERROR_TORQUE_ABORT, ERROR_MOTION_EXCEEDED_ABORT, ERROR_NO_CARTRIDGE_HOME, ERROR_NO_MACHINE_HOME, ERROR_HOMING_TIMEOUT, ERROR_HOMING_NO_TORQUE_RAPID, ERROR_HOMING_NO_TORQUE_TOUCH, ERROR_INVALID_INJECTION, ERROR_NOT_HOMED, ERROR_INVALID_PARAMETERS, ERROR_MOTORS_DISABLED, ERROR_STATE_COUNT };
+enum HeaterState: uint8_t { HEATER_OFF, HEATER_MANUAL_ON, HEATER_PID_ACTIVE, HEATER_STATE_COUNT };
+
 typedef enum {
 	CMD_UNKNOWN,
 	CMD_STANDBY,
@@ -118,11 +130,16 @@ typedef enum {
 	CMD_JOG_MODE,
 	CMD_HOMING_MODE,
 	CMD_FEED_MODE,
-	// --- NEW: Enum values for commands ---
+	// --- Vacuum ---
+	CMD_VACUUM_ON,
+	CMD_VACUUM_OFF,
+	// --- Heater ---
 	CMD_HEATER_ON,
 	CMD_HEATER_OFF,
-	CMD_VACUUM_ON,
-	CMD_VACUUM_OFF
+	CMD_SET_HEATER_GAINS,
+	CMD_SET_HEATER_SETPOINT,
+	CMD_HEATER_PID_ON,
+	CMD_HEATER_PID_OFF
 } UserCommand;
 
 class Injector {
@@ -132,6 +149,7 @@ class Injector {
 	HomingPhase currentHomingPhase;
 	FeedState feedState;
 	ErrorState errorState;
+	HeaterState heaterState; // NEW
 
 	EthernetUdp udp;
 	IpAddress guiIp;
@@ -152,6 +170,14 @@ class Injector {
 	bool heaterOn;
 	bool vacuumOn;
 	float temperatureCelsius;
+	
+	// --- NEW: PID state variables ---
+	float pid_setpoint;
+	float pid_kp, pid_ki, pid_kd;
+	float pid_integral;
+	float pid_last_error;
+	uint32_t pid_last_time;
+	float pid_output;
 
 	float homing_stroke_mm_param;
 	float homing_rapid_vel_mm_s_param;
@@ -177,6 +203,10 @@ class Injector {
 	void setup();
 	void loop();
 	void updateState();
+	
+	// Heater
+	void updatePid(); // NEW
+	void resetPid();  // NEW
 
 	// Communication
 	void sendGuiTelemetry(void);
@@ -229,11 +259,18 @@ class Injector {
 	void handleClearPeerIp();
 	void handlePinchOpen();
 	void handlePinchClose();
-	// --- NEW: Handlers for environmental controls ---
-	void handleHeaterOn();
-	void handleHeaterOff();
+	
+	// --- Vacuum Handlers ---
 	void handleVacuumOn();
 	void handleVacuumOff();
+	
+	// --- Heater Handlers ---
+	void handleHeaterOn();
+	void handleHeaterOff();
+	void handleSetHeaterGains(const char* msg);
+	void handleSetHeaterSetpoint(const char* msg);
+	void handleHeaterPidOn();
+	void handleHeaterPidOff();
 
 	//--- State Trigger Functions ---//
 	void onHomingMachineDone(void);
@@ -254,8 +291,10 @@ class Injector {
 	const char* homingPhaseStr() const;
 	const char* feedStateStr() const;
 	const char* errorStateStr() const;
+    const char* heaterStateStr() const; //NEW
 
 	uint32_t lastGuiTelemetryTime;
+	uint32_t lastPidUpdateTime; // NEW
 
 	char telemetryBuffer[512];
 	unsigned char packetBuffer[MAX_PACKET_LENGTH];
@@ -278,4 +317,5 @@ class Injector {
 	static const char *HomingPhaseNames[HOMING_PHASE_COUNT];
 	static const char *FeedStateNames[FEED_STATE_COUNT];
 	static const char *ErrorStateNames[ERROR_STATE_COUNT];
+	static const char *HeaterStateNames[HEATER_STATE_COUNT]; // NEW
 };

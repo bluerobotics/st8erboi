@@ -6,6 +6,7 @@ const char *Injector::HomingStateNames[HOMING_STATE_COUNT] = { "HOMING_NONE", "H
 const char *Injector::HomingPhaseNames[HOMING_PHASE_COUNT] = { "IDLE", "STARTING_MOVE", "RAPID_MOVE", "BACK_OFF", "TOUCH_OFF", "RETRACT", "COMPLETE", "ERROR" };
 const char *Injector::FeedStateNames[FEED_STATE_COUNT] = { "FEED_NONE", "FEED_STANDBY", "FEED_INJECT_STARTING", "FEED_INJECT_ACTIVE", "FEED_INJECT_PAUSED", "FEED_INJECT_RESUMING", "FEED_PURGE_STARTING", "FEED_PURGE_ACTIVE", "FEED_PURGE_PAUSED", "FEED_PURGE_RESUMING", "FEED_MOVING_TO_HOME", "FEED_MOVING_TO_RETRACT", "FEED_INJECTION_CANCELLED", "FEED_INJECTION_COMPLETED" };
 const char *Injector::ErrorStateNames[ERROR_STATE_COUNT] = { "ERROR_NONE", "ERROR_MANUAL_ABORT", "ERROR_TORQUE_ABORT", "ERROR_MOTION_EXCEEDED_ABORT", "ERROR_NO_CARTRIDGE_HOME", "ERROR_NO_MACHINE_HOME", "ERROR_HOMING_TIMEOUT", "ERROR_HOMING_NO_TORQUE_RAPID", "ERROR_HOMING_NO_TORQUE_TOUCH", "ERROR_INVALID_INJECTION", "ERROR_NOT_HOMED", "ERROR_INVALID_PARAMETERS", "ERROR_MOTORS_DISABLED" };
+const char *Injector::HeaterStateNames[HEATER_STATE_COUNT] = { "OFF", "MANUAL", "PID" };
 
 // Constructor
 Injector::Injector() {
@@ -50,6 +51,13 @@ Injector::Injector() {
 	feedDefaultTorquePercent = 30;
 	feedDefaultVelocitySPS = 1000;
 	feedDefaultAccelSPS2 = 10000;
+	
+	// Initialize PID values
+	pid_setpoint = 0.0f;
+	pid_kp = 22.2f; // Common starting value for 3D printer hotends
+	pid_ki = 1.08f; // Common starting value
+	pid_kd = 114.0f; // Common starting value
+	resetPid();
 
 	fullyResetActiveDispenseOperation();
 }
@@ -104,6 +112,13 @@ void Injector::onFeedingDone(){
 
 void Injector::onJogDone(){
 	jogDone = true;
+}
+
+void Injector::resetPid() {
+	pid_integral = 0.0f;
+	pid_last_error = 0.0f;
+	pid_output = 0.0f;
+	pid_last_time = Milliseconds();
 }
 
 void Injector::updateState() {
@@ -394,3 +409,4 @@ const char* Injector::homingStateStr() const { return HomingStateNames[homingSta
 const char* Injector::homingPhaseStr() const { return HomingPhaseNames[currentHomingPhase]; }
 const char* Injector::feedStateStr() const { return FeedStateNames[feedState]; }
 const char* Injector::errorStateStr() const { return ErrorStateNames[errorState]; }
+const char* Injector::heaterStateStr() const { return HeaterStateNames[heaterState]; }
