@@ -158,19 +158,6 @@ def parse_injector_telemetry(msg, gui_refs):
         if 'homing_phase_var' in gui_refs: gui_refs['homing_phase_var'].set(parts.get("HOMING_PHASE", "---"))
         if 'error_state_var' in gui_refs: gui_refs['error_state_var'].set(parts.get("ERROR_STATE", "No Error"))
 
-        # The torque history lists are no longer used, so appending is commented out to prevent errors.
-        # current_time = time.time()
-        # if 'injector_torque_times' in gui_refs and gui_refs['injector_torque_times'] is not None:
-        #     gui_refs.get('injector_torque_times').append(current_time)
-
-        # for i in range(3):
-        #     try:
-        #         torque_val = float(parts.get(f'torque{i}', '0.0'))
-        #     except (ValueError, TypeError):
-        #         torque_val = 0.0
-        #     if f'injector_torque_history{i+1}' in gui_refs and gui_refs[f'injector_torque_history{i+1}'] is not None:
-        #         gui_refs.get(f'injector_torque_history{i+1}').append(torque_val)
-
         for i in range(3):
             gui_var_index = i + 1
             torque_str = parts.get(f'torque{i}', '0.0')
@@ -190,17 +177,25 @@ def parse_injector_telemetry(msg, gui_refs):
         if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
             f'{float(parts.get("dispensed_ml", 0.0)):.2f} ml')
 
-        temp_c = parts.get("temp_c", "0.0")
+        # Environmental and PID
         if 'temp_c_var' in gui_refs:
-            gui_refs['temp_c_var'].set(f"{float(temp_c):.1f} °C")
-
-        heater_on = parts.get("heater", "0") == "1"
-        if 'heater_state_var' in gui_refs:
-            gui_refs['heater_state_var'].set("On" if heater_on else "Off")
-
-        vacuum_on = parts.get("vacuum", "0") == "1"
+            gui_refs['temp_c_var'].set(f'{float(parts.get("temp_c", 0.0)):.1f} °C')
         if 'vacuum_state_var' in gui_refs:
-            gui_refs['vacuum_state_var'].set("On" if vacuum_on else "Off")
+            gui_refs['vacuum_state_var'].set("On" if parts.get("vacuum", "0") == "1" else "Off")
+
+        # PID Telemetry
+        if 'heater_mode_var' in gui_refs:
+            gui_refs['heater_mode_var'].set(parts.get("heater_mode", "OFF"))
+        if 'pid_setpoint_var' in gui_refs:
+            gui_refs['pid_setpoint_var'].set(parts.get("pid_setpoint", "0.0"))
+        if 'pid_kp_var' in gui_refs:
+            gui_refs['pid_kp_var'].set(parts.get("pid_kp", "0.0"))
+        if 'pid_ki_var' in gui_refs:
+            gui_refs['pid_ki_var'].set(parts.get("pid_ki", "0.0"))
+        if 'pid_kd_var' in gui_refs:
+            gui_refs['pid_kd_var'].set(parts.get("pid_kd", "0.0"))
+        if 'pid_output_var' in gui_refs:
+            gui_refs['pid_output_var'].set(f'{float(parts.get("pid_output", 0.0)):.1f}%')
 
         if 'peer_status_injector_var' in gui_refs:
             is_peer_discovered = parts.get("peer_disc", "0") == "1"
@@ -239,23 +234,6 @@ def parse_fillhead_telemetry(msg, gui_refs):
                 if f'fh_enabled_m{motor_index}_var' in gui_refs: gui_refs[f'fh_enabled_m{motor_index}_var'].set(
                     enabled_val)
                 if f'fh_homed_m{motor_index}_var' in gui_refs: gui_refs[f'fh_homed_m{motor_index}_var'].set(homed_val)
-
-        # The torque history lists are no longer used, so appending is commented out to prevent errors.
-        # current_time = time.time()
-        # if 'fillhead_torque_times' in gui_refs and gui_refs['fillhead_torque_times'] is not None:
-        #     gui_refs.get('fillhead_torque_times').append(current_time)
-
-        # for i in range(4):
-        #     if i == 0: torque_str = parts.get('x_t', '0.0')
-        #     elif i in [1, 2]: torque_str = parts.get('y_t', '0.0')
-        #     else: torque_str = parts.get('z_t', '0.0')
-
-        #     try:
-        #         torque_val = float(torque_str)
-        #     except ValueError:
-        #         torque_val = 0.0
-        #     if f'fillhead_torque_history{i}' in gui_refs and gui_refs[f'fillhead_torque_history{i}'] is not None:
-        #         gui_refs.get(f'fillhead_torque_history{i}').append(torque_val)
 
         if 'peer_status_fillhead_var' in gui_refs:
             is_peer_discovered = parts.get("pd", "0") == "1"

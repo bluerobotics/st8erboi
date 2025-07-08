@@ -2,7 +2,10 @@ import tkinter as tk
 from tkinter import ttk
 import math
 
-# Removed matplotlib imports
+# Import the new sub-modules for each control frame
+from injector_jog_gui import create_jog_controls
+from injector_homing_gui import create_homing_controls
+from injector_feed_gui import create_feed_controls
 
 MOTOR_STEPS_PER_REV = 800
 
@@ -11,21 +14,14 @@ def create_torque_bar(parent, label_text, bar_color):
     """Helper function to create a single torque bar indicator."""
     frame = tk.Frame(parent, bg=parent['bg'])
 
-    # Label for the motor
     label = tk.Label(frame, text=label_text, bg=parent['bg'], fg='white', font=('Segoe UI', 8))
     label.pack(pady=(0, 2))
 
-    # Canvas for the bar
     canvas = tk.Canvas(frame, width=40, height=120, bg='#1b1e2b', highlightthickness=0)
     canvas.pack()
 
-    # Background for the bar
     canvas.create_rectangle(10, 10, 30, 110, fill='#333', outline='')
-
-    # The bar itself (initially at zero height)
     bar_item = canvas.create_rectangle(10, 110, 30, 110, fill=bar_color, outline='')
-
-    # Text for the value
     text_item = canvas.create_text(20, 60, text="0%", fill='white', font=('Segoe UI', 9, 'bold'))
 
     return frame, canvas, bar_item, text_item
@@ -42,73 +38,71 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     font_motor_disp = ('Segoe UI', 9)
 
     # --- Tkinter Variable Definitions ---
-    main_state_var = tk.StringVar(value="UNKNOWN")
-    homing_state_var = tk.StringVar(value="---")
-    homing_phase_var = tk.StringVar(value="---")
-    feed_state_var = tk.StringVar(value="IDLE")
-    error_state_var = tk.StringVar(value="---")
-    machine_steps_var = tk.StringVar(value="0")
-    cartridge_steps_var = tk.StringVar(value="0")
-    enable_disable_var = tk.StringVar(value="Disabled")
-    enable_disable_pinch_var = tk.StringVar(value="Disabled")
-    motor_state1 = tk.StringVar(value="N/A");
-    enabled_state1 = tk.StringVar(value="N/A");
-    torque_value1 = tk.StringVar(value="0.0");
-    position_cmd1_var = tk.StringVar(value="0")
-    motor_state2 = tk.StringVar(value="N/A");
-    enabled_state2 = tk.StringVar(value="N/A");
-    torque_value2 = tk.StringVar(value="0.0");
-    position_cmd2_var = tk.StringVar(value="0")
-    motor_state3 = tk.StringVar(value="N/A");
-    enabled_state3 = tk.StringVar(value="N/A");
-    torque_value3 = tk.StringVar(value="0.0");
-    position_cmd3_var = tk.StringVar(value="0");
-    pinch_homed_var = tk.StringVar(value="N/A")
-    temp_c_var = tk.StringVar(value="--- °C")
-    heater_state_var = tk.StringVar(value="Off")
-    vacuum_state_var = tk.StringVar(value="Off")
+    # This dictionary holds all variables, to be passed to sub-modules
+    variables = {
+        'main_state_var': tk.StringVar(value="UNKNOWN"),
+        'homing_state_var': tk.StringVar(value="---"),
+        'homing_phase_var': tk.StringVar(value="---"),
+        'feed_state_var': tk.StringVar(value="IDLE"),
+        'error_state_var': tk.StringVar(value="---"),
+        'machine_steps_var': tk.StringVar(value="0"),
+        'cartridge_steps_var': tk.StringVar(value="0"),
+        'enable_disable_var': tk.StringVar(value="Disabled"),
+        'enable_disable_pinch_var': tk.StringVar(value="Disabled"),
+        'motor_state1': tk.StringVar(value="N/A"),
+        'enabled_state1': tk.StringVar(value="N/A"),
+        'torque_value1': tk.StringVar(value="0.0"),
+        'position_cmd1_var': tk.StringVar(value="0"),
+        'motor_state2': tk.StringVar(value="N/A"),
+        'enabled_state2': tk.StringVar(value="N/A"),
+        'torque_value2': tk.StringVar(value="0.0"),
+        'position_cmd2_var': tk.StringVar(value="0"),
+        'motor_state3': tk.StringVar(value="N/A"),
+        'enabled_state3': tk.StringVar(value="N/A"),
+        'torque_value3': tk.StringVar(value="0.0"),
+        'position_cmd3_var': tk.StringVar(value="0"),
+        'pinch_homed_var': tk.StringVar(value="N/A"),
+        'temp_c_var': tk.StringVar(value="--- °C"),
+        'vacuum_state_var': tk.StringVar(value="Off"),
+        'heater_mode_var': tk.StringVar(value="OFF"),
+        'pid_setpoint_var': tk.StringVar(value="0.0"),
+        'pid_kp_var': tk.StringVar(value="22.2"),
+        'pid_ki_var': tk.StringVar(value="1.08"),
+        'pid_kd_var': tk.StringVar(value="114.0"),
+        'pid_output_var': tk.StringVar(value="0.0%"),
+        'jog_dist_mm_var': tk.StringVar(value="10.0"),
+        'jog_velocity_var': tk.StringVar(value="15.0"),
+        'jog_acceleration_var': tk.StringVar(value="50.0"),
+        'jog_torque_percent_var': tk.StringVar(value="30"),
+        'jog_pinch_degrees_var': tk.StringVar(value="90.0"),
+        'jog_pinch_velocity_sps_var': tk.StringVar(value="800"),
+        'jog_pinch_accel_sps2_var': tk.StringVar(value="5000"),
+        'homing_stroke_len_var': tk.StringVar(value="500"),
+        'homing_rapid_vel_var': tk.StringVar(value="20"),
+        'homing_touch_vel_var': tk.StringVar(value="1"),
+        'homing_acceleration_var': tk.StringVar(value="50"),
+        'homing_retract_dist_var': tk.StringVar(value="20"),
+        'homing_torque_percent_var': tk.StringVar(value="5"),
+        'feed_cyl1_dia_var': tk.StringVar(value="75.0"),
+        'feed_cyl2_dia_var': tk.StringVar(value="33.0"),
+        'feed_ballscrew_pitch_var': tk.StringVar(value="5.0"),
+        'feed_ml_per_rev_var': tk.StringVar(value="N/A ml/rev"),
+        'feed_steps_per_ml_var': tk.DoubleVar(value=0.0),
+        'feed_acceleration_var': tk.StringVar(value="5000"),
+        'feed_torque_percent_var': tk.StringVar(value="50"),
+        'cartridge_retract_offset_mm_var': tk.StringVar(value="50.0"),
+        'inject_amount_ml_var': tk.StringVar(value="10.0"),
+        'inject_speed_ml_s_var': tk.StringVar(value="0.1"),
+        'inject_time_var': tk.StringVar(value="N/A s"),
+        'inject_dispensed_ml_var': tk.StringVar(value="0.00 ml"),
+        'purge_amount_ml_var': tk.StringVar(value="0.5"),
+        'purge_speed_ml_s_var': tk.StringVar(value="0.5"),
+        'purge_time_var': tk.StringVar(value="N/A s"),
+        'purge_dispensed_ml_var': tk.StringVar(value="0.00 ml"),
+        'set_torque_offset_val_var': tk.StringVar(value="-2.4")
+    }
 
-    # Jogging Variables (Metric for M0/M1)
-    jog_dist_mm_var = tk.StringVar(value="10.0")
-    jog_velocity_var = tk.StringVar(value="15.0")
-    jog_acceleration_var = tk.StringVar(value="50.0")
-    jog_torque_percent_var = tk.StringVar(value="30")
-
-    # Jogging Variables (Degrees and SPS for M2/Pinch)
-    jog_pinch_degrees_var = tk.StringVar(value="90.0")
-    jog_pinch_velocity_sps_var = tk.StringVar(value="800")
-    jog_pinch_accel_sps2_var = tk.StringVar(value="5000")
-
-    # Homing Variables
-    homing_stroke_len_var = tk.StringVar(value="500");
-    homing_rapid_vel_var = tk.StringVar(value="20");
-    homing_touch_vel_var = tk.StringVar(value="1");
-    homing_acceleration_var = tk.StringVar(value="50");
-    homing_retract_dist_var = tk.StringVar(value="20");
-    homing_torque_percent_var = tk.StringVar(value="5")
-
-    # Feed/Dispense Variables
-    feed_cyl1_dia_var = tk.StringVar(value="75.0");
-    feed_cyl2_dia_var = tk.StringVar(value="33.0");
-    feed_ballscrew_pitch_var = tk.StringVar(value="5.0");
-    feed_ml_per_rev_var = tk.StringVar(value="N/A ml/rev");
-    feed_steps_per_ml_var = tk.DoubleVar(value=0.0);
-    feed_acceleration_var = tk.StringVar(value="5000");
-    feed_torque_percent_var = tk.StringVar(value="50");
-    cartridge_retract_offset_mm_var = tk.StringVar(value="50.0")
-    inject_amount_ml_var = tk.StringVar(value="10.0");
-    inject_speed_ml_s_var = tk.StringVar(value="0.1");
-    inject_time_var = tk.StringVar(value="N/A s");
-    inject_dispensed_ml_var = tk.StringVar(value="0.00 ml")
-    purge_amount_ml_var = tk.StringVar(value="0.5");
-    purge_speed_ml_s_var = tk.StringVar(value="0.5");
-    purge_time_var = tk.StringVar(value="N/A s");
-    purge_dispensed_ml_var = tk.StringVar(value="0.00 ml")
-    set_torque_offset_val_var = tk.StringVar(value="-2.4")
-
-    # --- GUI Update Functions ---
     ui_elements = {}
-
     current_active_mode_frame = None
 
     def update_state(new_main_state_from_firmware):
@@ -167,62 +161,65 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
             ui_elements['cancel_purge_btn'].config(
                 state=tk.NORMAL if is_purge_active or new_feed_state == "FEED_PURGE_PAUSED" else tk.DISABLED)
 
-    main_state_var.trace_add('write', lambda *args: update_state(main_state_var.get()))
-    feed_state_var.trace_add('write', lambda *args: update_feed_button_states(feed_state_var.get()))
+    variables['main_state_var'].trace_add('write', lambda *args: update_state(variables['main_state_var'].get()))
+    variables['feed_state_var'].trace_add('write',
+                                          lambda *args: update_feed_button_states(variables['feed_state_var'].get()))
 
     def update_ml_per_rev(*args):
         try:
-            dia1_mm = float(feed_cyl1_dia_var.get());
-            dia2_mm = float(feed_cyl2_dia_var.get());
-            pitch_mm_per_rev = float(feed_ballscrew_pitch_var.get())
+            dia1_mm = float(variables['feed_cyl1_dia_var'].get());
+            dia2_mm = float(variables['feed_cyl2_dia_var'].get());
+            pitch_mm_per_rev = float(variables['feed_ballscrew_pitch_var'].get())
             if dia1_mm <= 0 or dia2_mm <= 0 or pitch_mm_per_rev <= 0:
-                feed_ml_per_rev_var.set("Invalid dims");
-                feed_steps_per_ml_var.set(0.0);
+                variables['feed_ml_per_rev_var'].set("Invalid dims");
+                variables['feed_steps_per_ml_var'].set(0.0);
                 return
             area1_mm2 = math.pi * (dia1_mm / 2) ** 2;
             area2_mm2 = math.pi * (dia2_mm / 2) ** 2;
             total_area_mm2 = area1_mm2 + area2_mm2
             vol_mm3_per_rev = total_area_mm2 * pitch_mm_per_rev;
             vol_ml_per_rev = vol_mm3_per_rev / 1000.0
-            feed_ml_per_rev_var.set(f"{vol_ml_per_rev:.4f} ml/rev")
+            variables['feed_ml_per_rev_var'].set(f"{vol_ml_per_rev:.4f} ml/rev")
             if vol_ml_per_rev > 0:
-                feed_steps_per_ml_var.set(round(MOTOR_STEPS_PER_REV / vol_ml_per_rev, 2))
+                variables['feed_steps_per_ml_var'].set(round(MOTOR_STEPS_PER_REV / vol_ml_per_rev, 2))
             else:
-                feed_steps_per_ml_var.set(0.0)
+                variables['feed_steps_per_ml_var'].set(0.0)
         except (ValueError, Exception):
-            feed_ml_per_rev_var.set("Input Error");
-            feed_steps_per_ml_var.set(0.0)
+            variables['feed_ml_per_rev_var'].set("Input Error");
+            variables['feed_steps_per_ml_var'].set(0.0)
 
-    for var in [feed_cyl1_dia_var, feed_cyl2_dia_var, feed_ballscrew_pitch_var]: var.trace_add('write',
-                                                                                               update_ml_per_rev)
+    for var_key in ['feed_cyl1_dia_var', 'feed_cyl2_dia_var', 'feed_ballscrew_pitch_var']:
+        variables[var_key].trace_add('write', update_ml_per_rev)
 
     def update_inject_time(*args):
         try:
-            amount_ml = float(inject_amount_ml_var.get());
-            speed_ml_s = float(inject_speed_ml_s_var.get())
+            amount_ml = float(variables['inject_amount_ml_var'].get());
+            speed_ml_s = float(variables['inject_speed_ml_s_var'].get())
         except (ValueError, Exception):
-            inject_time_var.set("Input Error");
+            variables['inject_time_var'].set("Input Error");
             return
         if speed_ml_s > 0:
-            inject_time_var.set(f"{amount_ml / speed_ml_s:.2f} s")
+            variables['inject_time_var'].set(f"{amount_ml / speed_ml_s:.2f} s")
         else:
-            inject_time_var.set("N/A (Speed=0)")
+            variables['inject_time_var'].set("N/A (Speed=0)")
 
-    for var in [inject_amount_ml_var, inject_speed_ml_s_var]: var.trace_add('write', update_inject_time)
+    for var_key in ['inject_amount_ml_var', 'inject_speed_ml_s_var']:
+        variables[var_key].trace_add('write', update_inject_time)
 
     def update_purge_time(*args):
         try:
-            amount_ml = float(purge_amount_ml_var.get());
-            speed_ml_s = float(purge_speed_ml_s_var.get())
+            amount_ml = float(variables['purge_amount_ml_var'].get());
+            speed_ml_s = float(variables['purge_speed_ml_s_var'].get())
         except (ValueError, Exception):
-            purge_time_var.set("Input Error");
+            variables['purge_time_var'].set("Input Error");
             return
         if speed_ml_s > 0:
-            purge_time_var.set(f"{amount_ml / speed_ml_s:.2f} s")
+            variables['purge_time_var'].set(f"{amount_ml / speed_ml_s:.2f} s")
         else:
-            purge_time_var.set("N/A (Speed=0)")
+            variables['purge_time_var'].set("N/A (Speed=0)")
 
-    for var in [purge_amount_ml_var, purge_speed_ml_s_var]: var.trace_add('write', update_purge_time)
+    for var_key in ['purge_amount_ml_var', 'purge_speed_ml_s_var']:
+        variables[var_key].trace_add('write', update_purge_time)
 
     def update_jog_button_state(current_main_state):
         names = ['jog_m0_plus', 'jog_m0_minus', 'jog_m1_plus', 'jog_m1_minus', 'jog_both_plus', 'jog_both_minus',
@@ -246,28 +243,32 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     sub_state_display_frame.grid_columnconfigure(1, weight=1)
     tk.Label(sub_state_display_frame, text="Main:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
         row=0, column=0, padx=(5, 2), pady=1, sticky="e");
-    tk.Label(sub_state_display_frame, textvariable=main_state_var, bg=sub_state_display_frame['bg'], fg="white",
-             font=font_small).grid(row=0, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, textvariable=variables['main_state_var'], bg=sub_state_display_frame['bg'],
+             fg="white", font=font_small).grid(row=0, column=1, padx=(0, 5), pady=1, sticky="w")
     tk.Label(sub_state_display_frame, text="Homing:", bg=sub_state_display_frame['bg'], fg="#ccc",
              font=font_small).grid(row=1, column=0, padx=(5, 2), pady=1, sticky="e");
-    tk.Label(sub_state_display_frame, textvariable=homing_state_var, bg=sub_state_display_frame['bg'], fg="white",
-             font=font_small).grid(row=1, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, textvariable=variables['homing_state_var'], bg=sub_state_display_frame['bg'],
+             fg="white", font=font_small).grid(row=1, column=1, padx=(0, 5), pady=1, sticky="w")
     tk.Label(sub_state_display_frame, text="H. Phase:", bg=sub_state_display_frame['bg'], fg="#ccc",
              font=font_small).grid(row=2, column=0, padx=(5, 2), pady=1, sticky="e");
-    tk.Label(sub_state_display_frame, textvariable=homing_phase_var, bg=sub_state_display_frame['bg'], fg="white",
-             font=font_small).grid(row=2, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, textvariable=variables['homing_phase_var'], bg=sub_state_display_frame['bg'],
+             fg="white", font=font_small).grid(row=2, column=1, padx=(0, 5), pady=1, sticky="w")
     tk.Label(sub_state_display_frame, text="Feed:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
         row=3, column=0, padx=(5, 2), pady=1, sticky="e");
-    tk.Label(sub_state_display_frame, textvariable=feed_state_var, bg=sub_state_display_frame['bg'], fg="white",
-             font=font_small).grid(row=3, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, textvariable=variables['feed_state_var'], bg=sub_state_display_frame['bg'],
+             fg="white", font=font_small).grid(row=3, column=1, padx=(0, 5), pady=1, sticky="w")
     tk.Label(sub_state_display_frame, text="Error:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
         row=4, column=0, padx=(5, 2), pady=1, sticky="e");
-    tk.Label(sub_state_display_frame, textvariable=error_state_var, bg=sub_state_display_frame['bg'], fg="orange red",
-             font=font_small).grid(row=4, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, textvariable=variables['error_state_var'], bg=sub_state_display_frame['bg'],
+             fg="orange red", font=font_small).grid(row=4, column=1, padx=(0, 5), pady=1, sticky="w")
     tk.Label(sub_state_display_frame, text="Temp:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
         row=5, column=0, padx=(5, 2), pady=1, sticky="e");
-    tk.Label(sub_state_display_frame, textvariable=temp_c_var, bg=sub_state_display_frame['bg'], fg="orange",
-             font=font_small).grid(row=5, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, textvariable=variables['temp_c_var'], bg=sub_state_display_frame['bg'],
+             fg="orange", font=font_small).grid(row=5, column=1, padx=(0, 5), pady=1, sticky="w")
+    tk.Label(sub_state_display_frame, text="Heater:", bg=sub_state_display_frame['bg'], fg="#ccc",
+             font=font_small).grid(row=6, column=0, padx=(5, 2), pady=1, sticky="e");
+    tk.Label(sub_state_display_frame, textvariable=variables['heater_mode_var'], bg=sub_state_display_frame['bg'],
+             fg="lightgreen", font=font_small).grid(row=6, column=1, padx=(0, 5), pady=1, sticky="w")
 
     global_counters_frame = tk.LabelFrame(left_column_frame, text="Position Relative to Home", bg="#2a2d3b",
                                           fg="#aaddff", font=("Segoe UI", 10, "bold"), bd=1, relief="groove", padx=5,
@@ -276,12 +277,12 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     global_counters_frame.grid_columnconfigure(1, weight=1)
     tk.Label(global_counters_frame, text="Machine (mm):", bg=global_counters_frame['bg'], fg="white",
              font=font_label).grid(row=0, column=0, sticky="e", padx=2, pady=2);
-    tk.Label(global_counters_frame, textvariable=machine_steps_var, bg=global_counters_frame['bg'], fg="#00bfff",
-             font=font_value).grid(row=0, column=1, sticky="w", padx=2, pady=2)
+    tk.Label(global_counters_frame, textvariable=variables['machine_steps_var'], bg=global_counters_frame['bg'],
+             fg="#00bfff", font=font_value).grid(row=0, column=1, sticky="w", padx=2, pady=2)
     tk.Label(global_counters_frame, text="Cartridge (mm):", bg=global_counters_frame['bg'], fg="white",
              font=font_label).grid(row=1, column=0, sticky="e", padx=2, pady=2);
-    tk.Label(global_counters_frame, textvariable=cartridge_steps_var, bg=global_counters_frame['bg'], fg="yellow",
-             font=font_value).grid(row=1, column=1, sticky="w", padx=2, pady=2)
+    tk.Label(global_counters_frame, textvariable=variables['cartridge_steps_var'], bg=global_counters_frame['bg'],
+             fg="yellow", font=font_value).grid(row=1, column=1, sticky="w", padx=2, pady=2)
 
     controls_area_frame = tk.Frame(top_content_frame, bg="#21232b");
     controls_area_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -304,32 +305,70 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     right_of_modes_area = tk.Frame(controls_area_frame, bg="#21232b");
     right_of_modes_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    env_controls_frame = tk.LabelFrame(right_of_modes_area, text="Environmental Controls", bg="#2a2d3b", fg="#aaddff",
-                                       font=("Segoe UI", 10, "bold"), padx=10, pady=5)
-    env_controls_frame.pack(fill=tk.X, pady=(5, 5))
+    pid_frame = tk.LabelFrame(right_of_modes_area, text="Heater PID Control", bg="#2a2d3b", fg="#aaddff",
+                              font=("Segoe UI", 10, "bold"), padx=10, pady=5)
+    pid_frame.pack(fill=tk.X, pady=(5, 5))
+    pid_frame.grid_columnconfigure((1, 3, 5), weight=1)
 
-    def create_on_off_buttons(parent, text, state_var, on_cmd, off_cmd):
-        frame = tk.Frame(parent, bg=parent['bg'])
-        tk.Label(frame, text=text, bg=parent['bg'], fg='white', width=8, anchor='w').pack(side=tk.LEFT)
+    tk.Label(pid_frame, text="Kp:", bg=pid_frame['bg'], fg='white').grid(row=0, column=0, sticky='e')
+    kp_entry = ttk.Entry(pid_frame, textvariable=variables['pid_kp_var'], width=6)
+    kp_entry.grid(row=0, column=1, sticky='ew', padx=(2, 10))
+    ui_elements['pid_kp_entry'] = kp_entry
 
-        on_btn = ttk.Button(frame, text="ON", style="Green.TButton", command=lambda: send_injector_cmd(on_cmd))
-        on_btn.pack(side=tk.LEFT, padx=2)
+    tk.Label(pid_frame, text="Ki:", bg=pid_frame['bg'], fg='white').grid(row=0, column=2, sticky='e')
+    ki_entry = ttk.Entry(pid_frame, textvariable=variables['pid_ki_var'], width=6)
+    ki_entry.grid(row=0, column=3, sticky='ew', padx=(2, 10))
+    ui_elements['pid_ki_entry'] = ki_entry
 
-        off_btn = ttk.Button(frame, text="OFF", style="Red.TButton", command=lambda: send_injector_cmd(off_cmd))
-        off_btn.pack(side=tk.LEFT, padx=2)
+    tk.Label(pid_frame, text="Kd:", bg=pid_frame['bg'], fg='white').grid(row=0, column=4, sticky='e')
+    kd_entry = ttk.Entry(pid_frame, textvariable=variables['pid_kd_var'], width=6)
+    kd_entry.grid(row=0, column=5, sticky='ew', padx=2)
+    ui_elements['pid_kd_entry'] = kd_entry
 
-        def update_styles(*args):
-            is_on = state_var.get() == "On"
-            on_btn.config(style="Green.TButton" if is_on else "Neutral.TButton")
-            off_btn.config(style="Red.TButton" if not is_on else "Neutral.TButton")
+    ttk.Button(pid_frame, text="Set Gains", command=lambda: send_injector_cmd(
+        f"SET_HEATER_GAINS {variables['pid_kp_var'].get()} {variables['pid_ki_var'].get()} {variables['pid_kd_var'].get()}")).grid(
+        row=0, column=6, padx=5)
 
-        state_var.trace_add('write', update_styles)
-        update_styles()
-        return frame
+    tk.Label(pid_frame, text="Setpoint (°C):", bg=pid_frame['bg'], fg='white').grid(row=1, column=0, columnspan=2,
+                                                                                    sticky='e', pady=(5, 0))
+    setpoint_entry = ttk.Entry(pid_frame, textvariable=variables['pid_setpoint_var'], width=6)
+    setpoint_entry.grid(row=1, column=2, columnspan=2, sticky='ew', padx=(2, 10), pady=(5, 0))
+    ui_elements['pid_setpoint_entry'] = setpoint_entry
+    ttk.Button(pid_frame, text="Set Temp",
+               command=lambda: send_injector_cmd(f"SET_HEATER_SETPOINT {variables['pid_setpoint_var'].get()}")).grid(
+        row=1, column=4, columnspan=2, padx=5, pady=(5, 0))
 
-    create_on_off_buttons(env_controls_frame, "Heater:", heater_state_var, "HEATER_ON", "HEATER_OFF").pack(fill=tk.X)
-    create_on_off_buttons(env_controls_frame, "Vacuum:", vacuum_state_var, "VACUUM_ON", "VACUUM_OFF").pack(fill=tk.X,
-                                                                                                           pady=(5, 0))
+    tk.Label(pid_frame, text="PID Output:", bg=pid_frame['bg'], fg='white').grid(row=2, column=0, columnspan=2,
+                                                                                 sticky='e', pady=(5, 0))
+    tk.Label(pid_frame, textvariable=variables['pid_output_var'], bg=pid_frame['bg'], fg='orange').grid(row=2, column=2,
+                                                                                                        columnspan=2,
+                                                                                                        sticky='w',
+                                                                                                        padx=2,
+                                                                                                        pady=(5, 0))
+
+    pid_btn_frame = tk.Frame(pid_frame, bg=pid_frame['bg'])
+    pid_btn_frame.grid(row=3, column=0, columnspan=7, pady=5)
+
+    ttk.Button(pid_btn_frame, text="PID ON", style="Green.TButton",
+               command=lambda: send_injector_cmd("HEATER_PID_ON")).pack(side=tk.LEFT, padx=5)
+    ttk.Button(pid_btn_frame, text="PID OFF", style="Red.TButton",
+               command=lambda: send_injector_cmd("HEATER_PID_OFF")).pack(side=tk.LEFT, padx=5)
+    ttk.Button(pid_btn_frame, text="Manual ON", command=lambda: send_injector_cmd("HEATER_ON")).pack(side=tk.LEFT,
+                                                                                                     padx=5)
+    ttk.Button(pid_btn_frame, text="Manual OFF", command=lambda: send_injector_cmd("HEATER_OFF")).pack(side=tk.LEFT,
+                                                                                                       padx=5)
+
+    vac_frame = tk.LabelFrame(right_of_modes_area, text="Vacuum Control", bg="#2a2d3b", fg="#aaddff",
+                              font=("Segoe UI", 10, "bold"), padx=10, pady=5)
+    vac_frame.pack(fill=tk.X, pady=5)
+    tk.Label(vac_frame, text="Vacuum Pump:", bg=vac_frame['bg'], fg='white').pack(side=tk.LEFT)
+    ttk.Button(vac_frame, text="ON", style="Green.TButton", command=lambda: send_injector_cmd("VACUUM_ON")).pack(
+        side=tk.LEFT, padx=5)
+    ttk.Button(vac_frame, text="OFF", style="Red.TButton", command=lambda: send_injector_cmd("VACUUM_OFF")).pack(
+        side=tk.LEFT, padx=5)
+    tk.Label(vac_frame, text="Status:", bg=vac_frame['bg'], fg='white').pack(side=tk.LEFT, padx=(20, 5))
+    tk.Label(vac_frame, textvariable=variables['vacuum_state_var'], bg=vac_frame['bg'], fg='lightgreen').pack(
+        side=tk.LEFT)
 
     enable_disable_master_frame = tk.Frame(right_of_modes_area, bg="#21232b")
     enable_disable_master_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
@@ -346,15 +385,15 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
                                            command=lambda: send_injector_cmd("DISABLE"), font=("Segoe UI", 10, "bold"))
 
     def update_injector_enable_buttons(*args):
-        is_en = enable_disable_var.get() == "Enabled";
-        ui_elements['enable_btn'].config(
-            relief="sunken" if is_en else "raised", bg=bright_green if is_en else dim_green);
-        ui_elements[
-            'disable_btn'].config(relief="sunken" if not is_en else "raised", bg=bright_red if not is_en else dim_red)
+        is_en = variables['enable_disable_var'].get() == "Enabled";
+        ui_elements['enable_btn'].config(relief="sunken" if is_en else "raised",
+                                         bg=bright_green if is_en else dim_green);
+        ui_elements['disable_btn'].config(relief="sunken" if not is_en else "raised",
+                                          bg=bright_red if not is_en else dim_red)
 
     ui_elements['enable_btn'].pack(side=tk.LEFT, padx=(0, 1), expand=True, fill=tk.X);
     ui_elements['disable_btn'].pack(side=tk.LEFT, padx=(1, 0), expand=True, fill=tk.X);
-    enable_disable_var.trace_add('write', update_injector_enable_buttons);
+    variables['enable_disable_var'].trace_add('write', update_injector_enable_buttons);
     ui_elements['enable_pinch_btn'] = tk.Button(pinch_enable_frame, text="Enable", fg="white", width=10,
                                                 command=lambda: send_injector_cmd("ENABLE_PINCH"),
                                                 font=("Segoe UI", 10, "bold"));
@@ -363,16 +402,15 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
                                                  font=("Segoe UI", 10, "bold"))
 
     def update_pinch_enable_buttons(*args):
-        is_en = enable_disable_pinch_var.get() == "Enabled";
-        ui_elements['enable_pinch_btn'].config(
-            relief="sunken" if is_en else "raised", bg=bright_green if is_en else dim_green);
-        ui_elements[
-            'disable_pinch_btn'].config(relief="sunken" if not is_en else "raised",
-                                        bg=bright_red if not is_en else dim_red)
+        is_en = variables['enable_disable_pinch_var'].get() == "Enabled";
+        ui_elements['enable_pinch_btn'].config(relief="sunken" if is_en else "raised",
+                                               bg=bright_green if is_en else dim_green);
+        ui_elements['disable_pinch_btn'].config(relief="sunken" if not is_en else "raised",
+                                                bg=bright_red if not is_en else dim_red)
 
     ui_elements['enable_pinch_btn'].pack(side=tk.LEFT, padx=(0, 1), expand=True, fill=tk.X);
     ui_elements['disable_pinch_btn'].pack(side=tk.LEFT, padx=(1, 0), expand=True, fill=tk.X);
-    enable_disable_pinch_var.trace_add('write', update_pinch_enable_buttons);
+    variables['enable_disable_pinch_var'].trace_add('write', update_pinch_enable_buttons);
     update_injector_enable_buttons();
     update_pinch_enable_buttons()
 
@@ -385,22 +423,21 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     m1_display_section.grid_columnconfigure(1, weight=1)
     tk.Label(m1_display_section, text="HLFB:", bg=m1_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=0, column=0, sticky="w");
-    ui_elements['motor_status_label1'] = tk.Label(m1_display_section, textvariable=motor_state1,
+    ui_elements['motor_status_label1'] = tk.Label(m1_display_section, textvariable=variables['motor_state1'],
                                                   bg=m1_display_section['bg'], fg="#00bfff", font=font_motor_disp);
     ui_elements['motor_status_label1'].grid(row=0, column=1, sticky="ew", padx=2)
     tk.Label(m1_display_section, text="Enabled:", bg=m1_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=1, column=0, sticky="w");
-    ui_elements['enabled_status_label1'] = tk.Label(m1_display_section, textvariable=enabled_state1,
+    ui_elements['enabled_status_label1'] = tk.Label(m1_display_section, textvariable=variables['enabled_state1'],
                                                     bg=m1_display_section['bg'], fg="#00ff88", font=font_motor_disp);
     ui_elements['enabled_status_label1'].grid(row=1, column=1, sticky="ew", padx=2)
     tk.Label(m1_display_section, text="Torque:", bg=m1_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=2, column=0, sticky="w");
-    tk.Label(m1_display_section, textvariable=torque_value1, bg=m1_display_section['bg'], fg="#00bfff",
+    tk.Label(m1_display_section, textvariable=variables['torque_value1'], bg=m1_display_section['bg'], fg="#00bfff",
              font=font_motor_disp).grid(row=2, column=1, sticky="ew", padx=2)
     tk.Label(m1_display_section, text="Abs Pos (mm):", bg=m1_display_section['bg'], fg="white",
-             font=font_motor_disp).grid(
-        row=3, column=0, sticky="w");
-    tk.Label(m1_display_section, textvariable=position_cmd1_var, bg=m1_display_section['bg'], fg="#00bfff",
+             font=font_motor_disp).grid(row=3, column=0, sticky="w");
+    tk.Label(m1_display_section, textvariable=variables['position_cmd1_var'], bg=m1_display_section['bg'], fg="#00bfff",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
     m2_display_section = tk.LabelFrame(always_on_motor_info_frame, text="Motor 1 (Injector)", bg="#2d253a", fg="yellow",
                                        font=("Segoe UI", 10, "bold"), bd=1, relief="ridge", padx=5, pady=2);
@@ -408,22 +445,21 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     m2_display_section.grid_columnconfigure(1, weight=1)
     tk.Label(m2_display_section, text="HLFB:", bg=m2_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=0, column=0, sticky="w");
-    ui_elements['motor_status_label2'] = tk.Label(m2_display_section, textvariable=motor_state2,
+    ui_elements['motor_status_label2'] = tk.Label(m2_display_section, textvariable=variables['motor_state2'],
                                                   bg=m2_display_section['bg'], fg="yellow", font=font_motor_disp);
     ui_elements['motor_status_label2'].grid(row=0, column=1, sticky="ew", padx=2)
     tk.Label(m2_display_section, text="Enabled:", bg=m2_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=1, column=0, sticky="w");
-    ui_elements['enabled_status_label2'] = tk.Label(m2_display_section, textvariable=enabled_state2,
+    ui_elements['enabled_status_label2'] = tk.Label(m2_display_section, textvariable=variables['enabled_state2'],
                                                     bg=m2_display_section['bg'], fg="#00ff88", font=font_motor_disp);
     ui_elements['enabled_status_label2'].grid(row=1, column=1, sticky="ew", padx=2)
     tk.Label(m2_display_section, text="Torque:", bg=m2_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=2, column=0, sticky="w");
-    tk.Label(m2_display_section, textvariable=torque_value2, bg=m2_display_section['bg'], fg="yellow",
+    tk.Label(m2_display_section, textvariable=variables['torque_value2'], bg=m2_display_section['bg'], fg="yellow",
              font=font_motor_disp).grid(row=2, column=1, sticky="ew", padx=2)
     tk.Label(m2_display_section, text="Abs Pos (mm):", bg=m2_display_section['bg'], fg="white",
-             font=font_motor_disp).grid(
-        row=3, column=0, sticky="w");
-    tk.Label(m2_display_section, textvariable=position_cmd2_var, bg=m2_display_section['bg'], fg="yellow",
+             font=font_motor_disp).grid(row=3, column=0, sticky="w");
+    tk.Label(m2_display_section, textvariable=variables['position_cmd2_var'], bg=m2_display_section['bg'], fg="yellow",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
     m3_display_section = tk.LabelFrame(always_on_motor_info_frame, text="Motor 2 (Pinch)", bg="#341c1c", fg="#ff8888",
                                        font=("Segoe UI", 10, "bold"), bd=1, relief="ridge", padx=5, pady=2);
@@ -431,315 +467,47 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     m3_display_section.grid_columnconfigure(1, weight=1)
     tk.Label(m3_display_section, text="HLFB:", bg=m3_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=0, column=0, sticky="w");
-    ui_elements['motor_status_label3'] = tk.Label(m3_display_section, textvariable=motor_state3,
+    ui_elements['motor_status_label3'] = tk.Label(m3_display_section, textvariable=variables['motor_state3'],
                                                   bg=m3_display_section['bg'], fg="#ff8888", font=font_motor_disp);
     ui_elements['motor_status_label3'].grid(row=0, column=1, sticky="ew", padx=2)
     tk.Label(m3_display_section, text="Enabled:", bg=m3_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=1, column=0, sticky="w");
-    ui_elements['enabled_status_label3'] = tk.Label(m3_display_section, textvariable=enabled_state3,
+    ui_elements['enabled_status_label3'] = tk.Label(m3_display_section, textvariable=variables['enabled_state3'],
                                                     bg=m3_display_section['bg'], fg="#00ff88", font=font_motor_disp);
     ui_elements['enabled_status_label3'].grid(row=1, column=1, sticky="ew", padx=2)
     tk.Label(m3_display_section, text="Torque:", bg=m3_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=2, column=0, sticky="w");
-    tk.Label(m3_display_section, textvariable=torque_value3, bg=m3_display_section['bg'], fg="#ff8888",
+    tk.Label(m3_display_section, textvariable=variables['torque_value3'], bg=m3_display_section['bg'], fg="#ff8888",
              font=font_motor_disp).grid(row=2, column=1, sticky="ew", padx=2)
     tk.Label(m3_display_section, text="Abs Pos (mm):", bg=m3_display_section['bg'], fg="white",
-             font=font_motor_disp).grid(
-        row=3, column=0, sticky="w");
-    tk.Label(m3_display_section, textvariable=position_cmd3_var, bg=m3_display_section['bg'], fg="#ff8888",
+             font=font_motor_disp).grid(row=3, column=0, sticky="w");
+    tk.Label(m3_display_section, textvariable=variables['position_cmd3_var'], bg=m3_display_section['bg'], fg="#ff8888",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
     tk.Label(m3_display_section, text="Homed:", bg=m3_display_section['bg'], fg="white", font=font_motor_disp).grid(
         row=4, column=0, sticky="w");
-    tk.Label(m3_display_section, textvariable=pinch_homed_var, bg=m3_display_section['bg'], fg="lightgreen",
-             font=font_motor_disp).grid(row=4, column=1, sticky="ew", padx=2)
+    tk.Label(m3_display_section, textvariable=variables['pinch_homed_var'], bg=m3_display_section['bg'],
+             fg="lightgreen", font=font_motor_disp).grid(row=4, column=1, sticky="ew", padx=2)
 
     contextual_display_master_frame = tk.Frame(right_of_modes_area, bg="#21232b");
     contextual_display_master_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
 
-    jog_controls_frame = tk.LabelFrame(contextual_display_master_frame, text="Jog Controls (Active in JOG_MODE)",
-                                       bg="#21232b", fg="#0f8", font=("Segoe UI", 10, "bold"));
-    ui_elements['jog_controls_frame'] = jog_controls_frame
-    homing_controls_frame = tk.LabelFrame(contextual_display_master_frame,
-                                          text="Homing Controls (Active in HOMING_MODE)", bg="#2b1e34", fg="#D8BFD8",
-                                          font=("Segoe UI", 10, "bold"), bd=2, relief="ridge");
-    ui_elements['homing_controls_frame'] = homing_controls_frame
-    feed_controls_frame = tk.LabelFrame(contextual_display_master_frame, text="Feed Controls (Active in FEED_MODE)",
-                                        bg="#1e3434", fg="#AFEEEE", font=("Segoe UI", 10, "bold"), bd=2,
-                                        relief="ridge");
-    ui_elements['feed_controls_frame'] = feed_controls_frame
+    create_jog_controls(contextual_display_master_frame, send_injector_cmd, ui_elements, variables)
+    create_homing_controls(contextual_display_master_frame, send_injector_cmd, ui_elements, variables)
+    create_feed_controls(contextual_display_master_frame, send_injector_cmd, ui_elements, variables)
+
     settings_controls_frame = tk.LabelFrame(right_of_modes_area, text="Global Settings", bg="#303030", fg="#DDD",
                                             font=("Segoe UI", 10, "bold"), bd=2, relief="ridge");
     settings_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=(10, 5))
-
-    # --- Populate Jog Frame ---
-    jog_params_frame = tk.Frame(jog_controls_frame, bg=jog_controls_frame['bg']);
-    jog_params_frame.pack(fill=tk.X, pady=5, padx=5);
-    jog_params_frame.grid_columnconfigure(1, weight=1);
-    jog_params_frame.grid_columnconfigure(3, weight=1)
-    tk.Label(jog_params_frame, text="Dist (mm):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
-                                                                                                               column=0,
-                                                                                                               sticky="w",
-                                                                                                               pady=1,
-                                                                                                               padx=2);
-    ttk.Entry(jog_params_frame, textvariable=jog_dist_mm_var, width=8, font=font_small).grid(row=0, column=1,
-                                                                                             sticky="ew",
-                                                                                             pady=1, padx=(0, 10));
-    tk.Label(jog_params_frame, text="Vel (mm/s):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
-                                                                                                                column=2,
-                                                                                                                sticky="w",
-                                                                                                                pady=1,
-                                                                                                                padx=2);
-    ttk.Entry(jog_params_frame, textvariable=jog_velocity_var, width=8, font=font_small).grid(row=0, column=3,
-                                                                                              sticky="ew", pady=1,
-                                                                                              padx=(0, 10));
-    tk.Label(jog_params_frame, text="Accel (mm/s²):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(
-        row=1,
-        column=0,
-        sticky="w",
-        pady=1,
-        padx=2);
-    ttk.Entry(jog_params_frame, textvariable=jog_acceleration_var, width=8, font=font_small).grid(row=1, column=1,
-                                                                                                  sticky="ew", pady=1,
-                                                                                                  padx=(0, 10));
-    tk.Label(jog_params_frame, text="Torque (%):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=1,
-                                                                                                                column=2,
-                                                                                                                sticky="w",
-                                                                                                                pady=1,
-                                                                                                                padx=2);
-    ttk.Entry(jog_params_frame, textvariable=jog_torque_percent_var, width=8, font=font_small).grid(row=1, column=3,
-                                                                                                    sticky="ew", pady=1,
-                                                                                                    padx=(0, 10))
-    jog_buttons_area = tk.Frame(jog_controls_frame, bg=jog_controls_frame['bg']);
-    jog_buttons_area.pack(fill=tk.X, pady=5)
-    m0_jog_frame = tk.Frame(jog_buttons_area, bg=jog_controls_frame['bg']);
-    m0_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
-    ui_elements['jog_m0_plus'] = ttk.Button(m0_jog_frame, text="▲ M0", style="Jog.TButton", state=tk.DISABLED,
-                                            command=lambda: send_injector_cmd(
-                                                f"JOG_MOVE {jog_dist_mm_var.get()} 0 {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
-    ui_elements['jog_m0_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
-    ui_elements['jog_m0_minus'] = ttk.Button(m0_jog_frame, text="▼ M0", style="Jog.TButton", state=tk.DISABLED,
-                                             command=lambda: send_injector_cmd(
-                                                 f"JOG_MOVE -{jog_dist_mm_var.get()} 0 {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
-    ui_elements['jog_m0_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
-    m1_jog_frame = tk.Frame(jog_buttons_area, bg=jog_controls_frame['bg']);
-    m1_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
-    ui_elements['jog_m1_plus'] = ttk.Button(m1_jog_frame, text="▲ M1", style="Jog.TButton", state=tk.DISABLED,
-                                            command=lambda: send_injector_cmd(
-                                                f"JOG_MOVE 0 {jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
-    ui_elements['jog_m1_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
-    ui_elements['jog_m1_minus'] = ttk.Button(m1_jog_frame, text="▼ M1", style="Jog.TButton", state=tk.DISABLED,
-                                             command=lambda: send_injector_cmd(
-                                                 f"JOG_MOVE 0 -{jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
-    ui_elements['jog_m1_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
-    both_jog_frame = tk.Frame(jog_buttons_area, bg=jog_controls_frame['bg']);
-    both_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
-    ui_elements['jog_both_plus'] = ttk.Button(both_jog_frame, text="▲ Both", style="Jog.TButton", state=tk.DISABLED,
-                                              command=lambda: send_injector_cmd(
-                                                  f"JOG_MOVE {jog_dist_mm_var.get()} {jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
-    ui_elements['jog_both_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
-    ui_elements['jog_both_minus'] = ttk.Button(both_jog_frame, text="▼ Both", style="Jog.TButton", state=tk.DISABLED,
-                                               command=lambda: send_injector_cmd(
-                                                   f"JOG_MOVE -{jog_dist_mm_var.get()} -{jog_dist_mm_var.get()} {jog_velocity_var.get()} {jog_acceleration_var.get()} {jog_torque_percent_var.get()}"));
-    ui_elements['jog_both_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
-    m2_jog_frame = tk.Frame(jog_buttons_area, bg=jog_controls_frame['bg']);
-    m2_jog_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2);
-    ui_elements['jog_m2_pinch_plus'] = ttk.Button(m2_jog_frame, text="▲ M2 (Pinch)", style="Jog.TButton",
-                                                  state=tk.DISABLED, command=lambda: send_injector_cmd(
-            f"PINCH_JOG_MOVE {jog_pinch_degrees_var.get()} {jog_torque_percent_var.get()} {jog_pinch_velocity_sps_var.get()} {jog_pinch_accel_sps2_var.get()}"));
-    ui_elements['jog_m2_pinch_plus'].pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, 2));
-    ui_elements['jog_m2_pinch_minus'] = ttk.Button(m2_jog_frame, text="▼ M2 (Pinch)", style="Jog.TButton",
-                                                   state=tk.DISABLED, command=lambda: send_injector_cmd(
-            f"PINCH_JOG_MOVE -{jog_pinch_degrees_var.get()} {jog_torque_percent_var.get()} {jog_pinch_velocity_sps_var.get()} {jog_pinch_accel_sps2_var.get()}"));
-    ui_elements['jog_m2_pinch_minus'].pack(side=tk.TOP, fill=tk.X, expand=True)
-
-    # --- Populate Homing Frame ---
-    homing_controls_frame.grid_columnconfigure(1, weight=1);
-    homing_controls_frame.grid_columnconfigure(3, weight=1);
-    h_row = 0;
-    field_width_homing = 10
-    tk.Label(homing_controls_frame, text="Stroke (mm):", bg=homing_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=h_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(homing_controls_frame, textvariable=homing_stroke_len_var, width=field_width_homing,
-              font=font_small).grid(row=h_row, column=1, sticky="ew", padx=2, pady=2);
-    tk.Label(homing_controls_frame, text="Rapid Vel (mm/s):", bg=homing_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=h_row, column=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(homing_controls_frame, textvariable=homing_rapid_vel_var, width=field_width_homing, font=font_small).grid(
-        row=h_row, column=3, sticky="ew", padx=2, pady=2);
-    h_row += 1
-    tk.Label(homing_controls_frame, text="Touch Vel (mm/s):", bg=homing_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=h_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(homing_controls_frame, textvariable=homing_touch_vel_var, width=field_width_homing, font=font_small).grid(
-        row=h_row, column=1, sticky="ew", padx=2, pady=2);
-    tk.Label(homing_controls_frame, text="Accel (mm/s²):", bg=homing_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=h_row, column=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(homing_controls_frame, textvariable=homing_acceleration_var, width=field_width_homing,
-              font=font_small).grid(row=h_row, column=3, sticky="ew", padx=2, pady=2);
-    h_row += 1
-    tk.Label(homing_controls_frame, text="M.Retract (mm):", bg=homing_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=h_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(homing_controls_frame, textvariable=homing_retract_dist_var, width=field_width_homing,
-              font=font_small).grid(row=h_row, column=1, sticky="ew", padx=2, pady=2);
-    tk.Label(homing_controls_frame, text="Torque (%):", bg=homing_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=h_row, column=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(homing_controls_frame, textvariable=homing_torque_percent_var, width=field_width_homing,
-              font=font_small).grid(row=h_row, column=3, sticky="ew", padx=2, pady=2);
-    h_row += 1
-    home_btn_frame = tk.Frame(homing_controls_frame, bg=homing_controls_frame['bg']);
-    home_btn_frame.grid(row=h_row, column=0, columnspan=4, pady=5, sticky="ew")
-    ttk.Button(home_btn_frame, text="Execute Machine Home", style='Small.TButton', command=lambda: send_injector_cmd(
-        f"MACHINE_HOME_MOVE {homing_stroke_len_var.get()} {homing_rapid_vel_var.get()} {homing_touch_vel_var.get()} {homing_acceleration_var.get()} {homing_retract_dist_var.get()} {homing_torque_percent_var.get()}")).pack(
-        side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-    ttk.Button(home_btn_frame, text="Execute Cartridge Home", style='Small.TButton', command=lambda: send_injector_cmd(
-        f"CARTRIDGE_HOME_MOVE {homing_stroke_len_var.get()} {homing_rapid_vel_var.get()} {homing_touch_vel_var.get()} {homing_acceleration_var.get()} 0 {homing_torque_percent_var.get()}")).pack(
-        side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-    ttk.Button(home_btn_frame, text="Execute Pinch Home", style='Small.TButton',
-               command=lambda: send_injector_cmd("PINCH_HOME_MOVE")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-
-    # --- Populate Feed Frame ---
-    feed_controls_frame.grid_columnconfigure(1, weight=1);
-    feed_controls_frame.grid_columnconfigure(3, weight=1);
-    f_row = 0;
-    field_width_feed = 8
-    tk.Label(feed_controls_frame, text="Cyl 1 Dia (mm):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=feed_cyl1_dia_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2);
-    tk.Label(feed_controls_frame, text="Cyl 2 Dia (mm):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=feed_cyl2_dia_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=3, sticky="ew", padx=2, pady=2);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Pitch (mm/rev):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=feed_ballscrew_pitch_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2);
-    tk.Label(feed_controls_frame, text="Calc ml/rev:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(
-        row=f_row, column=2, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, textvariable=feed_ml_per_rev_var, bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Calc Steps/ml:", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, textvariable=feed_steps_per_ml_var, bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).grid(row=f_row, column=1, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, text="Feed Accel (sps²):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=feed_acceleration_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=3, sticky="ew", padx=2, pady=2);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Torque Limit (%):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=feed_torque_percent_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2);
-    f_row += 1
-    ttk.Separator(feed_controls_frame, orient='horizontal').grid(row=f_row, column=0, columnspan=4, sticky='ew',
-                                                                 pady=5);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Retract Offset (mm):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, columnspan=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=cartridge_retract_offset_mm_var, width=field_width_feed,
-              font=font_small).grid(row=f_row, column=2, sticky="ew", padx=2, pady=2);
-    f_row += 1
-    positioning_btn_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg']);
-    positioning_btn_frame.grid(row=f_row, column=0, columnspan=4, pady=(5, 2), sticky="ew")
-    ttk.Button(positioning_btn_frame, text="Go to Cartridge Home", style='Green.TButton',
-               command=lambda: send_injector_cmd("MOVE_TO_CARTRIDGE_HOME")).pack(side=tk.LEFT, fill=tk.X, expand=True,
-                                                                                 padx=2)
-    ttk.Button(positioning_btn_frame, text="Go to Cartridge Retract", style='Green.TButton',
-               command=lambda: send_injector_cmd(
-                   f"MOVE_TO_CARTRIDGE_RETRACT {cartridge_retract_offset_mm_var.get()}")).pack(side=tk.LEFT, fill=tk.X,
-                                                                                               expand=True, padx=2);
-    f_row += 1
-    ttk.Separator(feed_controls_frame, orient='horizontal').grid(row=f_row, column=0, columnspan=4, sticky='ew',
-                                                                 pady=5);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Inject Vol (ml):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=inject_amount_ml_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2);
-    tk.Label(feed_controls_frame, text="Inject Vel (ml/s):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=inject_speed_ml_s_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=3, sticky="ew", padx=2, pady=2);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Est. Inject Time:", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, textvariable=inject_time_var, bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).grid(row=f_row, column=1, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, text="Dispensed:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(
-        row=f_row, column=2, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, textvariable=inject_dispensed_ml_var, bg=feed_controls_frame['bg'], fg='lightgreen',
-             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);
-    f_row += 1
-    inject_op_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg']);
-    inject_op_frame.grid(row=f_row, column=0, columnspan=4, pady=(2, 5), sticky="ew")
-    ui_elements['start_inject_btn'] = ttk.Button(inject_op_frame, text="Start Inject", style='Start.TButton',
-                                                 state='normal', command=lambda: send_injector_cmd(
-            f"INJECT_MOVE {inject_amount_ml_var.get()} {inject_speed_ml_s_var.get()} {feed_acceleration_var.get()} {feed_steps_per_ml_var.get()} {feed_torque_percent_var.get()}"));
-    ui_elements['start_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 2))
-    ui_elements['pause_inject_btn'] = ttk.Button(inject_op_frame, text="Pause", style='Pause.TButton', state='disabled',
-                                                 command=lambda: send_injector_cmd("PAUSE_INJECTION"));
-    ui_elements['pause_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-    ui_elements['resume_inject_btn'] = ttk.Button(inject_op_frame, text="Resume", style='Resume.TButton',
-                                                  state='disabled',
-                                                  command=lambda: send_injector_cmd("RESUME_INJECTION"));
-    ui_elements['resume_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-    ui_elements['cancel_inject_btn'] = ttk.Button(inject_op_frame, text="Cancel", style='Cancel.TButton',
-                                                  state='disabled',
-                                                  command=lambda: send_injector_cmd("CANCEL_INJECTION"));
-    ui_elements['cancel_inject_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 10));
-    f_row += 1
-    ttk.Separator(feed_controls_frame, orient='horizontal').grid(row=f_row, column=0, columnspan=4, sticky='ew',
-                                                                 pady=5);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Purge Vol (ml):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=purge_amount_ml_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=1, sticky="ew", padx=2, pady=2);
-    tk.Label(feed_controls_frame, text="Purge Vel (ml/s):", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=2, sticky="w", padx=2, pady=2);
-    ttk.Entry(feed_controls_frame, textvariable=purge_speed_ml_s_var, width=field_width_feed, font=font_small).grid(
-        row=f_row, column=3, sticky="ew", padx=2, pady=2);
-    f_row += 1
-    tk.Label(feed_controls_frame, text="Est. Purge Time:", bg=feed_controls_frame['bg'], fg='white',
-             font=font_small).grid(row=f_row, column=0, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, textvariable=purge_time_var, bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).grid(row=f_row, column=1, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, text="Dispensed:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(
-        row=f_row, column=2, sticky="w", padx=2, pady=2);
-    tk.Label(feed_controls_frame, textvariable=purge_dispensed_ml_var, bg=feed_controls_frame['bg'], fg='lightgreen',
-             font=font_small).grid(row=f_row, column=3, sticky="w", padx=2, pady=2);
-    f_row += 1
-    purge_op_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg']);
-    purge_op_frame.grid(row=f_row, column=0, columnspan=4, pady=(2, 5), sticky="ew")
-    ui_elements['start_purge_btn'] = ttk.Button(purge_op_frame, text="Start Purge", style='Start.TButton',
-                                                state='normal', command=lambda: send_injector_cmd(
-            f"PURGE_MOVE {purge_amount_ml_var.get()} {purge_speed_ml_s_var.get()} {feed_acceleration_var.get()} {feed_steps_per_ml_var.get()} {feed_torque_percent_var.get()}"));
-    ui_elements['start_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 2))
-    ui_elements['pause_purge_btn'] = ttk.Button(purge_op_frame, text="Pause", style='Pause.TButton', state='disabled',
-                                                command=lambda: send_injector_cmd("PAUSE_INJECTION"));
-    ui_elements['pause_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-    ui_elements['resume_purge_btn'] = ttk.Button(purge_op_frame, text="Resume", style='Resume.TButton',
-                                                 state='disabled',
-                                                 command=lambda: send_injector_cmd("RESUME_INJECTION"));
-    ui_elements['resume_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-    ui_elements['cancel_purge_btn'] = ttk.Button(purge_op_frame, text="Cancel", style='Cancel.TButton',
-                                                 state='disabled',
-                                                 command=lambda: send_injector_cmd("CANCEL_INJECTION"));
-    ui_elements['cancel_purge_btn'].pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 10))
-
-    # --- Populate Settings Frame ---
     settings_controls_frame.grid_columnconfigure(1, weight=1);
     s_row = 0
     tk.Label(settings_controls_frame, text="Torque Offset:", bg=settings_controls_frame['bg'], fg='white',
              font=font_small).grid(row=s_row, column=0, sticky="w", padx=2, pady=2);
-    ttk.Entry(settings_controls_frame, textvariable=set_torque_offset_val_var, width=10, font=font_small).grid(
-        row=s_row, column=1, sticky="ew", padx=2, pady=2);
-    ttk.Button(settings_controls_frame, text="Set Offset", style='Small.TButton',
-               command=lambda: send_injector_cmd(f"SET_INJECTOR_TORQUE_OFFSET {set_torque_offset_val_var.get()}")).grid(
-        row=s_row, column=2, padx=(5, 2), pady=2)
+    ttk.Entry(settings_controls_frame, textvariable=variables['set_torque_offset_val_var'], width=10,
+              font=font_small).grid(row=s_row, column=1, sticky="ew", padx=2, pady=2);
+    ttk.Button(settings_controls_frame, text="Set Offset", style='Small.TButton', command=lambda: send_injector_cmd(
+        f"SET_INJECTOR_TORQUE_OFFSET {variables['set_torque_offset_val_var'].get()}")).grid(row=s_row, column=2,
+                                                                                            padx=(5, 2), pady=2)
 
-    # --- Torque Indicators ---
     torque_bar_frame = tk.LabelFrame(content_frame, text="Injector Torque", bg="#21232b", fg="white", font=font_label)
     torque_bar_frame.pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(10, 0), padx=10)
 
@@ -761,29 +529,16 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     ui_elements['injector_torque_bar3'] = bar_item3
     ui_elements['injector_torque_text3'] = bar_text3
 
-    # --- Initial Calculations ---
     update_ml_per_rev()
     update_inject_time()
     update_purge_time()
 
-    # --- Return Dictionary ---
     final_return_dict = {
         'update_state': update_state,
         'update_feed_buttons': update_feed_button_states,
-        'main_state_var': main_state_var, 'homing_state_var': homing_state_var,
-        'homing_phase_var': homing_phase_var, 'feed_state_var': feed_state_var, 'error_state_var': error_state_var,
-        'machine_steps_var': machine_steps_var, 'cartridge_steps_var': cartridge_steps_var,
-        'enable_disable_var': enable_disable_var, 'enable_disable_pinch_var': enable_disable_pinch_var,
-        'motor_state1_var': motor_state1, 'enabled_state1_var': enabled_state1, 'torque_value1_var': torque_value1,
-        'position_cmd1_var': position_cmd1_var,
-        'motor_state2_var': motor_state2, 'enabled_state2_var': enabled_state2, 'torque_value2_var': torque_value2,
-        'position_cmd2_var': position_cmd2_var,
-        'motor_state3_var': motor_state3, 'enabled_state3_var': enabled_state3, 'torque_value3_var': torque_value3,
-        'position_cmd3_var': position_cmd3_var, 'pinch_homed_var': pinch_homed_var,
-        'inject_dispensed_ml_var': inject_dispensed_ml_var, 'purge_dispensed_ml_var': purge_dispensed_ml_var,
-        'temp_c_var': temp_c_var,
-        'heater_state_var': heater_state_var,
-        'vacuum_state_var': vacuum_state_var,
     }
+    # Add all variables and UI elements to the dictionary to be returned
+    final_return_dict.update(variables)
     final_return_dict.update(ui_elements)
+
     return final_return_dict
