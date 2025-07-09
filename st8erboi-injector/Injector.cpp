@@ -43,6 +43,12 @@ Injector::Injector() {
 	heaterOn = false;
 	vacuumOn = false;
 	temperatureCelsius = 0.0f;
+	vacuumPressurePsig = 0.0f;
+    smoothedVacuumPsig = 0.0f; // <-- NEW: Initialize smoothed value
+    firstVacuumReading = true;   // <-- NEW: Initialize filter flag
+	smoothedTemperatureCelsius = 0.0f; // <-- NEW: Initialize
+	firstTempReading = true;           // <-- NEW: Initialize
+	lastSensorSampleTime = 0;
 
 	machineHomeReferenceSteps = 0;
 	cartridgeHomeReferenceSteps = 0;
@@ -54,9 +60,9 @@ Injector::Injector() {
 	
 	// Initialize PID values
 	pid_setpoint = 0.0f;
-	pid_kp = 22.2f; // Common starting value for 3D printer hotends
-	pid_ki = 1.08f; // Common starting value
-	pid_kd = 114.0f; // Common starting value
+	pid_kp = 60; // Common starting value for 3D printer hotends
+	pid_ki = 2.5; // Common starting value
+	pid_kd = 40; // Common starting value
 	resetPid();
 
 	fullyResetActiveDispenseOperation();
@@ -75,6 +81,7 @@ void Injector::setupPeripherals(void) {
 	PIN_THERMOCOUPLE.Mode(Connector::INPUT_ANALOG);
 	PIN_HEATER_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 	PIN_VACUUM_RELAY.Mode(Connector::OUTPUT_DIGITAL);
+	PIN_VACUUM_TRANSDUCER.Mode(Connector::INPUT_ANALOG);
 
 	// Ensure relays are off at startup
 	PIN_HEATER_RELAY.State(false); // CORRECTED from StateSet
@@ -83,15 +90,90 @@ void Injector::setupPeripherals(void) {
 
 // --- Function to read and convert thermocouple value ---
 void Injector::updateTemperature(void) {
-	// Read the raw 12-bit ADC value (0-4095)
 	uint16_t adc_val = PIN_THERMOCOUPLE.State();
-
-	// Convert ADC value directly to the 0-10V sensor voltage
 	float voltage_from_sensor = (float)adc_val * (TC_V_REF / 4095.0f);
+	
+	// 1. Calculate the raw temperature
+	float raw_celsius = (voltage_from_sensor - TC_V_OFFSET) * TC_GAIN;
 
-	// Convert the sensor voltage to temperature
-	temperatureCelsius = (voltage_from_sensor - TC_V_OFFSET) * TC_GAIN;
+	// 2. Apply the EWMA smoothing filter
+	if (firstTempReading) {
+		smoothedTemperatureCelsius = raw_celsius;
+		firstTempReading = false;
+	} else {
+		smoothedTemperatureCelsius = (EWMA_ALPHA_SENSORS * raw_celsius) + ((1.0f - EWMA_ALPHA_SENSORS) * smoothedTemperatureCelsius);
+	}
+
+	// 3. Store the final smoothed value for telemetry and PID use
+	temperatureCelsius = smoothedTemperatureCelsius;
 }
+
+void Injector::updatePid() {
+    // This function should ONLY run PID logic.
+    // It should not interfere with other heater states.
+    if (heaterState != HEATER_PID_ACTIVE) {
+        // If not in PID mode, ensure output is 0 for telemetry, but DO NOT touch the relay.
+        if (pid_output != 0.0f) {
+            pid_output = 0.0f;
+        }
+        return;
+    }
+
+    uint32_t now = Milliseconds();
+    float time_change_ms = (float)(now - pid_last_time);
+
+    if (time_change_ms < 10.0f) {
+        return;
+    }
+
+    float error = pid_setpoint - temperatureCelsius;
+    pid_integral += error * (time_change_ms / 1000.0f);
+    float derivative = ((error - pid_last_error) * 1000.0f) / time_change_ms;
+    
+    // Compute total output
+    pid_output = (pid_kp * error) + (pid_ki * pid_integral) + (pid_kd * derivative);
+
+    // Clamp output and integral to 0-100% range to prevent wind-up and invalid values
+    if (pid_output > 100.0f) pid_output = 100.0f;
+    if (pid_output < 0.0f) pid_output = 0.0f;
+    if (pid_integral > 100.0f / pid_ki) pid_integral = 100.0f / pid_ki;
+    if (pid_integral < 0.0f) pid_integral = 0.0f;
+
+    pid_last_error = error;
+    pid_last_time = now;
+
+    // Time-proportioned relay control (Software PWM)
+    uint32_t on_duration_ms = (uint32_t)(PID_PWM_PERIOD_MS * (pid_output / 100.0f));
+    PIN_HEATER_RELAY.State((now % PID_PWM_PERIOD_MS) < on_duration_ms);
+}
+
+void Injector::updateVacuum(void) {
+    uint16_t adc_val = PIN_VACUUM_TRANSDUCER.State();
+    float measured_voltage = (float)adc_val * (TC_V_REF / 4095.0f);
+
+    float voltage_span = VAC_V_OUT_MAX - VAC_V_OUT_MIN;
+    float pressure_span = VAC_PRESSURE_MAX - VAC_PRESSURE_MIN;
+    float voltage_percent = (measured_voltage - VAC_V_OUT_MIN) / voltage_span;
+
+    // 1. Calculate the raw pressure from the sensor reading
+    float raw_psig = (voltage_percent * pressure_span) + VAC_PRESSURE_MIN;
+
+    // 2. Apply the EWMA smoothing filter
+    if (firstVacuumReading) {
+        smoothedVacuumPsig = raw_psig;
+        firstVacuumReading = false;
+    } else {
+        smoothedVacuumPsig = (EWMA_ALPHA_SENSORS * raw_psig) + ((1.0f - EWMA_ALPHA_SENSORS) * smoothedVacuumPsig);
+    }
+
+    // 3. Apply the calibration offset and store the final value for telemetry
+    vacuumPressurePsig = smoothedVacuumPsig + VACUUM_PSIG_OFFSET;
+
+    // 4. Clamp the final value to the sensor's absolute limits
+    if (vacuumPressurePsig < VAC_PRESSURE_MIN) vacuumPressurePsig = VAC_PRESSURE_MIN;
+    if (vacuumPressurePsig > VAC_PRESSURE_MAX) vacuumPressurePsig = VAC_PRESSURE_MAX;
+}
+
 
 
 void Injector::onHomingMachineDone(){
@@ -386,7 +468,23 @@ void Injector::updateState() {
 void Injector::loop() {
 	processUdp();
 	updateState();
-	updateTemperature();
+
+    uint32_t now = Milliseconds();
+    if (now - lastPidUpdateTime >= PID_UPDATE_INTERVAL_MS) {
+        lastPidUpdateTime = now;
+        updatePid();
+    }
+
+    if (now - lastGuiTelemetryTime >= 100 && guiDiscovered) {
+        lastGuiTelemetryTime = now;
+        sendGuiTelemetry();
+    }
+
+    if (now - lastSensorSampleTime >= SENSOR_SAMPLE_INTERVAL_MS) {
+        lastSensorSampleTime = now;
+        updateTemperature();
+        updateVacuum();
+    }
 }
 
 Injector injector;

@@ -130,7 +130,7 @@ void Injector::sendGuiTelemetry(void){
 	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "---"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
 	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "---"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
 
-	// --- MODIFIED: Assemble new telemetry packet with PID data ---
+	// --- FIX: Assemble telemetry with simplified heater status ---
 	char msg[512];
 	snprintf(msg, sizeof(msg),
 	"MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
@@ -140,8 +140,8 @@ void Injector::sendGuiTelemetry(void){
 	"machine_mm:%.2f,cartridge_mm:%.2f,"
 	"dispensed_ml:%.2f,target_ml:%.2f,"
 	"peer_disc:%d,peer_ip:%s,"
-	"temp_c:%.1f,vacuum:%d,"
-	"heater_mode:%s,pid_setpoint:%.1f,pid_kp:%.2f,pid_ki:%.2f,pid_kd:%.2f,pid_output:%.1f", // NEW PID fields
+	"temp_c:%.1f,vacuum:%d,vacuum_psig:%.2f,heater_mode:%s," // <-- NEW vacuum_psig field
+	"pid_setpoint:%.1f,pid_kp:%.2f,pid_ki:%.2f,pid_kd:%.2f,pid_output:%.1f",
 	mainStateStr(), homingStateStr(), homingPhaseStr(), feedStateStr(), errorStateStr(),
 	torque0Str, hlfb0_val, (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
 	torque1Str, hlfb1_val, (int)ConnectorM1.StatusReg().bit.Enabled, pos_mm_m1, is_homed1,
@@ -149,8 +149,8 @@ void Injector::sendGuiTelemetry(void){
 	machine_pos_mm, cartridge_pos_mm,
 	current_dispensed_for_telemetry, current_target_for_telemetry,
 	(int)peerDiscovered, peerIp.StringValue(),
-	temperatureCelsius, (int)vacuumOn,
-	heaterStateStr(), pid_setpoint, pid_kp, pid_ki, pid_kd, pid_output);
+	temperatureCelsius, (int)vacuumOn, vacuumPressurePsig, heaterStateStr(), // <-- Pass new variable
+	pid_setpoint, pid_kp, pid_ki, pid_kd, pid_output);
 
 	sendStatus(TELEM_PREFIX_GUI, msg);
 }

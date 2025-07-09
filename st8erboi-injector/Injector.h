@@ -21,6 +21,7 @@
 #define PIN_THERMOCOUPLE ConnectorA12  // Analog input for thermocouple
 #define PIN_HEATER_RELAY ConnectorIO1  // CORRECTED: Digital output for heater relay
 #define PIN_VACUUM_RELAY ConnectorIO0  // CORRECTED: Digital output for vacuum relay
+#define PIN_VACUUM_TRANSDUCER ConnectorA11
 
 // --- Thermocouple Conversion Coefficients (Corrected for 0-10V Range) ---
 #define TC_V_REF 10.0f          // ADC reference voltage is 10V for ClearCore analog inputs.
@@ -30,6 +31,14 @@
 // --- NEW: PID Control Parameters ---
 #define PID_UPDATE_INTERVAL_MS 100 // How often to run the PID calculation
 #define PID_PWM_PERIOD_MS 1000     // Time window for time-proportioned relay control
+#define SENSOR_SAMPLE_INTERVAL_MS 100 // 10Hz sampling for temp/vacuum
+
+// --- NEW: Vacuum Transducer Coefficients ---
+#define VAC_V_OUT_MIN 1.0f      // Sensor voltage at min pressure
+#define VAC_V_OUT_MAX 5.0f      // Sensor voltage at max pressure
+#define VAC_PRESSURE_MIN -14.7f // Min pressure in PSIG
+#define VAC_PRESSURE_MAX 15.0f  // Max pressure in PSIG
+#define VACUUM_PSIG_OFFSET -0.37f
 
 // --- Command Strings & Prefixes ---
 #define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
@@ -82,7 +91,9 @@
 #define STATUS_PREFIX_ERROR "INJ_ERROR: "
 #define STATUS_PREFIX_DISCOVERY "DISCOVERY: "
 
-#define EWMA_ALPHA 0.2f
+#define EWMA_ALPHA_SENSORS 0.5f // For heavily smoothed temp/vacuum
+#define EWMA_ALPHA_TORQUE 0.2f   // For responsive torque readings
+
 #define TORQUE_SENTINEL_INVALID_VALUE -9999.0f
 #define MAX_PACKET_LENGTH 512
 #define LOCAL_PORT 8888
@@ -170,6 +181,12 @@ class Injector {
 	bool heaterOn;
 	bool vacuumOn;
 	float temperatureCelsius;
+	float vacuumPressurePsig; // <-- NEW
+	float smoothedVacuumPsig;
+	bool firstVacuumReading;
+	float smoothedTemperatureCelsius; // <-- NEW
+	bool firstTempReading;            // <-- NEW
+	uint32_t lastSensorSampleTime;
 	
 	// --- NEW: PID state variables ---
 	float pid_setpoint;
@@ -207,6 +224,9 @@ class Injector {
 	// Heater
 	void updatePid(); // NEW
 	void resetPid();  // NEW
+	
+	// Vacuum
+	void updateVacuum();
 
 	// Communication
 	void sendGuiTelemetry(void);

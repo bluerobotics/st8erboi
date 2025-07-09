@@ -65,7 +65,8 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         'temp_c_var': tk.StringVar(value="--- °C"),
         'vacuum_state_var': tk.StringVar(value="Off"),
         'heater_mode_var': tk.StringVar(value="OFF"),
-        'pid_setpoint_var': tk.StringVar(value="0.0"),
+        'vacuum_psig_var': tk.StringVar(value="--- PSIG"),
+        'pid_setpoint_var': tk.StringVar(value="70.0"),
         'pid_kp_var': tk.StringVar(value="22.2"),
         'pid_ki_var': tk.StringVar(value="1.08"),
         'pid_kd_var': tk.StringVar(value="114.0"),
@@ -241,34 +242,55 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     sub_state_display_frame = tk.Frame(left_column_frame, bg="#2a2d3b", bd=1, relief="groove");
     sub_state_display_frame.pack(side=tk.TOP, fill=tk.X, expand=False, pady=(5, 5), ipady=3);
     sub_state_display_frame.grid_columnconfigure(1, weight=1)
+
+    s_row = 0
     tk.Label(sub_state_display_frame, text="Main:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
-        row=0, column=0, padx=(5, 2), pady=1, sticky="e");
+        row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=variables['main_state_var'], bg=sub_state_display_frame['bg'],
-             fg="white", font=font_small).grid(row=0, column=1, padx=(0, 5), pady=1, sticky="w")
+             fg="white", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
+
     tk.Label(sub_state_display_frame, text="Homing:", bg=sub_state_display_frame['bg'], fg="#ccc",
-             font=font_small).grid(row=1, column=0, padx=(5, 2), pady=1, sticky="e");
+             font=font_small).grid(row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=variables['homing_state_var'], bg=sub_state_display_frame['bg'],
-             fg="white", font=font_small).grid(row=1, column=1, padx=(0, 5), pady=1, sticky="w")
+             fg="white", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
+
     tk.Label(sub_state_display_frame, text="H. Phase:", bg=sub_state_display_frame['bg'], fg="#ccc",
-             font=font_small).grid(row=2, column=0, padx=(5, 2), pady=1, sticky="e");
+             font=font_small).grid(row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=variables['homing_phase_var'], bg=sub_state_display_frame['bg'],
-             fg="white", font=font_small).grid(row=2, column=1, padx=(0, 5), pady=1, sticky="w")
+             fg="white", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
+
     tk.Label(sub_state_display_frame, text="Feed:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
-        row=3, column=0, padx=(5, 2), pady=1, sticky="e");
+        row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=variables['feed_state_var'], bg=sub_state_display_frame['bg'],
-             fg="white", font=font_small).grid(row=3, column=1, padx=(0, 5), pady=1, sticky="w")
+             fg="white", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
+
     tk.Label(sub_state_display_frame, text="Error:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
-        row=4, column=0, padx=(5, 2), pady=1, sticky="e");
+        row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=variables['error_state_var'], bg=sub_state_display_frame['bg'],
-             fg="orange red", font=font_small).grid(row=4, column=1, padx=(0, 5), pady=1, sticky="w")
+             fg="orange red", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
+
     tk.Label(sub_state_display_frame, text="Temp:", bg=sub_state_display_frame['bg'], fg="#ccc", font=font_small).grid(
-        row=5, column=0, padx=(5, 2), pady=1, sticky="e");
+        row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=variables['temp_c_var'], bg=sub_state_display_frame['bg'],
-             fg="orange", font=font_small).grid(row=5, column=1, padx=(0, 5), pady=1, sticky="w")
+             fg="orange", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
+
     tk.Label(sub_state_display_frame, text="Heater:", bg=sub_state_display_frame['bg'], fg="#ccc",
-             font=font_small).grid(row=6, column=0, padx=(5, 2), pady=1, sticky="e");
+             font=font_small).grid(row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
     tk.Label(sub_state_display_frame, textvariable=variables['heater_mode_var'], bg=sub_state_display_frame['bg'],
-             fg="lightgreen", font=font_small).grid(row=6, column=1, padx=(0, 5), pady=1, sticky="w")
+             fg="lightgreen", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
+
+    tk.Label(sub_state_display_frame, text="Vacuum:", bg=sub_state_display_frame['bg'], fg="#ccc",
+             font=font_small).grid(row=s_row, column=0, padx=(5, 2), pady=1, sticky="e");
+    tk.Label(sub_state_display_frame, textvariable=variables['vacuum_psig_var'], bg=sub_state_display_frame['bg'],
+             fg="#aaddff", font=font_small).grid(row=s_row, column=1, padx=(0, 5), pady=1, sticky="w");
+    s_row += 1
 
     global_counters_frame = tk.LabelFrame(left_column_frame, text="Position Relative to Home", bg="#2a2d3b",
                                           fg="#aaddff", font=("Segoe UI", 10, "bold"), bd=1, relief="groove", padx=5,

@@ -199,7 +199,7 @@ float Injector::getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, 
 		*smoothedValue = currentRawTorque;
 		*firstRead = false;
 		} else {
-		*smoothedValue = EWMA_ALPHA * currentRawTorque + (1.0f - EWMA_ALPHA) * (*smoothedValue);
+		*smoothedValue = EWMA_ALPHA_TORQUE * currentRawTorque + (1.0f - EWMA_ALPHA_TORQUE) * (*smoothedValue);
 	}
 	float adjusted = *smoothedValue + injectorMotorsTorqueOffset;
 	return adjusted;

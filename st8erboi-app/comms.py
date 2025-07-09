@@ -180,22 +180,20 @@ def parse_injector_telemetry(msg, gui_refs):
         # Environmental and PID
         if 'temp_c_var' in gui_refs:
             gui_refs['temp_c_var'].set(f'{float(parts.get("temp_c", 0.0)):.1f} °C')
+
         if 'vacuum_state_var' in gui_refs:
             gui_refs['vacuum_state_var'].set("On" if parts.get("vacuum", "0") == "1" else "Off")
 
-        # PID Telemetry
+        if 'vacuum_psig_var' in gui_refs:
+            psig_val = float(parts.get("vacuum_psig", 0.0))
+            gui_refs['vacuum_psig_var'].set(f"{psig_val:.2f} PSIG")
+
         if 'heater_mode_var' in gui_refs:
             gui_refs['heater_mode_var'].set(parts.get("heater_mode", "OFF"))
-        if 'pid_setpoint_var' in gui_refs:
-            gui_refs['pid_setpoint_var'].set(parts.get("pid_setpoint", "0.0"))
-        if 'pid_kp_var' in gui_refs:
-            gui_refs['pid_kp_var'].set(parts.get("pid_kp", "0.0"))
-        if 'pid_ki_var' in gui_refs:
-            gui_refs['pid_ki_var'].set(parts.get("pid_ki", "0.0"))
-        if 'pid_kd_var' in gui_refs:
-            gui_refs['pid_kd_var'].set(parts.get("pid_kd", "0.0"))
-        if 'pid_output_var' in gui_refs:
-            gui_refs['pid_output_var'].set(f'{float(parts.get("pid_output", 0.0)):.1f}%')
+
+        if "pid_output" in parts:
+            if 'pid_output_var' in gui_refs:
+                gui_refs['pid_output_var'].set(f'{float(parts.get("pid_output", 0.0)):.1f}%')
 
         if 'peer_status_injector_var' in gui_refs:
             is_peer_discovered = parts.get("peer_disc", "0") == "1"

@@ -421,17 +421,16 @@ void Injector::handlePinchClose(){
 	// Implementation needed
 }
 
-// --- NEW: Handlers for heater and vacuum relays ---
 void Injector::handleHeaterOn() {
-	PIN_HEATER_RELAY.State(true); // CORRECTED from StateSet
-	heaterOn = true;
-	sendStatus(STATUS_PREFIX_INFO, "Heater relay turned ON.");
+    heaterState = HEATER_MANUAL_ON; // Set the correct state
+	PIN_HEATER_RELAY.State(true);
+	sendStatus(STATUS_PREFIX_DONE, "ACK: Heater relay turned ON (Manual).");
 }
 
 void Injector::handleHeaterOff() {
-	PIN_HEATER_RELAY.State(false); // CORRECTED from StateSet
-	heaterOn = false;
-	sendStatus(STATUS_PREFIX_INFO, "Heater relay turned OFF.");
+    heaterState = HEATER_OFF; // Set the correct state
+	PIN_HEATER_RELAY.State(false);
+	sendStatus(STATUS_PREFIX_DONE, "ACK: Heater relay turned OFF.");
 }
 
 void Injector::handleVacuumOn() {
