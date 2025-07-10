@@ -146,6 +146,16 @@ def handle_connection(device_key, source_ip, gui_refs):
 
 # --- Parser Functions ---
 
+def safe_float(s, default_val=0.0):
+    """Safely converts a string to a float, handling empty strings or errors."""
+    if not s:
+        return default_val
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default_val
+
+
 def parse_injector_telemetry(msg, gui_refs):
     global last_fw_main_state_for_gui_update, last_fw_feed_state_for_gui_update
     try:
@@ -160,9 +170,9 @@ def parse_injector_telemetry(msg, gui_refs):
 
         for i in range(3):
             gui_var_index = i + 1
-            torque_str = parts.get(f'torque{i}', '0.0')
+            # Torque is handled as a string here; conversion happens in main.py
             if f'torque_value{gui_var_index}_var' in gui_refs:
-                gui_refs[f'torque_value{gui_var_index}_var'].set(torque_str)
+                gui_refs[f'torque_value{gui_var_index}_var'].set(parts.get(f'torque{i}', '0.0'))
             if f'position_cmd{gui_var_index}_var' in gui_refs: gui_refs[f'position_cmd{gui_var_index}_var'].set(
                 parts.get(f'pos_mm{i}', '0.0'))
             if f'motor_state{gui_var_index}_var' in gui_refs: gui_refs[f'motor_state{gui_var_index}_var'].set(
@@ -174,26 +184,23 @@ def parse_injector_telemetry(msg, gui_refs):
             "Homed" if parts.get("homed2", "0") == "1" else "Not Homed")
         if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("machine_mm", "N/A"))
         if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("cartridge_mm", "N/A"))
-        if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
-            f'{float(parts.get("dispensed_ml", 0.0)):.2f} ml')
 
-        # Environmental and PID
+        # Use safe_float for all float conversions
+        if 'inject_dispensed_ml_var' in gui_refs:
+            gui_refs['inject_dispensed_ml_var'].set(f'{safe_float(parts.get("dispensed_ml")):.2f} ml')
         if 'temp_c_var' in gui_refs:
-            gui_refs['temp_c_var'].set(f'{float(parts.get("temp_c", 0.0)):.1f} °C')
+            gui_refs['temp_c_var'].set(f'{safe_float(parts.get("temp_c")):.1f} °C')
+        if 'vacuum_psig_var' in gui_refs:
+            gui_refs['vacuum_psig_var'].set(f"{safe_float(parts.get('vacuum_psig')):.2f} PSIG")
+        if 'pid_output_var' in gui_refs:
+            gui_refs['pid_output_var'].set(f'{safe_float(parts.get("pid_output")):.1f}%')
 
         if 'vacuum_state_var' in gui_refs:
             gui_refs['vacuum_state_var'].set("On" if parts.get("vacuum", "0") == "1" else "Off")
-
-        if 'vacuum_psig_var' in gui_refs:
-            psig_val = float(parts.get("vacuum_psig", 0.0))
-            gui_refs['vacuum_psig_var'].set(f"{psig_val:.2f} PSIG")
-
+        if 'vacuum_valve_state_var' in gui_refs:
+            gui_refs['vacuum_valve_state_var'].set("On" if parts.get("vac_valve", "0") == "1" else "Off")
         if 'heater_mode_var' in gui_refs:
             gui_refs['heater_mode_var'].set(parts.get("heater_mode", "OFF"))
-
-        if "pid_output" in parts:
-            if 'pid_output_var' in gui_refs:
-                gui_refs['pid_output_var'].set(f'{float(parts.get("pid_output", 0.0)):.1f}%')
 
         if 'peer_status_injector_var' in gui_refs:
             is_peer_discovered = parts.get("peer_disc", "0") == "1"

@@ -2670,21 +2670,22 @@ LOAD c:/program files (x86)/atmel/studio/7.0/toolchain/arm/arm-gnu-toolchain/bin
  .text._ZN8Fillhead16sendGuiTelemetryEv.part.2
                 0x00005890      0x184 fillhead.o
  .text._ZN8FillheadC2Ev
-                0x00005a14       0xc0 fillhead.o
+                0x00005a14       0xbc fillhead.o
                 0x00005a14                Fillhead::Fillhead()
                 0x00005a14                Fillhead::Fillhead()
  .text._ZN8Fillhead5setupEv
-                0x00005ad4       0xbc fillhead.o
-                0x00005ad4                Fillhead::setup()
+                0x00005ad0       0xbc fillhead.o
+                0x00005ad0                Fillhead::setup()
  .text._ZN8Fillhead10sendStatusEPKcS1_
-                0x00005b90       0x5c fillhead.o
-                0x00005b90                Fillhead::sendStatus(char const*, char const*)
+                0x00005b8c       0x5c fillhead.o
+                0x00005b8c                Fillhead::sendStatus(char const*, char const*)
  .text._ZN8Fillhead15handleStartDemoEv
-                0x00005bec      0x11c fillhead.o
-                0x00005bec                Fillhead::handleStartDemo()
+                0x00005be8      0x11c fillhead.o
+                0x00005be8                Fillhead::handleStartDemo()
  .text._ZN8Fillhead13handleMessageEPKc
-                0x00005d08      0x338 fillhead.o
-                0x00005d08                Fillhead::handleMessage(char const*)
+                0x00005d04      0x338 fillhead.o
+                0x00005d04                Fillhead::handleMessage(char const*)
+ *fill*         0x0000603c        0x4 
  .text._ZN8Fillhead6updateEv
                 0x00006040      0x40c fillhead.o
                 0x00006040                Fillhead::update()

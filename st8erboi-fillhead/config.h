@@ -20,7 +20,7 @@
 #define Y_MIN_POS 0.0f
 #define Y_MAX_POS 410.0f
 #define Z_MIN_POS 0.0f
-#define Z_MAX_POS 50.0f
+#define Z_MAX_POS 30.0f
 
 // --- Demo Routine Constants ---
 #define DEMO_CIRCLE_RADIUS 150.0f

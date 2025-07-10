@@ -58,6 +58,8 @@ Injector::Injector() {
 	feedDefaultVelocitySPS = 1000;
 	feedDefaultAccelSPS2 = 10000;
 	
+	vacuumValveOn = false;
+	
 	// Initialize PID values
 	pid_setpoint = 0.0f;
 	pid_kp = 60; // Common starting value for 3D printer hotends
@@ -82,10 +84,12 @@ void Injector::setupPeripherals(void) {
 	PIN_HEATER_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 	PIN_VACUUM_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 	PIN_VACUUM_TRANSDUCER.Mode(Connector::INPUT_ANALOG);
+	PIN_VACUUM_VALVE_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 
 	// Ensure relays are off at startup
 	PIN_HEATER_RELAY.State(false); // CORRECTED from StateSet
 	PIN_VACUUM_RELAY.State(false); // CORRECTED from StateSet
+	PIN_VACUUM_VALVE_RELAY.State(false);
 }
 
 // --- Function to read and convert thermocouple value ---

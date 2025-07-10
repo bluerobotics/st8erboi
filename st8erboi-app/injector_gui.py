@@ -17,12 +17,12 @@ def create_torque_bar(parent, label_text, bar_color):
     label = tk.Label(frame, text=label_text, bg=parent['bg'], fg='white', font=('Segoe UI', 8))
     label.pack(pady=(0, 2))
 
-    canvas = tk.Canvas(frame, width=40, height=120, bg='#1b1e2b', highlightthickness=0)
+    canvas = tk.Canvas(frame, width=40, height=80, bg='#1b1e2b', highlightthickness=0)
     canvas.pack()
 
-    canvas.create_rectangle(10, 10, 30, 110, fill='#333', outline='')
-    bar_item = canvas.create_rectangle(10, 110, 30, 110, fill=bar_color, outline='')
-    text_item = canvas.create_text(20, 60, text="0%", fill='white', font=('Segoe UI', 9, 'bold'))
+    canvas.create_rectangle(10, 10, 30, 70, fill='#333', outline='')
+    bar_item = canvas.create_rectangle(10, 70, 30, 70, fill=bar_color, outline='')
+    text_item = canvas.create_text(20, 40, text="0%", fill='white', font=('Segoe UI', 9, 'bold'))
 
     return frame, canvas, bar_item, text_item
 
@@ -32,13 +32,12 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     notebook.add(injector_tab, text='  Injector  ')
 
     # --- Style and Font Definitions ---
-    font_small = ('Segoe UI', 9)
-    font_label = ('Segoe UI', 9)
-    font_value = ('Segoe UI', 9, 'bold')
-    font_motor_disp = ('Segoe UI', 9)
+    font_small = ('Segoe UI', 8)
+    font_label = ('Segoe UI', 8)
+    font_value = ('Segoe UI', 8, 'bold')
+    font_motor_disp = ('Segoe UI', 8)
 
     # --- Tkinter Variable Definitions ---
-    # This dictionary holds all variables, to be passed to sub-modules
     variables = {
         'main_state_var': tk.StringVar(value="UNKNOWN"),
         'homing_state_var': tk.StringVar(value="---"),
@@ -64,6 +63,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         'pinch_homed_var': tk.StringVar(value="N/A"),
         'temp_c_var': tk.StringVar(value="--- °C"),
         'vacuum_state_var': tk.StringVar(value="Off"),
+        'vacuum_valve_state_var': tk.StringVar(value="Off"),
         'heater_mode_var': tk.StringVar(value="OFF"),
         'vacuum_psig_var': tk.StringVar(value="--- PSIG"),
         'pid_setpoint_var': tk.StringVar(value="70.0"),
@@ -293,23 +293,45 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     s_row += 1
 
     global_counters_frame = tk.LabelFrame(left_column_frame, text="Position Relative to Home", bg="#2a2d3b",
-                                          fg="#aaddff", font=("Segoe UI", 10, "bold"), bd=1, relief="groove", padx=5,
-                                          pady=5);
-    global_counters_frame.pack(side=tk.TOP, fill=tk.X, expand=False, pady=(0, 5), ipady=3);
+                                          fg="#aaddff", font=("Segoe UI", 9, "bold"), bd=1, relief="groove", padx=5,
+                                          pady=5)
+    global_counters_frame.pack(side=tk.TOP, fill=tk.X, expand=False, pady=(0, 5), ipady=3)
     global_counters_frame.grid_columnconfigure(1, weight=1)
     tk.Label(global_counters_frame, text="Machine (mm):", bg=global_counters_frame['bg'], fg="white",
-             font=font_label).grid(row=0, column=0, sticky="e", padx=2, pady=2);
+             font=font_label).grid(row=0, column=0, sticky="e", padx=2, pady=2)
     tk.Label(global_counters_frame, textvariable=variables['machine_steps_var'], bg=global_counters_frame['bg'],
              fg="#00bfff", font=font_value).grid(row=0, column=1, sticky="w", padx=2, pady=2)
     tk.Label(global_counters_frame, text="Cartridge (mm):", bg=global_counters_frame['bg'], fg="white",
-             font=font_label).grid(row=1, column=0, sticky="e", padx=2, pady=2);
+             font=font_label).grid(row=1, column=0, sticky="e", padx=2, pady=2)
     tk.Label(global_counters_frame, textvariable=variables['cartridge_steps_var'], bg=global_counters_frame['bg'],
              fg="yellow", font=font_value).grid(row=1, column=1, sticky="w", padx=2, pady=2)
+
+    torque_bar_frame = tk.LabelFrame(left_column_frame, text="Injector Torque", bg="#2a2d3b", fg="white",
+                                     font=("Segoe UI", 9, "bold"))
+    torque_bar_frame.pack(side=tk.TOP, fill=tk.X, expand=False, pady=(5, 5), padx=0)
+
+    bar_frame1, bar_canvas1, bar_item1, bar_text1 = create_torque_bar(torque_bar_frame, "Motor 0", "#00bfff")
+    bar_frame2, bar_canvas2, bar_item2, bar_text2 = create_torque_bar(torque_bar_frame, "Motor 1", "yellow")
+    bar_frame3, bar_canvas3, bar_item3, bar_text3 = create_torque_bar(torque_bar_frame, "Pinch M2", "#ff8888")
+
+    bar_frame1.pack(side=tk.TOP, expand=True, fill=tk.X, padx=5, pady=(2, 3))
+    bar_frame2.pack(side=tk.TOP, expand=True, fill=tk.X, padx=5, pady=3)
+    bar_frame3.pack(side=tk.TOP, expand=True, fill=tk.X, padx=5, pady=(3, 2))
+
+    ui_elements['injector_torque_canvas1'] = bar_canvas1
+    ui_elements['injector_torque_bar1'] = bar_item1
+    ui_elements['injector_torque_text1'] = bar_text1
+    ui_elements['injector_torque_canvas2'] = bar_canvas2
+    ui_elements['injector_torque_bar2'] = bar_item2
+    ui_elements['injector_torque_text2'] = bar_text2
+    ui_elements['injector_torque_canvas3'] = bar_canvas3
+    ui_elements['injector_torque_bar3'] = bar_item3
+    ui_elements['injector_torque_text3'] = bar_text3
 
     controls_area_frame = tk.Frame(top_content_frame, bg="#21232b");
     controls_area_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     modes_frame = tk.LabelFrame(controls_area_frame, text="Modes", bg="#34374b", fg="#0f8",
-                                font=("Segoe UI", 11, "bold"), bd=2, relief="ridge", padx=5, pady=5);
+                                font=("Segoe UI", 10, "bold"), bd=2, relief="ridge", padx=5, pady=5);
     modes_frame.pack(side=tk.LEFT, fill=tk.Y, expand=False, pady=(0, 0), padx=(0, 5))
     ui_elements['standby_mode_btn'] = ttk.Button(modes_frame, text="Standby", style='Blue.TButton',
                                                  command=lambda: send_injector_cmd("STANDBY_MODE"));
@@ -328,22 +350,22 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     right_of_modes_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     pid_frame = tk.LabelFrame(right_of_modes_area, text="Heater PID Control", bg="#2a2d3b", fg="#aaddff",
-                              font=("Segoe UI", 10, "bold"), padx=10, pady=5)
+                              font=("Segoe UI", 9, "bold"), padx=10, pady=5)
     pid_frame.pack(fill=tk.X, pady=(5, 5))
     pid_frame.grid_columnconfigure((1, 3, 5), weight=1)
 
-    tk.Label(pid_frame, text="Kp:", bg=pid_frame['bg'], fg='white').grid(row=0, column=0, sticky='e')
-    kp_entry = ttk.Entry(pid_frame, textvariable=variables['pid_kp_var'], width=6)
+    tk.Label(pid_frame, text="Kp:", bg=pid_frame['bg'], fg='white', font=font_small).grid(row=0, column=0, sticky='e')
+    kp_entry = ttk.Entry(pid_frame, textvariable=variables['pid_kp_var'], width=6, font=font_small)
     kp_entry.grid(row=0, column=1, sticky='ew', padx=(2, 10))
     ui_elements['pid_kp_entry'] = kp_entry
 
-    tk.Label(pid_frame, text="Ki:", bg=pid_frame['bg'], fg='white').grid(row=0, column=2, sticky='e')
-    ki_entry = ttk.Entry(pid_frame, textvariable=variables['pid_ki_var'], width=6)
+    tk.Label(pid_frame, text="Ki:", bg=pid_frame['bg'], fg='white', font=font_small).grid(row=0, column=2, sticky='e')
+    ki_entry = ttk.Entry(pid_frame, textvariable=variables['pid_ki_var'], width=6, font=font_small)
     ki_entry.grid(row=0, column=3, sticky='ew', padx=(2, 10))
     ui_elements['pid_ki_entry'] = ki_entry
 
-    tk.Label(pid_frame, text="Kd:", bg=pid_frame['bg'], fg='white').grid(row=0, column=4, sticky='e')
-    kd_entry = ttk.Entry(pid_frame, textvariable=variables['pid_kd_var'], width=6)
+    tk.Label(pid_frame, text="Kd:", bg=pid_frame['bg'], fg='white', font=font_small).grid(row=0, column=4, sticky='e')
+    kd_entry = ttk.Entry(pid_frame, textvariable=variables['pid_kd_var'], width=6, font=font_small)
     kd_entry.grid(row=0, column=5, sticky='ew', padx=2)
     ui_elements['pid_kd_entry'] = kd_entry
 
@@ -351,22 +373,23 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         f"SET_HEATER_GAINS {variables['pid_kp_var'].get()} {variables['pid_ki_var'].get()} {variables['pid_kd_var'].get()}")).grid(
         row=0, column=6, padx=5)
 
-    tk.Label(pid_frame, text="Setpoint (°C):", bg=pid_frame['bg'], fg='white').grid(row=1, column=0, columnspan=2,
-                                                                                    sticky='e', pady=(5, 0))
-    setpoint_entry = ttk.Entry(pid_frame, textvariable=variables['pid_setpoint_var'], width=6)
+    tk.Label(pid_frame, text="Setpoint (°C):", bg=pid_frame['bg'], fg='white', font=font_small).grid(row=1, column=0,
+                                                                                                     columnspan=2,
+                                                                                                     sticky='e',
+                                                                                                     pady=(5, 0))
+    setpoint_entry = ttk.Entry(pid_frame, textvariable=variables['pid_setpoint_var'], width=6, font=font_small)
     setpoint_entry.grid(row=1, column=2, columnspan=2, sticky='ew', padx=(2, 10), pady=(5, 0))
     ui_elements['pid_setpoint_entry'] = setpoint_entry
     ttk.Button(pid_frame, text="Set Temp",
                command=lambda: send_injector_cmd(f"SET_HEATER_SETPOINT {variables['pid_setpoint_var'].get()}")).grid(
         row=1, column=4, columnspan=2, padx=5, pady=(5, 0))
 
-    tk.Label(pid_frame, text="PID Output:", bg=pid_frame['bg'], fg='white').grid(row=2, column=0, columnspan=2,
-                                                                                 sticky='e', pady=(5, 0))
-    tk.Label(pid_frame, textvariable=variables['pid_output_var'], bg=pid_frame['bg'], fg='orange').grid(row=2, column=2,
-                                                                                                        columnspan=2,
-                                                                                                        sticky='w',
-                                                                                                        padx=2,
-                                                                                                        pady=(5, 0))
+    tk.Label(pid_frame, text="PID Output:", bg=pid_frame['bg'], fg='white', font=font_small).grid(row=2, column=0,
+                                                                                                  columnspan=2,
+                                                                                                  sticky='e',
+                                                                                                  pady=(5, 0))
+    tk.Label(pid_frame, textvariable=variables['pid_output_var'], bg=pid_frame['bg'], fg='orange',
+             font=font_small).grid(row=2, column=2, columnspan=2, sticky='w', padx=2, pady=(5, 0))
 
     pid_btn_frame = tk.Frame(pid_frame, bg=pid_frame['bg'])
     pid_btn_frame.grid(row=3, column=0, columnspan=7, pady=5)
@@ -380,17 +403,32 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     ttk.Button(pid_btn_frame, text="Manual OFF", command=lambda: send_injector_cmd("HEATER_OFF")).pack(side=tk.LEFT,
                                                                                                        padx=5)
 
-    vac_frame = tk.LabelFrame(right_of_modes_area, text="Vacuum Control", bg="#2a2d3b", fg="#aaddff",
-                              font=("Segoe UI", 10, "bold"), padx=10, pady=5)
+    vac_frame = tk.LabelFrame(right_of_modes_area, text="Vacuum Pump Control", bg="#2a2d3b", fg="#aaddff",
+                              font=("Segoe UI", 9, "bold"), padx=10, pady=5)
     vac_frame.pack(fill=tk.X, pady=5)
-    tk.Label(vac_frame, text="Vacuum Pump:", bg=vac_frame['bg'], fg='white').pack(side=tk.LEFT)
+    tk.Label(vac_frame, text="Vacuum Pump:", bg=vac_frame['bg'], fg='white', font=font_small).pack(side=tk.LEFT)
     ttk.Button(vac_frame, text="ON", style="Green.TButton", command=lambda: send_injector_cmd("VACUUM_ON")).pack(
         side=tk.LEFT, padx=5)
     ttk.Button(vac_frame, text="OFF", style="Red.TButton", command=lambda: send_injector_cmd("VACUUM_OFF")).pack(
         side=tk.LEFT, padx=5)
-    tk.Label(vac_frame, text="Status:", bg=vac_frame['bg'], fg='white').pack(side=tk.LEFT, padx=(20, 5))
-    tk.Label(vac_frame, textvariable=variables['vacuum_state_var'], bg=vac_frame['bg'], fg='lightgreen').pack(
+    tk.Label(vac_frame, text="Status:", bg=vac_frame['bg'], fg='white', font=font_small).pack(side=tk.LEFT,
+                                                                                              padx=(20, 5))
+    tk.Label(vac_frame, textvariable=variables['vacuum_state_var'], bg=vac_frame['bg'], fg='lightgreen',
+             font=font_small).pack(side=tk.LEFT)
+
+    vac_valve_frame = tk.LabelFrame(right_of_modes_area, text="Vacuum Valve Control", bg="#2a2d3b", fg="#aaddff",
+                                    font=("Segoe UI", 9, "bold"), padx=10, pady=5)
+    vac_valve_frame.pack(fill=tk.X, pady=(0, 5))
+    tk.Label(vac_valve_frame, text="Vacuum Valve:", bg=vac_valve_frame['bg'], fg='white', font=font_small).pack(
         side=tk.LEFT)
+    ttk.Button(vac_valve_frame, text="ON", style="Green.TButton",
+               command=lambda: send_injector_cmd("VACUUM_VALVE_ON")).pack(side=tk.LEFT, padx=5)
+    ttk.Button(vac_valve_frame, text="OFF", style="Red.TButton",
+               command=lambda: send_injector_cmd("VACUUM_VALVE_OFF")).pack(side=tk.LEFT, padx=5)
+    tk.Label(vac_valve_frame, text="Status:", bg=vac_valve_frame['bg'], fg='white', font=font_small).pack(side=tk.LEFT,
+                                                                                                          padx=(20, 5))
+    tk.Label(vac_valve_frame, textvariable=variables['vacuum_valve_state_var'], bg=vac_valve_frame['bg'],
+             fg='lightgreen', font=font_small).pack(side=tk.LEFT)
 
     enable_disable_master_frame = tk.Frame(right_of_modes_area, bg="#21232b")
     enable_disable_master_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
@@ -402,9 +440,9 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     pinch_enable_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
     bright_green, dim_green, bright_red, dim_red = "#21ba45", "#198734", "#db2828", "#932020"
     ui_elements['enable_btn'] = tk.Button(injector_enable_frame, text="Enable", fg="white", width=10,
-                                          command=lambda: send_injector_cmd("ENABLE"), font=("Segoe UI", 10, "bold"));
+                                          command=lambda: send_injector_cmd("ENABLE"), font=("Segoe UI", 9, "bold"));
     ui_elements['disable_btn'] = tk.Button(injector_enable_frame, text="Disable", fg="white", width=10,
-                                           command=lambda: send_injector_cmd("DISABLE"), font=("Segoe UI", 10, "bold"))
+                                           command=lambda: send_injector_cmd("DISABLE"), font=("Segoe UI", 9, "bold"))
 
     def update_injector_enable_buttons(*args):
         is_en = variables['enable_disable_var'].get() == "Enabled";
@@ -418,10 +456,10 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     variables['enable_disable_var'].trace_add('write', update_injector_enable_buttons);
     ui_elements['enable_pinch_btn'] = tk.Button(pinch_enable_frame, text="Enable", fg="white", width=10,
                                                 command=lambda: send_injector_cmd("ENABLE_PINCH"),
-                                                font=("Segoe UI", 10, "bold"));
+                                                font=("Segoe UI", 9, "bold"));
     ui_elements['disable_pinch_btn'] = tk.Button(pinch_enable_frame, text="Disable", fg="white", width=10,
                                                  command=lambda: send_injector_cmd("DISABLE_PINCH"),
-                                                 font=("Segoe UI", 10, "bold"))
+                                                 font=("Segoe UI", 9, "bold"))
 
     def update_pinch_enable_buttons(*args):
         is_en = variables['enable_disable_pinch_var'].get() == "Enabled";
@@ -439,7 +477,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     always_on_motor_info_frame = tk.Frame(right_of_modes_area, bg="#21232b");
     always_on_motor_info_frame.pack(side=tk.TOP, fill=tk.X, expand=False, pady=(5, 0))
     m1_display_section = tk.LabelFrame(always_on_motor_info_frame, text="Motor 0 (Injector)", bg="#1b2432",
-                                       fg="#00bfff", font=("Segoe UI", 10, "bold"), bd=1, relief="ridge", padx=5,
+                                       fg="#00bfff", font=("Segoe UI", 9, "bold"), bd=1, relief="ridge", padx=5,
                                        pady=2);
     m1_display_section.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2));
     m1_display_section.grid_columnconfigure(1, weight=1)
@@ -462,7 +500,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     tk.Label(m1_display_section, textvariable=variables['position_cmd1_var'], bg=m1_display_section['bg'], fg="#00bfff",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
     m2_display_section = tk.LabelFrame(always_on_motor_info_frame, text="Motor 1 (Injector)", bg="#2d253a", fg="yellow",
-                                       font=("Segoe UI", 10, "bold"), bd=1, relief="ridge", padx=5, pady=2);
+                                       font=("Segoe UI", 9, "bold"), bd=1, relief="ridge", padx=5, pady=2);
     m2_display_section.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 2));
     m2_display_section.grid_columnconfigure(1, weight=1)
     tk.Label(m2_display_section, text="HLFB:", bg=m2_display_section['bg'], fg="white", font=font_motor_disp).grid(
@@ -484,7 +522,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     tk.Label(m2_display_section, textvariable=variables['position_cmd2_var'], bg=m2_display_section['bg'], fg="yellow",
              font=font_motor_disp).grid(row=3, column=1, sticky="ew", padx=2)
     m3_display_section = tk.LabelFrame(always_on_motor_info_frame, text="Motor 2 (Pinch)", bg="#341c1c", fg="#ff8888",
-                                       font=("Segoe UI", 10, "bold"), bd=1, relief="ridge", padx=5, pady=2);
+                                       font=("Segoe UI", 9, "bold"), bd=1, relief="ridge", padx=5, pady=2);
     m3_display_section.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0));
     m3_display_section.grid_columnconfigure(1, weight=1)
     tk.Label(m3_display_section, text="HLFB:", bg=m3_display_section['bg'], fg="white", font=font_motor_disp).grid(
@@ -518,7 +556,7 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     create_feed_controls(contextual_display_master_frame, send_injector_cmd, ui_elements, variables)
 
     settings_controls_frame = tk.LabelFrame(right_of_modes_area, text="Global Settings", bg="#303030", fg="#DDD",
-                                            font=("Segoe UI", 10, "bold"), bd=2, relief="ridge");
+                                            font=("Segoe UI", 9, "bold"), bd=2, relief="ridge");
     settings_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=(10, 5))
     settings_controls_frame.grid_columnconfigure(1, weight=1);
     s_row = 0
@@ -530,27 +568,6 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         f"SET_INJECTOR_TORQUE_OFFSET {variables['set_torque_offset_val_var'].get()}")).grid(row=s_row, column=2,
                                                                                             padx=(5, 2), pady=2)
 
-    torque_bar_frame = tk.LabelFrame(content_frame, text="Injector Torque", bg="#21232b", fg="white", font=font_label)
-    torque_bar_frame.pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(10, 0), padx=10)
-
-    bar_frame1, bar_canvas1, bar_item1, bar_text1 = create_torque_bar(torque_bar_frame, "Motor 0", "#00bfff")
-    bar_frame2, bar_canvas2, bar_item2, bar_text2 = create_torque_bar(torque_bar_frame, "Motor 1", "yellow")
-    bar_frame3, bar_canvas3, bar_item3, bar_text3 = create_torque_bar(torque_bar_frame, "Pinch M2", "#ff8888")
-
-    bar_frame1.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
-    bar_frame2.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
-    bar_frame3.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
-
-    ui_elements['injector_torque_canvas1'] = bar_canvas1
-    ui_elements['injector_torque_bar1'] = bar_item1
-    ui_elements['injector_torque_text1'] = bar_text1
-    ui_elements['injector_torque_canvas2'] = bar_canvas2
-    ui_elements['injector_torque_bar2'] = bar_item2
-    ui_elements['injector_torque_text2'] = bar_text2
-    ui_elements['injector_torque_canvas3'] = bar_canvas3
-    ui_elements['injector_torque_bar3'] = bar_item3
-    ui_elements['injector_torque_text3'] = bar_text3
-
     update_ml_per_rev()
     update_inject_time()
     update_purge_time()
@@ -559,7 +576,6 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         'update_state': update_state,
         'update_feed_buttons': update_feed_button_states,
     }
-    # Add all variables and UI elements to the dictionary to be returned
     final_return_dict.update(variables)
     final_return_dict.update(ui_elements)
 

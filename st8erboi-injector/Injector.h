@@ -22,6 +22,7 @@
 #define PIN_HEATER_RELAY ConnectorIO1  // CORRECTED: Digital output for heater relay
 #define PIN_VACUUM_RELAY ConnectorIO0  // CORRECTED: Digital output for vacuum relay
 #define PIN_VACUUM_TRANSDUCER ConnectorA11
+#define PIN_VACUUM_VALVE_RELAY ConnectorIO5
 
 // --- Thermocouple Conversion Coefficients (Corrected for 0-10V Range) ---
 #define TC_V_REF 10.0f          // ADC reference voltage is 10V for ClearCore analog inputs.
@@ -38,7 +39,7 @@
 #define VAC_V_OUT_MAX 5.0f      // Sensor voltage at max pressure
 #define VAC_PRESSURE_MIN -14.7f // Min pressure in PSIG
 #define VAC_PRESSURE_MAX 15.0f  // Max pressure in PSIG
-#define VACUUM_PSIG_OFFSET -0.37f
+#define VACUUM_PSIG_OFFSET 0f
 
 // --- Command Strings & Prefixes ---
 #define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
@@ -75,6 +76,8 @@
 // --- Vacuum controls ---
 #define CMD_STR_VACUUM_ON "VACUUM_ON"
 #define CMD_STR_VACUUM_OFF "VACUUM_OFF"
+#define CMD_STR_VACUUM_VALVE_ON "VACUUM_VALVE_ON"   // <-- NEW
+#define CMD_STR_VACUUM_VALVE_OFF "VACUUM_VALVE_OFF" // <-- NEW
 
 // --- Environmental controls ---
 #define CMD_STR_HEATER_ON "HEATER_ON"
@@ -144,6 +147,8 @@ typedef enum {
 	// --- Vacuum ---
 	CMD_VACUUM_ON,
 	CMD_VACUUM_OFF,
+	CMD_VACUUM_VALVE_ON,   // <-- NEW
+	CMD_VACUUM_VALVE_OFF,  // <-- NEW
 	// --- Heater ---
 	CMD_HEATER_ON,
 	CMD_HEATER_OFF,
@@ -187,6 +192,7 @@ class Injector {
 	float smoothedTemperatureCelsius; // <-- NEW
 	bool firstTempReading;            // <-- NEW
 	uint32_t lastSensorSampleTime;
+	bool vacuumValveOn;
 	
 	// --- NEW: PID state variables ---
 	float pid_setpoint;
@@ -283,6 +289,8 @@ class Injector {
 	// --- Vacuum Handlers ---
 	void handleVacuumOn();
 	void handleVacuumOff();
+	void handleVacuumValveOn();  // <-- NEW
+	void handleVacuumValveOff(); // <-- NEW
 	
 	// --- Heater Handlers ---
 	void handleHeaterOn();

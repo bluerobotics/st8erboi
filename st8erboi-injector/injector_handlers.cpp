@@ -749,3 +749,15 @@ void Injector::handleHeaterPidOff() {
 		sendStatus(STATUS_PREFIX_INFO, "Heater PID control DISABLED.");
 	}
 }
+
+void Injector::handleVacuumValveOn() {
+	PIN_VACUUM_VALVE_RELAY.State(true);
+	vacuumValveOn = true;
+	sendStatus(STATUS_PREFIX_DONE, "ACK: Vacuum Valve Relay ON.");
+}
+
+void Injector::handleVacuumValveOff() {
+	PIN_VACUUM_VALVE_RELAY.State(false);
+	vacuumValveOn = false;
+	sendStatus(STATUS_PREFIX_DONE, "ACK: Vacuum Valve Relay OFF.");
+}

@@ -77,8 +77,6 @@ def main():
     shared_gui_refs.update(peer_comms_widgets)
 
     notebook.pack(expand=True, fill="both", padx=10, pady=5)
-
-    # --- FIX: This line was missing. It packs the bottom frame with the terminal and checkboxes. ---
     shared_widgets['shared_bottom_frame'].pack(fill=tk.X, expand=False, padx=10, pady=(0, 10))
 
     def update_torque_bar(canvas, bar_item, text_item, torque_val):
