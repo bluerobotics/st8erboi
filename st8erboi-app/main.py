@@ -4,18 +4,22 @@ import threading
 import time
 import datetime
 import math
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
+# Matplotlib imports are removed as they are not used in the current implementation
+# import matplotlib.pyplot as plt
+# from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+# import numpy as np
 
 import comms
 from shared_gui import create_shared_widgets
 from injector_gui import create_injector_tab
 from fillhead_gui import create_fillhead_tab
 from peer_comms_gui import create_peer_comms_tab
+from scripting_gui import create_scripting_tab  # Import the new tab
 
 GUI_UPDATE_INTERVAL_MS = 100
-PLOT_UPDATE_INTERVAL_MS = 250
+
+
+# PLOT_UPDATE_INTERVAL_MS = 250 # Plotting is disabled
 
 
 def configure_styles():
@@ -36,6 +40,10 @@ def configure_styles():
     style.map("Red.TButton", background=[('pressed', '#b32424'), ('active', 'red')])
     style.configure("Neutral.TButton", background='#495057', foreground='#f8f9fa', borderwidth=0)
     style.map("Neutral.TButton", background=[('pressed', '#343a40'), ('active', '#5a6268')])
+    # Add a style for the yellow button
+    style.configure("Yellow.TButton", background='#f2c037', foreground='black', font=('Segoe UI', 9, 'bold'),
+                    borderwidth=0)
+    style.map("Yellow.TButton", background=[('pressed', '#d3a92b'), ('active', '#f5c94c')])
 
 
 def main():
@@ -73,25 +81,37 @@ def main():
     fillhead_widgets = create_fillhead_tab(notebook, send_fillhead_cmd, shared_gui_refs)
     shared_gui_refs.update(fillhead_widgets)
 
+    # Create the new scripting tab, passing the shared_gui_refs
+    scripting_widgets = create_scripting_tab(notebook, command_funcs, shared_gui_refs)
+    shared_gui_refs.update(scripting_widgets)
+
     peer_comms_widgets = create_peer_comms_tab(notebook, command_funcs)
     shared_gui_refs.update(peer_comms_widgets)
 
     notebook.pack(expand=True, fill="both", padx=10, pady=5)
     shared_widgets['shared_bottom_frame'].pack(fill=tk.X, expand=False, padx=10, pady=(0, 10))
 
-    def update_torque_bar(canvas, bar_item, text_item, torque_val):
+    def update_torque_bar(canvas, bar_item, text_item, torque_val, max_height=100):
         if not all([canvas, bar_item, text_item]): return
+
+        # Ensure max_height is a positive number to avoid division by zero or negative values
+        if max_height <= 20: max_height = 100
+
         clamped_torque = max(0, min(100, torque_val))
-        bar_height = (clamped_torque / 100.0) * 100
-        y0 = 110 - bar_height
-        canvas.coords(bar_item, 10, y0, 30, 110)
+        bar_height = (clamped_torque / 100.0) * (max_height - 20)  # Use the canvas height
+        y0 = max_height - 10 - bar_height
+        y1 = max_height - 10
+
+        canvas.coords(bar_item, 10, y0, 30, y1)
         canvas.itemconfig(text_item, text=f"{torque_val:.1f}%")
+
+        # Determine color based on torque
         if torque_val > 85:
-            color = '#db2828'
+            color = '#db2828'  # Red
         elif torque_val > 60:
-            color = '#f2c037'
+            color = '#f2c037'  # Yellow
         else:
-            color = '#21ba45'
+            color = '#21ba45'  # Green
         canvas.itemconfig(bar_item, fill=color)
 
     def update_injector_torque_bars():
@@ -99,13 +119,15 @@ def main():
             try:
                 torque_str = shared_gui_refs.get(f'torque_value{i}_var').get()
                 torque_val = float(torque_str)
+                canvas = shared_gui_refs.get(f'injector_torque_canvas{i}')
                 update_torque_bar(
-                    shared_gui_refs.get(f'injector_torque_canvas{i}'),
+                    canvas,
                     shared_gui_refs.get(f'injector_torque_bar{i}'),
                     shared_gui_refs.get(f'injector_torque_text{i}'),
-                    torque_val
+                    torque_val,
+                    max_height=canvas.winfo_height()
                 )
-            except (ValueError, AttributeError, tk.TclError):
+            except (ValueError, AttributeError, tk.TclError, KeyError):
                 continue
 
     def update_fillhead_torque_bars():
@@ -113,51 +135,38 @@ def main():
             try:
                 torque_str = shared_gui_refs.get(f'fh_torque_m{i}_var').get()
                 torque_val = float(torque_str)
+                canvas = shared_gui_refs.get(f'fh_torque_canvas{i}')
                 update_torque_bar(
-                    shared_gui_refs.get(f'fh_torque_canvas{i}'),
+                    canvas,
                     shared_gui_refs.get(f'fh_torque_bar{i}'),
                     shared_gui_refs.get(f'fh_torque_text{i}'),
-                    torque_val
+                    torque_val,
+                    max_height=canvas.winfo_height()
                 )
-            except (ValueError, AttributeError, tk.TclError):
+            except (ValueError, AttributeError, tk.TclError, KeyError):
                 continue
 
-    def update_fillhead_position_plot():
-        canvas = shared_gui_refs.get('fh_pos_viz_canvas')
-        xy_marker = shared_gui_refs.get('fh_xy_marker')
-        z_bar = shared_gui_refs.get('fh_z_bar')
-        if not all([canvas, xy_marker, z_bar]): return
-        try:
-            x_pos = float(shared_gui_refs.get('fh_pos_m0_var').get())
-            y_pos = float(shared_gui_refs.get('fh_pos_m1_var').get())
-            z_pos = float(shared_gui_refs.get('fh_pos_m3_var').get())
-            xy_marker.set_data([x_pos], [y_pos])
-            z_bar.set_height(z_pos)
-            canvas.draw_idle()
-        except (ValueError, tk.TclError):
-            pass
-
     def periodic_gui_updater():
+        # This function runs periodically to update dynamic UI elements
+        # like the torque bars.
         update_injector_torque_bars()
         update_fillhead_torque_bars()
         root.after(GUI_UPDATE_INTERVAL_MS, periodic_gui_updater)
 
-    def periodic_plot_updater():
-        update_fillhead_position_plot()
-        root.after(PLOT_UPDATE_INTERVAL_MS, periodic_plot_updater)
-
     def telemetry_requester_loop():
+        # This function periodically requests new data from the connected devices.
         if comms.devices["injector"]["connected"]:
             comms.send_to_device("injector", "REQUEST_TELEM", shared_gui_refs)
         if comms.devices["fillhead"]["connected"]:
             comms.send_to_device("fillhead", "REQUEST_TELEM", shared_gui_refs)
         root.after(GUI_UPDATE_INTERVAL_MS, telemetry_requester_loop)
 
+    # Start the network communication threads
     threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()
     threading.Thread(target=comms.monitor_connections, args=(shared_gui_refs,), daemon=True).start()
 
+    # Start the periodic GUI update loops
     root.after(250, periodic_gui_updater)
-    root.after(250, periodic_plot_updater)
     root.after(1000, telemetry_requester_loop)
 
     root.mainloop()

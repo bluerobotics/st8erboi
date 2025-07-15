@@ -15,17 +15,8 @@ typedef enum {
 	CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z,
 	CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z,
 	CMD_ENABLE_X, CMD_DISABLE_X, CMD_ENABLE_Y, CMD_DISABLE_Y,
-	CMD_ENABLE_Z, CMD_DISABLE_Z, CMD_START_DEMO
+	CMD_ENABLE_Z, CMD_DISABLE_Z
 } FillheadCommand;
-
-// UPDATED: State machine for the demo routine now includes centering and edge-finding states.
-typedef enum {
-    FH_STATE_IDLE,
-    FH_STATE_DEMO_START,
-    FH_STATE_DEMO_CENTERING,
-    FH_STATE_DEMO_MOVING_TO_EDGE,
-    FH_STATE_DEMO_RUNNING
-} FillheadState;
 
 
 class Fillhead {
@@ -46,10 +37,6 @@ class Fillhead {
 	void handleSetPeerIp(const char* msg);
 	void handleClearPeerIp();
 	void abortAll();
-    void handleStartDemo();
-
-    // State updaters
-    void updateDemoState();
 	
 	FillheadCommand parseCommand(const char* msg);
 
@@ -64,9 +51,6 @@ class Fillhead {
 	Axis xAxis;
 	Axis yAxis;
 	Axis zAxis;
-
-    FillheadState m_fillheadState;
-    float m_demoAngleRad;
 
 	char m_telemetryBuffer[300];
 	unsigned char m_packetBuffer[MAX_PACKET_LENGTH];

@@ -1,0 +1,6 @@
+# Example Script
+# Prefix commands with INJECTOR or FILLHEAD
+
+HOME_X 15 500
+HOME_Y 10 500
+

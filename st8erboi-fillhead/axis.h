@@ -6,90 +6,97 @@
 class Fillhead;
 
 class Axis {
-	public:
-	Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm);
-	void setupMotors();
-	void updateState();
-	void handleMove(const char* args);
-	void handleHome(const char* args);
-	void abort();
-	void enable();
-	void disable();
-	bool isMoving();
-	bool isHomed() { return m_homed; }
-	const char* getStateString();
-	long getPositionSteps() { return m_motor1->PositionRefCommanded(); }
-	float getPositionMm() const { return (float)m_motor1->PositionRefCommanded() / m_stepsPerMm; }
-	float getSmoothedTorque();
-	bool isEnabled();
-	// NEW: A function to initiate a move with raw values instead of a command string.
-	void startMove(float distance_mm, float vel_mms, float accel_mms2, int torque);
+public:
+    // Enum to specify the type of move: absolute or incremental
+    typedef enum {
+        ABSOLUTE,
+        INCREMENTAL
+    } MoveType;
 
-	private:
-	void moveSteps(long steps, int velSps, int accelSps2, int torque);
-	bool checkTorqueLimit(MotorDriver* motor);
-	float getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
-	void sendStatus(const char* statusType, const char* message);
+    Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm);
+    void setupMotors();
+    void updateState();
+    void handleMove(const char* args);
+    void handleHome(const char* args);
+    void abort();
+    void enable();
+    void disable();
+    bool isMoving();
+    bool isHomed() { return m_homed; }
+    const char* getStateString();
+    long getPositionSteps() { return m_motor1->PositionRefCommanded(); }
+    float getPositionMm() const { return (float)m_motor1->PositionRefCommanded() / m_stepsPerMm; }
+    float getSmoothedTorque();
+    bool isEnabled();
+    
+    // UPDATED: A function to initiate a move with absolute or incremental positioning.
+    void startMove(float target_mm, float vel_mms, float accel_mms2, int torque, MoveType moveType);
 
-	Fillhead* m_controller;
-	const char* m_name;
-	MotorDriver* m_motor1;
-	MotorDriver* m_motor2;
+private:
+    void moveSteps(long steps, int velSps, int accelSps2, int torque);
+    bool checkTorqueLimit(MotorDriver* motor);
+    float getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
+    void sendStatus(const char* statusType, const char* message);
 
-	typedef enum {
-		STATE_STANDBY,
-		STATE_STARTING_MOVE,
-		STATE_MOVING,
-		STATE_HOMING
-	} AxisState;
-	AxisState m_state;
+    Fillhead* m_controller;
+    const char* m_name;
+    MotorDriver* m_motor1;
+    MotorDriver* m_motor2;
 
-	uint32_t m_delay_target_ms;
+    typedef enum {
+        STATE_STANDBY,
+        STATE_STARTING_MOVE,
+        STATE_MOVING,
+        STATE_HOMING
+    } AxisState;
+    AxisState m_state;
 
-	typedef enum {
-		DEBIND_START,
-		DEBIND_WAIT_TO_START,
-		DEBIND_MOVING,
-		RAPID_START,
-		RAPID_WAIT_TO_START,
-		RAPID_MOVING,
-		BACKOFF_START,
-		BACKOFF_WAIT_TO_START,
-		BACKOFF_MOVING,
-		TOUCH_START,
-		TOUCH_WAIT_TO_START,
-		TOUCH_MOVING,
-		DESTRESS_DISABLE,
-		AWAIT_DESTRESS_TIMER,
-		DESTRESS_ENABLE,
-		AWAIT_ENABLE_TIMER,
-		SET_ZERO,
-		RETRACT_START,
-		RETRACT_WAIT_TO_START,
-		RETRACT_MOVING,
-		HOMING_NONE
-	} HomingPhase;
-	
-	HomingPhase homingPhase;
+    uint32_t m_delay_target_ms;
 
-	float m_stepsPerMm;
-	bool m_homed;
-	float m_torqueLimit;
-	
-	float m_minPosMm;
-	float m_maxPosMm;
+    typedef enum {
+        DEBIND_START,
+        DEBIND_WAIT_TO_START,
+        DEBIND_MOVING,
+        RAPID_START,
+        RAPID_WAIT_TO_START,
+        RAPID_MOVING,
+        BACKOFF_START,
+        BACKOFF_WAIT_TO_START,
+        BACKOFF_MOVING,
+        TOUCH_START,
+        TOUCH_WAIT_TO_START,
+        TOUCH_MOVING,
+        DESTRESS_DISABLE,
+        AWAIT_DESTRESS_TIMER,
+        DESTRESS_ENABLE,
+        AWAIT_ENABLE_TIMER,
+        SET_ZERO,
+        RETRACT_START,
+        RETRACT_WAIT_TO_START,
+        RETRACT_MOVING,
+        HOMING_NONE
+    } HomingPhase;
+    
+    HomingPhase homingPhase;
 
-	long m_homingDistanceSteps;
-	long m_homingBackoffSteps;
-	long m_finalRetractSteps;
-	int m_homingRapidSps;
-	int m_homingTouchSps;
-	int m_homingTorque;
-	bool m_motor1_hit_rapid;
-	bool m_motor2_hit_rapid;
+    float m_stepsPerMm;
+    bool m_homed;
+    float m_torqueLimit;
+    
+    float m_minPosMm;
+    float m_maxPosMm;
 
-	float m_smoothedTorqueM1;
-	float m_smoothedTorqueM2;
-	bool m_firstTorqueReadM1;
-	bool m_firstTorqueReadM2;
+    long m_homingDistanceSteps;
+    long m_homingBackoffSteps;
+    long m_finalRetractSteps;
+    int m_homingRapidSps;
+    int m_homingTouchSps;
+    int m_homingTorque;
+    bool m_motor1_hit_rapid;
+    bool m_motor2_hit_rapid;
+
+    float m_smoothedTorqueM1;
+    float m_smoothedTorqueM2;
+    bool m_firstTorqueReadM1;
+    bool m_firstTorqueReadM2;
 };

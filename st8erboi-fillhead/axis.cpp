@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm) {
 	m_controller = controller;
@@ -65,14 +66,13 @@ void Axis::moveSteps(long steps, int velSps, int accelSps2, int torque) {
 	}
 }
 
-// NEW: This function contains the core move logic and can be called from anywhere.
-void Axis::startMove(float distance_mm, float vel_mms, float accel_mms2, int torque) {
+void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torque, MoveType moveType) {
 	if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
 		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
 		return;
 	}
 	if (isMoving()) {
-		// Don't send an error here, as the demo routine will call this frequently.
+		// This can be called frequently by routines, so don't flood with errors.
 		// The calling function is responsible for checking this if it's an issue.
 		return;
 	}
@@ -83,17 +83,27 @@ void Axis::startMove(float distance_mm, float vel_mms, float accel_mms2, int tor
 	}
 
 	float currentPosMm = getPositionMm();
-	float targetPosMm = currentPosMm + distance_mm;
+	float finalTargetPosMm;
+	float distanceToMoveMm;
 
-	if (targetPosMm < m_minPosMm || targetPosMm > m_maxPosMm) {
+	if (moveType == ABSOLUTE) {
+		finalTargetPosMm = target_mm;
+		distanceToMoveMm = target_mm - currentPosMm;
+		} else { // INCREMENTAL
+		finalTargetPosMm = currentPosMm + target_mm;
+		distanceToMoveMm = target_mm;
+	}
+
+	// Check if the final position is within the machine's travel limits
+	if (finalTargetPosMm < m_minPosMm || finalTargetPosMm > m_maxPosMm) {
 		char errorMsg[128];
-		snprintf(errorMsg, sizeof(errorMsg), "Move command (%.2fmm) exceeds limits [%.2f, %.2f]. Target: %.2f",
-		distance_mm, m_minPosMm, m_maxPosMm, targetPosMm);
+		snprintf(errorMsg, sizeof(errorMsg), "Move command to %.2fmm exceeds limits [%.2f, %.2f].",
+		finalTargetPosMm, m_minPosMm, m_maxPosMm);
 		sendStatus(STATUS_PREFIX_ERROR, errorMsg);
 		return;
 	}
 
-	long steps = (long)(distance_mm * m_stepsPerMm);
+	long steps = (long)(distanceToMoveMm * m_stepsPerMm);
 	int velocity_sps = (int)fabs(vel_mms * m_stepsPerMm);
 	int accel_sps2 = (int)fabs(accel_mms2 * m_stepsPerMm);
 	
@@ -102,17 +112,35 @@ void Axis::startMove(float distance_mm, float vel_mms, float accel_mms2, int tor
 }
 
 
-// MODIFIED: This function now just parses the string and calls startMove.
 void Axis::handleMove(const char* args) {
-	float distance_mm, vel_mms, accel_mms2;
+	MoveType moveType = ABSOLUTE; // Default to absolute positioning
+	float target_mm, vel_mms, accel_mms2;
 	int torque;
-	if (!args || sscanf(args, "%f %f %f %d", &distance_mm, &vel_mms, &accel_mms2, &torque) != 4) {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format.");
+	char modeStr[5] = {0}; // Increased size for safety
+
+	// Try parsing with a mode string (ABS or INC) first
+	int parsed_count = sscanf(args, "%4s %f %f %f %d", modeStr, &target_mm, &vel_mms, &accel_mms2, &torque);
+
+	if (parsed_count == 5 && (strcmp(modeStr, "ABS") == 0 || strcmp(modeStr, "INC") == 0)) {
+		if (strcmp(modeStr, "INC") == 0) {
+			moveType = INCREMENTAL;
+		}
+		// moveType is already ABSOLUTE by default
+	}
+	// If that fails, try parsing without the mode string, which implies an absolute move
+	else if (sscanf(args, "%f %f %f %d", &target_mm, &vel_mms, &accel_mms2, &torque) == 4) {
+		moveType = ABSOLUTE;
+	}
+	// If both parsing attempts fail
+	else {
+		sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format. Use [ABS|INC] <pos> <vel> <accel> <torque>");
 		return;
 	}
-	
-	sendStatus(STATUS_PREFIX_INFO, "MOVE command received");
-	startMove(distance_mm, vel_mms, accel_mms2, torque);
+
+	char infoMsg[128];
+	snprintf(infoMsg, sizeof(infoMsg), "MOVE %s command received", moveType == ABSOLUTE ? "ABSOLUTE" : "INCREMENTAL");
+	sendStatus(STATUS_PREFIX_INFO, infoMsg);
+	startMove(target_mm, vel_mms, accel_mms2, torque, moveType);
 }
 
 void Axis::handleHome(const char* args) {
@@ -203,7 +231,7 @@ void Axis::updateState() {
 				homingPhase = RAPID_START;
 			}
 			break;
-	
+			
 			case RAPID_START:
 			moveSteps(-m_homingDistanceSteps, m_homingRapidSps, MAX_ACC, m_homingTorque);
 			homingPhase = RAPID_WAIT_TO_START;
@@ -308,10 +336,19 @@ void Axis::updateState() {
 			}
 			break;
 			
-			case RETRACT_START:
-			moveSteps(m_homingBackoffSteps, m_homingRapidSps, MAX_ACC, MAX_TRQ);
-			homingPhase = RETRACT_WAIT_TO_START;
-			break;
+			case RETRACT_START: {
+				long retractSteps;
+				if (strcmp(m_name, "Z") == 0) {
+					// Special case for Z axis: retract a fixed 35mm
+					retractSteps = (long)(35.0f * m_stepsPerMm);
+					} else {
+					// Standard retraction for X and Y axes
+					retractSteps = m_homingBackoffSteps;
+				}
+				moveSteps(retractSteps, m_homingRapidSps, MAX_ACC, MAX_TRQ);
+				homingPhase = RETRACT_WAIT_TO_START;
+				break;
+			}
 			
 			case RETRACT_WAIT_TO_START:
 			if (isMoving()) {

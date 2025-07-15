@@ -19,18 +19,8 @@
 #define X_MAX_POS 400.0f
 #define Y_MIN_POS 0.0f
 #define Y_MAX_POS 410.0f
-#define Z_MIN_POS 0.0f
-#define Z_MAX_POS 30.0f
-
-// --- Demo Routine Constants ---
-#define DEMO_CIRCLE_RADIUS 150.0f
-#define DEMO_Z_MIN_POS 0.0f
-#define DEMO_Z_MAX_POS 40.0f
-#define DEMO_XY_VEL_MMS 50.0f
-#define DEMO_Z_VEL_MMS 40.0f
-#define DEMO_ACCEL_MMSS 100.0f
-#define DEMO_TORQUE 50
-#define DEMO_ANGLE_STEP_RAD 0.05f
+#define Z_MIN_POS -30.0f
+#define Z_MAX_POS 0.0f
 
 // --- Command Definitions ---
 #define CMD_STR_REQUEST_TELEM     "REQUEST_TELEM"
@@ -38,7 +28,6 @@
 #define CMD_STR_SET_PEER_IP       "SET_PEER_IP "
 #define CMD_STR_CLEAR_PEER_IP     "CLEAR_PEER_IP"
 #define CMD_STR_ABORT             "ABORT"
-#define CMD_STR_START_DEMO        "START_DEMO"
 #define CMD_STR_MOVE_X            "MOVE_X "
 #define CMD_STR_MOVE_Y            "MOVE_Y "
 #define CMD_STR_MOVE_Z            "MOVE_Z "
