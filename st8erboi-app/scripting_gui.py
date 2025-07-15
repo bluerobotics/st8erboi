@@ -210,6 +210,42 @@ class ScriptRunner:
     def stop(self):
         self.is_running = False
 
+    def _is_fillhead_busy(self):
+        try:
+            x_state = self.gui_refs['fh_state_x_var'].get()
+            y_state = self.gui_refs['fh_state_y_var'].get()
+            z_state = self.gui_refs['fh_state_z_var'].get()
+            return "Moving" in (x_state, y_state, z_state) or "Homing" in (x_state, y_state, z_state)
+        except (KeyError, tk.TclError):
+            return False
+
+    def _is_injector_busy(self):
+        try:
+            for i in range(1, 4):
+                motor_state_var = self.gui_refs.get(f'motor_state{i}')
+                if motor_state_var and "Busy" in motor_state_var.get():
+                    return True
+        except (KeyError, tk.TclError, AttributeError):
+            return False
+        return False
+
+    def _wait_for_idle(self, devices_to_check, line_num, timeout_s=600):
+        self.status_callback(f"Waiting for move on {', '.join(devices_to_check)}...", line_num)
+        start_time = time.time()
+        while time.time() - start_time < timeout_s:
+            if not self.is_running: return False
+            all_idle = not any(
+                (device == 'FILLHEAD' and self._is_fillhead_busy()) or
+                (device == 'INJECTOR' and self._is_injector_busy())
+                for device in devices_to_check
+            )
+            if all_idle:
+                self.status_callback("Move(s) complete.", line_num)
+                return True
+            time.sleep(0.1)
+        self.status_callback("Error: Timed out waiting for move to complete.", line_num)
+        return False
+
     def _get_default(self, command_name, param_index):
         param_def = COMMANDS[command_name]['params'][param_index]
         param_name = param_def['name']
@@ -242,17 +278,27 @@ class ScriptRunner:
                 if i == len(self.script_lines) - 1: self.status_callback("Idle", -1)
                 continue
 
-            parts = line.split()
-            command_word = parts[0].upper()
-            args = parts[1:]
+            self.status_callback(f"L{line_num}: Processing '{line}'", line_num)
 
-            self.status_callback(f"L{line_num}: Executing '{line}'", line_num)
+            sub_commands = line.split(',')
+            devices_with_motion = set()
 
-            command_info = COMMANDS.get(command_word)
-            if not command_info:
-                self.status_callback(f"Error on L{line_num}: Unknown command '{command_word}'.", line_num)
-                self.is_running = False
-            else:
+            for sub_cmd_str in sub_commands:
+                if not self.is_running: break
+
+                sub_cmd_str = sub_cmd_str.strip()
+                if not sub_cmd_str: continue
+
+                parts = sub_cmd_str.split()
+                command_word = parts[0].upper()
+                args = parts[1:]
+
+                command_info = COMMANDS.get(command_word)
+                if not command_info:
+                    self.status_callback(f"Error on L{line_num}: Unknown command '{command_word}'.", line_num)
+                    self.is_running = False
+                    break
+
                 device = command_info['device']
                 if device == "script":
                     if command_word.startswith("SET_DEFAULT_"):
@@ -281,10 +327,18 @@ class ScriptRunner:
                         send_func(final_command_str)
                         is_motion = "MOVE" in command_word or "HOME" in command_word or "INJECT" in command_word or "PURGE" in command_word
                         if is_motion:
-                            if not self._wait_for_idle({device.upper()}, line_num): self.is_running = False
+                            devices_with_motion.add(device.upper())
                     elif device == 'both':
                         self.command_funcs.get("send_injector")(final_command_str)
                         self.command_funcs.get("send_fillhead")(final_command_str)
+                        devices_with_motion.add("INJECTOR")
+                        devices_with_motion.add("FILLHEAD")
+
+            if not self.is_running: break
+
+            if devices_with_motion:
+                if not self._wait_for_idle(devices_with_motion, line_num):
+                    self.is_running = False
 
             if not self.is_running: break
 
@@ -540,9 +594,29 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
         run_script_from_content(content_from_line, line_offset)
 
     def step_line():
-        content, line_offset = get_current_line_info()
-        if content is not None and content.strip():
-            run_script_from_content(content, line_offset, is_step=True)
+        try:
+            start_line_num = int(last_selection_highlight)
+        except (ValueError, TypeError):
+            start_line_num = 1
+
+        all_lines = script_editor.get("1.0", tk.END).splitlines()
+
+        next_valid_line_num = -1
+        next_valid_line_content = ""
+
+        for i in range(start_line_num - 1, len(all_lines)):
+            line_content = all_lines[i].strip()
+            if line_content and not line_content.startswith('#'):
+                next_valid_line_num = i + 1
+                next_valid_line_content = all_lines[i]
+                break
+
+        if next_valid_line_num != -1:
+            update_selection_highlight(next_valid_line_num)
+            run_script_from_content(next_valid_line_content, next_valid_line_num - 1, is_step=True)
+        else:
+            status_var.set("End of script reached.")
+            on_run_finished()
 
     def stop_script():
         if script_runner: script_runner.stop()
