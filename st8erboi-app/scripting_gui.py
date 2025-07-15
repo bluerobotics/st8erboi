@@ -5,6 +5,59 @@ import threading
 from script_validator import COMMANDS, validate_script
 
 
+# --- Autocomplete Popup ---
+class AutocompletePopup(tk.Toplevel):
+    def __init__(self, parent, text_widget, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.overrideredirect(True)
+        self.text_widget = text_widget
+
+        self.listbox = tk.Listbox(self, bg="#3c3f41", fg="white", selectbackground="#0078d7", exportselection=False)
+        self.listbox.pack(expand=True, fill="both")
+
+        self.listbox.bind("<ButtonRelease-1>", self.on_select)
+        self.listbox.bind("<Return>", self.on_select)
+
+        self.withdraw()
+
+    def show(self, x, y, suggestions):
+        if not suggestions:
+            self.withdraw()
+            return
+
+        self.listbox.delete(0, tk.END)
+        for s in suggestions:
+            self.listbox.insert(tk.END, s)
+
+        self.listbox.config(height=min(len(suggestions), 8))
+        self.geometry(f"+{x}+{y}")
+        self.deiconify()
+        self.lift()
+        self.focus_set()
+        self.listbox.selection_set(0)
+
+    def on_select(self, event=None):
+        if not self.listbox.curselection():
+            self.withdraw()
+            return
+
+        selected = self.listbox.get(self.listbox.curselection())
+        self.text_widget.autocomplete(selected)
+        self.withdraw()
+
+    def on_key(self, event):
+        if event.keysym == "Down":
+            current = self.listbox.curselection()
+            if current and current[0] < self.listbox.size() - 1:
+                self.listbox.selection_clear(0, tk.END)
+                self.listbox.selection_set(current[0] + 1)
+        elif event.keysym == "Up":
+            current = self.listbox.curselection()
+            if current and current[0] > 0:
+                self.listbox.selection_clear(0, tk.END)
+                self.listbox.selection_set(current[0] - 1)
+
+
 # Custom Text Widget with Line Numbers
 class TextLineNumbers(tk.Canvas):
     def __init__(self, *args, **kwargs):
@@ -70,27 +123,70 @@ class TextWithLineNumbers(tk.Frame):
         self.text.bind("<<Change>>", self._on_change)
         self.text.bind("<Configure>", self._on_change)
 
+        self.autocomplete_popup = AutocompletePopup(self, self)
+        self.text.bind("<KeyRelease>", self._on_key_release)
+        self.text.bind("<FocusOut>", lambda e: self.autocomplete_popup.withdraw())
+        self.text.bind("<Escape>", lambda e: self.autocomplete_popup.withdraw())
+        self.autocomplete_popup.bind("<Key>", self.autocomplete_popup.on_key)
+
+    def _on_key_release(self, event):
+        if event.char.isalnum() or event.keysym in ('BackSpace', 'Delete'):
+            self.show_autocomplete()
+
+    def show_autocomplete(self):
+        word_start = self.text.index("insert wordstart")
+        word_end = self.text.index("insert")
+        current_word = self.text.get(word_start, word_end)
+
+        if len(current_word) > 0:
+            suggestions = [cmd for cmd in COMMANDS if cmd.startswith(current_word.upper())]
+            if suggestions:
+                bbox = self.text.bbox(tk.INSERT)
+                if bbox:
+                    x, y, _, _ = bbox
+                    self.autocomplete_popup.show(self.winfo_rootx() + x, self.winfo_rooty() + y + 20, suggestions)
+            else:
+                self.autocomplete_popup.withdraw()
+        else:
+            self.autocomplete_popup.withdraw()
+
+    def autocomplete(self, selected_command):
+        word_start = self.text.index("insert wordstart")
+        word_end = self.text.index("insert")
+
+        self.text.delete(word_start, word_end)
+        self.text.insert(tk.INSERT, selected_command + " ")
+
     def _on_change(self, event):
         self.linenumbers.redraw()
 
-    def get(self, *args, **kwargs): return self.text.get(*args, **kwargs)
+    def get(self, *args, **kwargs):
+        return self.text.get(*args, **kwargs)
 
-    def insert(self, *args, **kwargs): return self.text.insert(*args, **kwargs)
+    def insert(self, *args, **kwargs):
+        return self.text.insert(*args, **kwargs)
 
-    def delete(self, *args, **kwargs): return self.text.delete(*args, **kwargs)
+    def delete(self, *args, **kwargs):
+        return self.text.delete(*args, **kwargs)
 
-    def tag_config(self, *args, **kwargs): return self.text.tag_config(*args, **kwargs)
+    def tag_config(self, *args, **kwargs):
+        return self.text.tag_config(*args, **kwargs)
 
-    def tag_add(self, *args, **kwargs): return self.text.tag_add(*args, **kwargs)
+    def tag_add(self, *args, **kwargs):
+        return self.text.tag_add(*args, **kwargs)
 
-    def tag_remove(self, *args, **kwargs): return self.text.tag_remove(*args, **kwargs)
+    def tag_remove(self, *args, **kwargs):
+        return self.text.tag_remove(*args, **kwargs)
 
-    def index(self, *args, **kwargs): return self.text.index(*args, **kwargs)
+    def index(self, *args, **kwargs):
+        return self.text.index(*args, **kwargs)
 
     @property
-    def edit_reset(self): return self.text.edit_reset
+    def edit_reset(self):
+        return self.text.edit_reset
 
-    def bind(self, *args, **kwargs): self.text.bind(*args, **kwargs)
+    def bind(self, *args, **kwargs):
+        self.text.bind(*args, **kwargs)
 
 
 class ScriptRunner:
@@ -103,11 +199,7 @@ class ScriptRunner:
         self.line_offset = line_offset
         self.is_running = False
         self.thread = None
-        self.default_move_params = {'vel': '50', 'acc': '200', 'torque': '25'}
-        self.default_vacuum_target = -14.0
-        self.default_vacuum_timeout = 60.0
-        self.default_heater_target = 70.0
-        self.default_heater_timeout = 120.0
+        self.runtime_defaults = {}
 
     def start(self):
         if self.is_running: return
@@ -118,76 +210,25 @@ class ScriptRunner:
     def stop(self):
         self.is_running = False
 
-    def _is_fillhead_busy(self):
-        try:
-            x_state = self.gui_refs['fh_state_x_var'].get()
-            y_state = self.gui_refs['fh_state_y_var'].get()
-            z_state = self.gui_refs['fh_state_z_var'].get()
-            return "Moving" in (x_state, y_state, z_state) or "Homing" in (x_state, y_state, z_state)
-        except (KeyError, tk.TclError):
-            return False
+    def _get_default(self, command_name, param_index):
+        param_def = COMMANDS[command_name]['params'][param_index]
+        param_name = param_def['name']
 
-    def _is_injector_busy(self):
-        try:
-            for i in range(1, 4):
-                motor_state_var = self.gui_refs.get(f'motor_state{i}')
-                if motor_state_var and "Busy" in motor_state_var.get():
-                    return True
-        except (KeyError, tk.TclError, AttributeError):
-            return False
-        return False
+        if command_name.startswith("MOVE"):
+            if "Speed" in param_name: return self.runtime_defaults.get("MOVE_VEL") or param_def.get("default")
+            if "Accel" in param_name: return self.runtime_defaults.get("MOVE_ACC") or param_def.get("default")
+            if "Torque" in param_name: return self.runtime_defaults.get("MOVE_TORQUE") or param_def.get("default")
 
-    def _wait_for_idle(self, devices_to_check, line_num, timeout_s=600):
-        self.status_callback(f"Waiting for move on {', '.join(devices_to_check)}...", line_num)
-        start_time = time.time()
-        while time.time() - start_time < timeout_s:
-            if not self.is_running: return False
-            all_idle = not any(
-                (device == 'FILLHEAD' and self._is_fillhead_busy()) or
-                (device == 'INJECTOR' and self._is_injector_busy())
-                for device in devices_to_check
-            )
-            if all_idle:
-                self.status_callback("Move(s) complete.", line_num)
-                return True
-            time.sleep(0.1)
-        self.status_callback("Error: Timed out waiting for move to complete.", line_num)
-        return False
+        if command_name == "WAIT_UNTIL_VACUUM":
+            if "Target-PSI" in param_name: return self.runtime_defaults.get("VACUUM_TARGET") or param_def.get("default")
+            if "Timeout" in param_name: return self.runtime_defaults.get("VACUUM_TIMEOUT") or param_def.get("default")
 
-    def _wait_for_vacuum(self, target_psi, timeout_sec, line_num):
-        start_time = time.time()
-        self.status_callback(f"Waiting for vacuum to reach {target_psi} PSIG...", line_num)
-        while time.time() - start_time < timeout_sec:
-            if not self.is_running: return False
-            try:
-                vac_str = self.gui_refs.get('vacuum_psig_var', tk.StringVar(value='0.0 PSIG')).get()
-                current_psi = float(vac_str.split()[0])
-                if current_psi <= target_psi:
-                    self.status_callback(f"Vacuum target of {target_psi} PSIG reached.", line_num)
-                    return True
-            except (ValueError, IndexError, tk.TclError):
-                pass
-            time.sleep(0.2)
-        self.status_callback(f"Error: Timed out waiting for vacuum target {target_psi} PSIG.", line_num)
-        return False
+        if command_name == "WAIT_UNTIL_HEATER_AT_TEMP":
+            if "Target-Temp" in param_name: return self.runtime_defaults.get("HEATER_TARGET") or param_def.get(
+                "default")
+            if "Timeout" in param_name: return self.runtime_defaults.get("HEATER_TIMEOUT") or param_def.get("default")
 
-    def _wait_for_heater(self, target_temp, timeout_sec, line_num):
-        start_time = time.time()
-        self.status_callback(f"Waiting for heater to reach {target_temp}°C...", line_num)
-        tolerance = 1.0
-        while time.time() - start_time < timeout_sec:
-            if not self.is_running: return False
-            try:
-                temp_str = self.gui_refs.get('temp_c_var', tk.StringVar(value='0.0 °C')).get()
-                current_temp = float(temp_str.split()[0])
-                if abs(current_temp - target_temp) <= tolerance:
-                    self.status_callback(f"Heater target of {target_temp}°C reached.", line_num)
-                    return True
-            except (ValueError, IndexError, tk.TclError):
-                pass
-            time.sleep(0.5)
-        self.status_callback(f"Error: Timed out waiting for heater target {target_temp}°C.", line_num)
-        return False
+        return param_def.get("default")
 
     def _run(self):
         for i, line in enumerate(self.script_lines):
@@ -207,83 +248,43 @@ class ScriptRunner:
 
             self.status_callback(f"L{line_num}: Executing '{line}'", line_num)
 
-            # --- Handle Script-Control Commands ---
-            if command_word.startswith("SET_DEFAULT_"):
-                if len(args) != 1:
-                    self.status_callback(f"Error on L{line_num}: SET_DEFAULT requires 1 argument.", line_num)
-                    self.is_running = False
-                else:
-                    param_map = {
-                        "SET_DEFAULT_MOVE_VEL": (self.default_move_params, 'vel'),
-                        "SET_DEFAULT_MOVE_ACC": (self.default_move_params, 'acc'),
-                        "SET_DEFAULT_MOVE_TORQUE": (self.default_move_params, 'torque'),
-                        "SET_DEFAULT_VACUUM_TARGET": (self, 'default_vacuum_target'),
-                        "SET_DEFAULT_VACUUM_TIMEOUT": (self, 'default_vacuum_timeout'),
-                        "SET_DEFAULT_HEATER_TIMEOUT": (self, 'default_heater_timeout'),
-                    }
-                    if command_word in param_map:
-                        target_obj, key = param_map[command_word]
-                        try:
-                            value = float(args[0])
-                            if isinstance(target_obj, dict):
-                                target_obj[key] = str(value)
-                            else:
-                                setattr(target_obj, key, value)
-                            self.status_callback(f"Set {command_word.replace('SET_DEFAULT_', '')} to {args[0]}",
-                                                 line_num)
-                        except ValueError:
-                            self.status_callback(f"Error on L{line_num}: Invalid number for {command_word}.", line_num)
-                            self.is_running = False
-                    else:
-                        self.status_callback(f"Error on L{line_num}: Unknown SET command.", line_num)
-                        self.is_running = False
-
-            elif command_word == "WAIT":
-                try:
-                    time.sleep(float(args[0]) / 1000.0)
-                except (ValueError, IndexError):
-                    self.status_callback(f"Error on L{line_num}: Invalid WAIT format.", line_num)
-                    self.is_running = False
-
-            elif command_word == "WAIT_UNTIL_VACUUM":
-                try:
-                    target_psi = float(args[0]) if args else self.default_vacuum_target
-                    timeout = float(args[1]) if len(args) > 1 else self.default_vacuum_timeout
-                    if not self._wait_for_vacuum(target_psi, timeout, line_num): self.is_running = False
-                except (ValueError, IndexError):
-                    self.status_callback(f"Error on L{line_num}: Invalid args for {command_word}.", line_num)
-                    self.is_running = False
-
-            elif command_word == "WAIT_UNTIL_HEATER_AT_TEMP":
-                try:
-                    target_temp = float(args[0]) if args else self.default_heater_target
-                    timeout = float(args[1]) if len(args) > 1 else self.default_heater_timeout
-                    if not self._wait_for_heater(target_temp, timeout, line_num): self.is_running = False
-                except (ValueError, IndexError):
-                    self.status_callback(f"Error on L{line_num}: Invalid args for {command_word}.", line_num)
-                    self.is_running = False
-
-            # --- Handle Device Commands ---
+            command_info = COMMANDS.get(command_word)
+            if not command_info:
+                self.status_callback(f"Error on L{line_num}: Unknown command '{command_word}'.", line_num)
+                self.is_running = False
             else:
-                command_info = COMMANDS.get(command_word)
-                if not command_info:
-                    self.status_callback(f"Error on L{line_num}: Unknown command '{command_word}'.", line_num)
-                    self.is_running = False
+                device = command_info['device']
+                if device == "script":
+                    if command_word.startswith("SET_DEFAULT_"):
+                        if len(args) == 1:
+                            key = command_word.replace("SET_DEFAULT_", "")
+                            self.runtime_defaults[key] = args[0]
+                        else:
+                            self.is_running = False
                 else:
-                    device = command_info['device']
-                    send_func = self.command_funcs.get(f"send_{device}") if device in ['injector', 'fillhead'] else None
+                    params_def = command_info['params']
+                    full_args = list(args)
+                    if len(args) < len(params_def):
+                        for j in range(len(args), len(params_def)):
+                            default_val = self._get_default(command_word, j)
+                            if default_val is not None:
+                                full_args.append(str(default_val))
+                            else:
+                                self.status_callback(f"Error: Missing required parameter for {command_word}", line_num)
+                                self.is_running = False
+                                break
+                    if not self.is_running: continue
 
+                    final_command_str = f"{command_word} {' '.join(full_args)}"
+                    send_func = self.command_funcs.get(f"send_{device}") if device in ['injector', 'fillhead'] else None
                     if send_func:
-                        send_func(line)
+                        send_func(final_command_str)
                         is_motion = "MOVE" in command_word or "HOME" in command_word or "INJECT" in command_word or "PURGE" in command_word
                         if is_motion:
                             if not self._wait_for_idle({device.upper()}, line_num): self.is_running = False
                     elif device == 'both':
-                        self.command_funcs.get("send_injector")(line)
-                        self.command_funcs.get("send_fillhead")(line)
-                    else:
-                        self.status_callback(f"Error on L{line_num}: Invalid device '{device}'.", line_num)
-                        self.is_running = False
+                        self.command_funcs.get("send_injector")(final_command_str)
+                        self.command_funcs.get("send_fillhead")(final_command_str)
 
             if not self.is_running: break
 
@@ -342,13 +343,36 @@ def create_command_reference(parent, script_editor_widget):
 
     tree.pack(fill=tk.BOTH, expand=True)
 
-    def add_to_script(event=None):
-        selected_item = tree.focus()
-        if not selected_item: return
-        command = tree.item(selected_item, "text")
-        script_editor_widget.insert(tk.INSERT, f"{command} ")
+    context_menu = tk.Menu(parent, tearoff=0)
 
-    tree.bind("<Double-1>", add_to_script)
+    def get_selected_command():
+        selected_item = tree.focus()
+        if not selected_item: return None
+        return tree.item(selected_item, "text")
+
+    def copy_command():
+        command = get_selected_command()
+        if command:
+            ref_frame.clipboard_clear()
+            ref_frame.clipboard_append(command)
+
+    def add_to_script():
+        command = get_selected_command()
+        if command:
+            script_editor_widget.insert(tk.INSERT, f"{command} ")
+
+    context_menu.add_command(label="Copy Command", command=copy_command)
+    context_menu.add_command(label="Add to Script", command=add_to_script)
+
+    def show_context_menu(event):
+        iid = tree.identify_row(event.y)
+        if iid:
+            tree.selection_set(iid)
+            tree.focus(iid)
+            context_menu.post(event.x_root, event.y_root)
+
+    tree.bind("<Button-3>", show_context_menu)
+    tree.bind("<Double-1>", lambda e: add_to_script())
     return ref_frame
 
 
@@ -545,7 +569,6 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
         script_content = script_editor.get("1.0", tk.END)
         errors = validate_script(script_content)
 
-        # Clear previous error highlights
         script_editor.tag_remove("error_highlight", "1.0", tk.END)
 
         if not errors:
