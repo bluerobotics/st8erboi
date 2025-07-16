@@ -23,6 +23,7 @@ Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDri
 	m_firstTorqueReadM1 = true;
 	m_firstTorqueReadM2 = true;
 	m_torqueLimit = 0.0f;
+	m_activeCommand = nullptr; // FIX: Initialize active command tracker
 }
 
 void Axis::enable() {
@@ -72,8 +73,6 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 		return;
 	}
 	if (isMoving()) {
-		// This can be called frequently by routines, so don't flood with errors.
-		// The calling function is responsible for checking this if it's an issue.
 		return;
 	}
 
@@ -94,7 +93,6 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 		distanceToMoveMm = target_mm;
 	}
 
-	// Check if the final position is within the machine's travel limits
 	if (finalTargetPosMm < m_minPosMm || finalTargetPosMm > m_maxPosMm) {
 		char errorMsg[128];
 		snprintf(errorMsg, sizeof(errorMsg), "Move command to %.2fmm exceeds limits [%.2f, %.2f].",
@@ -113,32 +111,33 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 
 
 void Axis::handleMove(const char* args) {
-	MoveType moveType = ABSOLUTE; // Default to absolute positioning
+	MoveType moveType = ABSOLUTE;
 	float target_mm, vel_mms, accel_mms2;
 	int torque;
-	char modeStr[5] = {0}; // Increased size for safety
+	char modeStr[5] = {0};
 
-	// Try parsing with a mode string (ABS or INC) first
 	int parsed_count = sscanf(args, "%4s %f %f %f %d", modeStr, &target_mm, &vel_mms, &accel_mms2, &torque);
 
 	if (parsed_count == 5 && (strcmp(modeStr, "ABS") == 0 || strcmp(modeStr, "INC") == 0)) {
 		if (strcmp(modeStr, "INC") == 0) {
 			moveType = INCREMENTAL;
 		}
-		// moveType is already ABSOLUTE by default
 	}
-	// If that fails, try parsing without the mode string, which implies an absolute move
 	else if (sscanf(args, "%f %f %f %d", &target_mm, &vel_mms, &accel_mms2, &torque) == 4) {
 		moveType = ABSOLUTE;
 	}
-	// If both parsing attempts fail
 	else {
 		sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format. Use [ABS|INC] <pos> <vel> <accel> <torque>");
 		return;
 	}
 
+	// FIX: Track the active command for the DONE message
+	if (strcmp(m_name, "X") == 0) m_activeCommand = "MOVE_X";
+	else if (strcmp(m_name, "Y") == 0) m_activeCommand = "MOVE_Y";
+	else if (strcmp(m_name, "Z") == 0) m_activeCommand = "MOVE_Z";
+	
 	char infoMsg[128];
-	snprintf(infoMsg, sizeof(infoMsg), "MOVE %s command received", moveType == ABSOLUTE ? "ABSOLUTE" : "INCREMENTAL");
+	snprintf(infoMsg, sizeof(infoMsg), "%s initiated", m_activeCommand);
 	sendStatus(STATUS_PREFIX_INFO, infoMsg);
 	startMove(target_mm, vel_mms, accel_mms2, torque, moveType);
 }
@@ -158,7 +157,15 @@ void Axis::handleHome(const char* args) {
 		sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format.");
 		return;
 	}
-	sendStatus(STATUS_PREFIX_INFO, "HOME command received");
+	
+	// FIX: Track the active command for the DONE message
+	if (strcmp(m_name, "X") == 0) m_activeCommand = "HOME_X";
+	else if (strcmp(m_name, "Y") == 0) m_activeCommand = "HOME_Y";
+	else if (strcmp(m_name, "Z") == 0) m_activeCommand = "HOME_Z";
+
+	char infoMsg[64];
+	snprintf(infoMsg, sizeof(infoMsg), "%s initiated", m_activeCommand);
+	sendStatus(STATUS_PREFIX_INFO, infoMsg);
 
 	m_homed = false;
 	m_state = STATE_HOMING;
@@ -185,7 +192,6 @@ void Axis::updateState() {
 			return;
 		}
 		if (isMoving()){
-			// Don't send status here, it's too noisy for the demo
 			m_state = STATE_MOVING;
 			break;
 		}
@@ -196,15 +202,21 @@ void Axis::updateState() {
 			abort();
 			sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit, entering STANDBY.");
 			m_state = STATE_STANDBY;
+			m_activeCommand = nullptr; // Clear active command on abort
 		}
 		else if (!isMoving()) {
-			// Don't send status here, it's too noisy for the demo
+			// FIX: Send specific DONE message on move completion
+			if (m_activeCommand) {
+				char doneMsg[64];
+				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeCommand);
+				sendStatus(STATUS_PREFIX_DONE, doneMsg);
+				m_activeCommand = nullptr; // Reset after sending
+			}
 			m_state = STATE_STANDBY;
 		}
 		break;
 		
 		case STATE_HOMING:
-		// Homing logic remains unchanged
 		switch (homingPhase) {
 			case DEBIND_START:
 			moveSteps(400, 200, MAX_ACC, MAX_TRQ);
@@ -227,7 +239,7 @@ void Axis::updateState() {
 				homingPhase = HOMING_NONE;
 			}
 			else if (!isMoving()) {
-				sendStatus(STATUS_PREFIX_DONE, "Backoff done, entering TOUCH_START");
+				sendStatus(STATUS_PREFIX_INFO, "Backoff done, entering TOUCH_START");
 				homingPhase = RAPID_START;
 			}
 			break;
@@ -280,7 +292,7 @@ void Axis::updateState() {
 				homingPhase = HOMING_NONE;
 			}
 			else if (!isMoving()) {
-				sendStatus(STATUS_PREFIX_DONE, "Backoff done, entering TOUCH_START");
+				sendStatus(STATUS_PREFIX_INFO, "Backoff done, entering TOUCH_START");
 				homingPhase = TOUCH_START;
 			}
 			break;
@@ -339,10 +351,8 @@ void Axis::updateState() {
 			case RETRACT_START: {
 				long retractSteps;
 				if (strcmp(m_name, "Z") == 0) {
-					// Special case for Z axis: retract a fixed 35mm
 					retractSteps = (long)(35.0f * m_stepsPerMm);
 					} else {
-					// Standard retraction for X and Y axes
 					retractSteps = m_homingBackoffSteps;
 				}
 				moveSteps(retractSteps, m_homingRapidSps, MAX_ACC, MAX_TRQ);
@@ -366,7 +376,7 @@ void Axis::updateState() {
 				homingPhase = HOMING_NONE;
 			}
 			else if (!isMoving()) {
-				sendStatus(STATUS_PREFIX_DONE, "Retract done, entering SET_ZERO");
+				sendStatus(STATUS_PREFIX_INFO, "Retract done, entering SET_ZERO");
 				homingPhase = SET_ZERO;
 			}
 			break;
@@ -374,7 +384,17 @@ void Axis::updateState() {
 			case SET_ZERO:
 			m_motor1->PositionRefSet(0);
 			if(m_motor2) m_motor2->PositionRefSet(0);
-			sendStatus(STATUS_PREFIX_DONE, "Zero set, homing complete, entering STANDBY");
+			
+			// FIX: Send specific DONE message on homing completion
+			if (m_activeCommand) {
+				char doneMsg[64];
+				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeCommand);
+				sendStatus(STATUS_PREFIX_DONE, doneMsg);
+				m_activeCommand = nullptr; // Reset after sending
+				} else {
+				// Fallback for safety
+				sendStatus(STATUS_PREFIX_DONE, "Zero set, homing complete, entering STANDBY");
+			}
 			m_homed = true;
 			homingPhase = HOMING_NONE;
 			m_state = STATE_STANDBY;
@@ -395,6 +415,7 @@ void Axis::updateState() {
 void Axis::abort() {
 	m_motor1->MoveStopAbrupt();
 	if (m_motor2) m_motor2->MoveStopAbrupt();
+	m_activeCommand = nullptr; // Clear active command on abort
 }
 
 bool Axis::isMoving() {
@@ -406,6 +427,7 @@ bool Axis::isMoving() {
 const char* Axis::getStateString() {
 	if (m_state == STATE_HOMING) return "Homing";
 	if (m_state == STATE_MOVING) return "Moving";
+	if (m_state == STATE_STARTING_MOVE) return "Starting";
 	return "Standby";
 }
 

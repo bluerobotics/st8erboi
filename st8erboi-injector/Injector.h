@@ -39,7 +39,7 @@
 #define VAC_V_OUT_MAX 5.0f      // Sensor voltage at max pressure
 #define VAC_PRESSURE_MIN -14.7f // Min pressure in PSIG
 #define VAC_PRESSURE_MAX 15.0f  // Max pressure in PSIG
-#define VACUUM_PSIG_OFFSET 0f
+#define VACUUM_PSIG_OFFSET 0.0f
 
 // --- Command Strings & Prefixes ---
 #define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
@@ -333,6 +333,10 @@ class Injector {
 	float smoothedTorqueValue0, smoothedTorqueValue1, smoothedTorqueValue2;
 	bool firstTorqueReading0, firstTorqueReading1, firstTorqueReading2;
 	int32_t machineHomeReferenceSteps, cartridgeHomeReferenceSteps;
+	
+	// --- NEW: Track active command for DONE messages ---
+	const char* activeFeedCommand;
+	const char* activeJogCommand;
 
 	// Dispense operation variables
 	float active_op_target_ml, active_op_total_dispensed_ml, active_op_steps_per_ml, last_completed_dispense_ml;

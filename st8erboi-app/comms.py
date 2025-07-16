@@ -170,7 +170,6 @@ def parse_injector_telemetry(msg, gui_refs):
 
         for i in range(3):
             gui_var_index = i + 1
-            # Torque is handled as a string here; conversion happens in main.py
             if f'torque_value{gui_var_index}_var' in gui_refs:
                 gui_refs[f'torque_value{gui_var_index}_var'].set(parts.get(f'torque{i}', '0.0'))
             if f'position_cmd{gui_var_index}_var' in gui_refs: gui_refs[f'position_cmd{gui_var_index}_var'].set(
@@ -185,7 +184,6 @@ def parse_injector_telemetry(msg, gui_refs):
         if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("machine_mm", "N/A"))
         if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("cartridge_mm", "N/A"))
 
-        # Use safe_float for all float conversions
         if 'inject_dispensed_ml_var' in gui_refs:
             gui_refs['inject_dispensed_ml_var'].set(f'{safe_float(parts.get("dispensed_ml")):.2f} ml')
         if 'temp_c_var' in gui_refs:
@@ -277,14 +275,15 @@ def recv_loop(gui_refs):
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_fillhead_telemetry(msg, gui_refs)
-            elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "Axis X:", "Axis Y:", "Axis Z:")):
+            # FIX: Added device-specific prefixes to the list of recognized status messages.
+            elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "Axis X:", "Axis Y:", "Axis Z:", "INJ_DONE:", "FH_DONE:", "INJ_INFO:", "FH_INFO:", "INJ_ERROR:", "FH_ERROR:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
                 for key, device in devices.items():
                     if device["ip"] == source_ip:
                         device["last_rx"] = time.time()
                         break
             else:
-                pass
+                log_to_terminal(f"[UNHANDLED @{source_ip}]: {msg}", terminal_cb)
 
         except socket.timeout:
             continue

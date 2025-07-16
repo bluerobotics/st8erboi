@@ -42,7 +42,8 @@ void Fillhead::abortAll() {
 	xAxis.abort();
 	yAxis.abort();
 	zAxis.abort();
-	sendStatus(STATUS_PREFIX_INFO, "ABORT Received. All motion stopped.");
+	// FIX: Send a DONE message for ABORT
+	sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
 void Fillhead::sendStatus(const char* statusType, const char* message) {
@@ -152,12 +153,31 @@ void Fillhead::handleMessage(const char* msg) {
 		case CMD_HOME_Y: yAxis.handleHome(args); break;
 		case CMD_HOME_Z: zAxis.handleHome(args); break;
 		
-		case CMD_ENABLE_X: xAxis.enable(); break;
-		case CMD_DISABLE_X: xAxis.disable(); break;
-		case CMD_ENABLE_Y: yAxis.enable(); break;
-		case CMD_DISABLE_Y: yAxis.disable(); break;
-		case CMD_ENABLE_Z: zAxis.enable(); break;
-		case CMD_DISABLE_Z: zAxis.disable(); break;
+		// FIX: Add DONE messages for instantaneous commands
+		case CMD_ENABLE_X:
+		xAxis.enable();
+		sendStatus(STATUS_PREFIX_DONE, "ENABLE_X complete.");
+		break;
+		case CMD_DISABLE_X:
+		xAxis.disable();
+		sendStatus(STATUS_PREFIX_DONE, "DISABLE_X complete.");
+		break;
+		case CMD_ENABLE_Y:
+		yAxis.enable();
+		sendStatus(STATUS_PREFIX_DONE, "ENABLE_Y complete.");
+		break;
+		case CMD_DISABLE_Y:
+		yAxis.disable();
+		sendStatus(STATUS_PREFIX_DONE, "DISABLE_Y complete.");
+		break;
+		case CMD_ENABLE_Z:
+		zAxis.enable();
+		sendStatus(STATUS_PREFIX_DONE, "ENABLE_Z complete.");
+		break;
+		case CMD_DISABLE_Z:
+		zAxis.disable();
+		sendStatus(STATUS_PREFIX_DONE, "DISABLE_Z complete.");
+		break;
 
 		case CMD_REQUEST_TELEM: sendGuiTelemetry(); break;
 		case CMD_DISCOVER: {

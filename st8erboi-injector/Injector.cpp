@@ -39,15 +39,14 @@ Injector::Injector() {
 	firstTorqueReading2 = true;
 	motorsAreEnabled = false;
 
-	// --- NEW: Initialize new state variables ---
 	heaterOn = false;
 	vacuumOn = false;
 	temperatureCelsius = 0.0f;
 	vacuumPressurePsig = 0.0f;
-    smoothedVacuumPsig = 0.0f; // <-- NEW: Initialize smoothed value
-    firstVacuumReading = true;   // <-- NEW: Initialize filter flag
-	smoothedTemperatureCelsius = 0.0f; // <-- NEW: Initialize
-	firstTempReading = true;           // <-- NEW: Initialize
+	smoothedVacuumPsig = 0.0f;
+	firstVacuumReading = true;
+	smoothedTemperatureCelsius = 0.0f;
+	firstTempReading = true;
 	lastSensorSampleTime = 0;
 
 	machineHomeReferenceSteps = 0;
@@ -60,14 +59,17 @@ Injector::Injector() {
 	
 	vacuumValveOn = false;
 	
-	// Initialize PID values
 	pid_setpoint = 0.0f;
-	pid_kp = 60; // Common starting value for 3D printer hotends
-	pid_ki = 2.5; // Common starting value
-	pid_kd = 40; // Common starting value
+	pid_kp = 60;
+	pid_ki = 2.5;
+	pid_kd = 40;
 	resetPid();
 
 	fullyResetActiveDispenseOperation();
+	
+	// FIX: Initialize new state tracking variables
+	activeFeedCommand = nullptr;
+	activeJogCommand = nullptr;
 }
 
 void Injector::setup() {
@@ -77,105 +79,88 @@ void Injector::setup() {
 	setupPeripherals();
 }
 
-// --- Function to set up non-motor peripherals ---
 void Injector::setupPeripherals(void) {
-	// Set pin modes based on hardware connections
 	PIN_THERMOCOUPLE.Mode(Connector::INPUT_ANALOG);
 	PIN_HEATER_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 	PIN_VACUUM_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 	PIN_VACUUM_TRANSDUCER.Mode(Connector::INPUT_ANALOG);
 	PIN_VACUUM_VALVE_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 
-	// Ensure relays are off at startup
-	PIN_HEATER_RELAY.State(false); // CORRECTED from StateSet
-	PIN_VACUUM_RELAY.State(false); // CORRECTED from StateSet
+	PIN_HEATER_RELAY.State(false);
+	PIN_VACUUM_RELAY.State(false);
 	PIN_VACUUM_VALVE_RELAY.State(false);
 }
 
-// --- Function to read and convert thermocouple value ---
 void Injector::updateTemperature(void) {
 	uint16_t adc_val = PIN_THERMOCOUPLE.State();
 	float voltage_from_sensor = (float)adc_val * (TC_V_REF / 4095.0f);
 	
-	// 1. Calculate the raw temperature
 	float raw_celsius = (voltage_from_sensor - TC_V_OFFSET) * TC_GAIN;
 
-	// 2. Apply the EWMA smoothing filter
 	if (firstTempReading) {
 		smoothedTemperatureCelsius = raw_celsius;
 		firstTempReading = false;
-	} else {
+		} else {
 		smoothedTemperatureCelsius = (EWMA_ALPHA_SENSORS * raw_celsius) + ((1.0f - EWMA_ALPHA_SENSORS) * smoothedTemperatureCelsius);
 	}
 
-	// 3. Store the final smoothed value for telemetry and PID use
 	temperatureCelsius = smoothedTemperatureCelsius;
 }
 
 void Injector::updatePid() {
-    // This function should ONLY run PID logic.
-    // It should not interfere with other heater states.
-    if (heaterState != HEATER_PID_ACTIVE) {
-        // If not in PID mode, ensure output is 0 for telemetry, but DO NOT touch the relay.
-        if (pid_output != 0.0f) {
-            pid_output = 0.0f;
-        }
-        return;
-    }
+	if (heaterState != HEATER_PID_ACTIVE) {
+		if (pid_output != 0.0f) {
+			pid_output = 0.0f;
+		}
+		return;
+	}
 
-    uint32_t now = Milliseconds();
-    float time_change_ms = (float)(now - pid_last_time);
+	uint32_t now = Milliseconds();
+	float time_change_ms = (float)(now - pid_last_time);
 
-    if (time_change_ms < 10.0f) {
-        return;
-    }
+	if (time_change_ms < 10.0f) {
+		return;
+	}
 
-    float error = pid_setpoint - temperatureCelsius;
-    pid_integral += error * (time_change_ms / 1000.0f);
-    float derivative = ((error - pid_last_error) * 1000.0f) / time_change_ms;
-    
-    // Compute total output
-    pid_output = (pid_kp * error) + (pid_ki * pid_integral) + (pid_kd * derivative);
+	float error = pid_setpoint - temperatureCelsius;
+	pid_integral += error * (time_change_ms / 1000.0f);
+	float derivative = ((error - pid_last_error) * 1000.0f) / time_change_ms;
+	
+	pid_output = (pid_kp * error) + (pid_ki * pid_integral) + (pid_kd * derivative);
 
-    // Clamp output and integral to 0-100% range to prevent wind-up and invalid values
-    if (pid_output > 100.0f) pid_output = 100.0f;
-    if (pid_output < 0.0f) pid_output = 0.0f;
-    if (pid_integral > 100.0f / pid_ki) pid_integral = 100.0f / pid_ki;
-    if (pid_integral < 0.0f) pid_integral = 0.0f;
+	if (pid_output > 100.0f) pid_output = 100.0f;
+	if (pid_output < 0.0f) pid_output = 0.0f;
+	if (pid_integral > 100.0f / pid_ki) pid_integral = 100.0f / pid_ki;
+	if (pid_integral < 0.0f) pid_integral = 0.0f;
 
-    pid_last_error = error;
-    pid_last_time = now;
+	pid_last_error = error;
+	pid_last_time = now;
 
-    // Time-proportioned relay control (Software PWM)
-    uint32_t on_duration_ms = (uint32_t)(PID_PWM_PERIOD_MS * (pid_output / 100.0f));
-    PIN_HEATER_RELAY.State((now % PID_PWM_PERIOD_MS) < on_duration_ms);
+	uint32_t on_duration_ms = (uint32_t)(PID_PWM_PERIOD_MS * (pid_output / 100.0f));
+	PIN_HEATER_RELAY.State((now % PID_PWM_PERIOD_MS) < on_duration_ms);
 }
 
 void Injector::updateVacuum(void) {
-    uint16_t adc_val = PIN_VACUUM_TRANSDUCER.State();
-    float measured_voltage = (float)adc_val * (TC_V_REF / 4095.0f);
+	uint16_t adc_val = PIN_VACUUM_TRANSDUCER.State();
+	float measured_voltage = (float)adc_val * (TC_V_REF / 4095.0f);
 
-    float voltage_span = VAC_V_OUT_MAX - VAC_V_OUT_MIN;
-    float pressure_span = VAC_PRESSURE_MAX - VAC_PRESSURE_MIN;
-    float voltage_percent = (measured_voltage - VAC_V_OUT_MIN) / voltage_span;
+	float voltage_span = VAC_V_OUT_MAX - VAC_V_OUT_MIN;
+	float pressure_span = VAC_PRESSURE_MAX - VAC_PRESSURE_MIN;
+	float voltage_percent = (measured_voltage - VAC_V_OUT_MIN) / voltage_span;
 
-    // 1. Calculate the raw pressure from the sensor reading
-    float raw_psig = (voltage_percent * pressure_span) + VAC_PRESSURE_MIN;
+	float raw_psig = (voltage_percent * pressure_span) + VAC_PRESSURE_MIN;
 
-    // 2. Apply the EWMA smoothing filter
-    if (firstVacuumReading) {
-        smoothedVacuumPsig = raw_psig;
-        firstVacuumReading = false;
-    } else {
-        smoothedVacuumPsig = (EWMA_ALPHA_SENSORS * raw_psig) + ((1.0f - EWMA_ALPHA_SENSORS) * smoothedVacuumPsig);
-    }
+	if (firstVacuumReading) {
+		smoothedVacuumPsig = raw_psig;
+		firstVacuumReading = false;
+		} else {
+		smoothedVacuumPsig = (EWMA_ALPHA_SENSORS * raw_psig) + ((1.0f - EWMA_ALPHA_SENSORS) * smoothedVacuumPsig);
+	}
 
-    // 3. Apply the calibration offset and store the final value for telemetry
-    vacuumPressurePsig = smoothedVacuumPsig + VACUUM_PSIG_OFFSET;
+	vacuumPressurePsig = smoothedVacuumPsig + VACUUM_PSIG_OFFSET;
 
-    // 4. Clamp the final value to the sensor's absolute limits
-    if (vacuumPressurePsig < VAC_PRESSURE_MIN) vacuumPressurePsig = VAC_PRESSURE_MIN;
-    if (vacuumPressurePsig > VAC_PRESSURE_MAX) vacuumPressurePsig = VAC_PRESSURE_MAX;
+	if (vacuumPressurePsig < VAC_PRESSURE_MIN) vacuumPressurePsig = VAC_PRESSURE_MIN;
+	if (vacuumPressurePsig > VAC_PRESSURE_MAX) vacuumPressurePsig = VAC_PRESSURE_MAX;
 }
 
 
@@ -211,14 +196,23 @@ void Injector::updateState() {
 	switch (mainState)
 	{
 		case STANDBY_MODE:
-		// No active operations expected here.
 		break;
 
 		case HOMING_MODE: {
-			// This top-level check handles the end-of-sequence for success or error
 			if (currentHomingPhase == HOMING_PHASE_COMPLETE || currentHomingPhase == HOMING_PHASE_ERROR) {
 				if (currentHomingPhase == HOMING_PHASE_COMPLETE) {
-					sendStatus(STATUS_PREFIX_DONE, "Homing sequence complete. Returning to STANDBY_MODE.");
+					// FIX: Send a specific DONE message for the completed homing command
+					char doneMsg[64];
+					const char* commandStr = "UNKNOWN_HOME";
+					if (homingState == HOMING_MACHINE) {
+						commandStr = CMD_STR_MACHINE_HOME_MOVE;
+						} else if (homingState == HOMING_CARTRIDGE) {
+						commandStr = CMD_STR_CARTRIDGE_HOME_MOVE;
+						} else if (homingState == HOMING_PINCH) {
+						commandStr = CMD_STR_PINCH_HOME_MOVE;
+					}
+					snprintf(doneMsg, sizeof(doneMsg), "%s complete.", commandStr);
+					sendStatus(STATUS_PREFIX_DONE, doneMsg);
 					} else {
 					sendStatus(STATUS_PREFIX_ERROR,"Homing sequence ended with error. Returning to STANDBY_MODE.");
 				}
@@ -239,15 +233,12 @@ void Injector::updateState() {
 				}
 			}
 
-			// --- Logic for Machine and Cartridge Homing ---
 			if (homingState == HOMING_MACHINE || homingState == HOMING_CARTRIDGE) {
 				bool is_machine_homing = (homingState == HOMING_MACHINE);
 				int direction = is_machine_homing ? -1 : 1;
 
-				// Use a switch to handle each specific phase of the homing operation
 				switch (currentHomingPhase) {
 					case HOMING_PHASE_IDLE:
-					// Do nothing, waiting for a homing command
 					break;
 					
 					case HOMING_PHASE_STARTING_MOVE: {
@@ -289,7 +280,6 @@ void Injector::updateState() {
 								moveInjectorMotors(retract_s, retract_s, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
 							}
 							} else if (!checkInjectorMoving()) {
-							// If motors stopped but torque limit wasn't hit, it's an error.
 							const char* msg = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? "Machine Homing Err: No torque in RAPID." : "Machine Homing Err: No torque in TOUCH_OFF.";
 							sendStatus(STATUS_PREFIX_ERROR, msg);
 							errorState = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? ERROR_HOMING_NO_TORQUE_RAPID : ERROR_HOMING_NO_TORQUE_TOUCH;
@@ -313,7 +303,7 @@ void Injector::updateState() {
 					case HOMING_PHASE_RETRACT: {
 						if (!checkInjectorMoving()) {
 							const char* msg = is_machine_homing ? "Machine Homing: RETRACT complete. Success." : "Cartridge Homing: RETRACT complete. Success.";
-							sendStatus(STATUS_PREFIX_DONE, msg);
+							sendStatus(STATUS_PREFIX_INFO, msg);
 							if (is_machine_homing) {
 								onHomingMachineDone();
 								} else {
@@ -329,7 +319,6 @@ void Injector::updateState() {
 					break;
 				}
 			}
-			// --- Logic for Pinch Homing ---
 			else if (homingState == HOMING_PINCH) {
 				switch (currentHomingPhase) {
 					case HOMING_PHASE_STARTING_MOVE: {
@@ -347,14 +336,12 @@ void Injector::updateState() {
 					}
 					case HOMING_PHASE_TOUCH_OFF: {
 						if (checkInjectorTorqueLimit()) {
-							// Torque limit was hit, this is success for pinch homing
 							sendStatus(STATUS_PREFIX_INFO, "Pinch Homing: Torque limit reached. Success.");
-							ConnectorM2.PositionRefSet(0); // Zero the position
+							ConnectorM2.PositionRefSet(0);
 							onHomingPinchDone();
 							errorState = ERROR_NONE;
 							currentHomingPhase = HOMING_PHASE_COMPLETE;
 							} else if (!checkInjectorMoving()) {
-							// If motor stopped but torque limit wasn't hit, it's an error.
 							sendStatus(STATUS_PREFIX_ERROR, "Pinch Homing Error: Motor stopped without reaching torque limit.");
 							currentHomingPhase = HOMING_PHASE_ERROR;
 						}
@@ -392,23 +379,26 @@ void Injector::updateState() {
 							}
 							last_completed_dispense_ml = active_op_total_dispensed_ml;
 						}
-						sendStatus(STATUS_PREFIX_DONE, "Feed Op: Inject/Purge segment/operation completed.");
 						feedState = FEED_INJECTION_COMPLETED;
 					}
 					else if (feedState == FEED_MOVING_TO_HOME || feedState == FEED_MOVING_TO_RETRACT) {
-						sendStatus(STATUS_PREFIX_DONE, "Feed Op: Positioning move completed.");
 						feedState = FEED_INJECTION_COMPLETED;
 					}
 					
 					if (feedState == FEED_INJECTION_COMPLETED) {
+						// FIX: Send a specific DONE message for the completed feed command
+						if (activeFeedCommand != nullptr) {
+							char doneMsg[64];
+							snprintf(doneMsg, sizeof(doneMsg), "%s complete.", activeFeedCommand);
+							sendStatus(STATUS_PREFIX_DONE, doneMsg);
+						}
 						feedingDone = true;
 						onFeedingDone();
 						finalizeAndResetActiveDispenseOperation(true);
 						feedState = FEED_STANDBY;
-						sendStatus(STATUS_PREFIX_DONE, "Feed Op: Finalized. Returning to Feed Standby.");
 					}
 				}
-				} else { // Motors are moving
+				} else {
 				if (feedState == FEED_INJECT_STARTING) {
 					feedState = FEED_INJECT_ACTIVE;
 					active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
@@ -456,15 +446,20 @@ void Injector::updateState() {
 			sendStatus(STATUS_PREFIX_INFO, "JOG_MODE: Torque limit, returning to STANDBY.");
 			} else if (!checkInjectorMoving() && !jogDone) {
 			jogDone = true;
+			// FIX: Send a specific DONE message for the completed jog command
+			if (activeJogCommand != nullptr) {
+				char doneMsg[64];
+				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", activeJogCommand);
+				sendStatus(STATUS_PREFIX_DONE, doneMsg);
+				activeJogCommand = nullptr; // Clear after sending
+			}
 		}
 		break;
 
 		case DISABLED_MODE:
-		// Only ENABLE command should change state from here
 		break;
 		
 		default:
-		// This case handles any unhandled enum values (like ..._COUNT) and prevents a compiler warning.
 		break;
 	}
 }
@@ -473,33 +468,30 @@ void Injector::loop() {
 	processUdp();
 	updateState();
 
-    uint32_t now = Milliseconds();
-    if (now - lastPidUpdateTime >= PID_UPDATE_INTERVAL_MS) {
-        lastPidUpdateTime = now;
-        updatePid();
-    }
+	uint32_t now = Milliseconds();
+	if (now - lastPidUpdateTime >= PID_UPDATE_INTERVAL_MS) {
+		lastPidUpdateTime = now;
+		updatePid();
+	}
 
-    if (now - lastGuiTelemetryTime >= 100 && guiDiscovered) {
-        lastGuiTelemetryTime = now;
-        sendGuiTelemetry();
-    }
+	if (now - lastGuiTelemetryTime >= 100 && guiDiscovered) {
+		lastGuiTelemetryTime = now;
+		sendGuiTelemetry();
+	}
 
-    if (now - lastSensorSampleTime >= SENSOR_SAMPLE_INTERVAL_MS) {
-        lastSensorSampleTime = now;
-        updateTemperature();
-        updateVacuum();
-    }
+	if (now - lastSensorSampleTime >= SENSOR_SAMPLE_INTERVAL_MS) {
+		lastSensorSampleTime = now;
+		updateTemperature();
+		updateVacuum();
+	}
 }
 
 Injector injector;
 
 int main(void) {
-	// Perform one-time setup
 	injector.setup();
 
-	// Main non-blocking application loop
 	while (true) {
-		// Just call the main loop handler for our injector object.
 		injector.loop();
 	}
 }
