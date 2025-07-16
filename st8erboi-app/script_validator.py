@@ -29,22 +29,6 @@ COMMANDS = {
         ],
         "help": "Executes a purge move to expel a certain volume of material."
     },
-    "VACUUM_CHECK": {
-        "device": "injector",
-        "params": [
-            {"name": "Max-PSI-Increase", "type": float, "min": 0, "max": 10, "optional": True, "default": 0.1},
-            {"name": "Duration(s)", "type": float, "min": 1, "max": 300, "optional": True, "default": 10}
-        ],
-        "help": "Monitors vacuum for a leak. Fails if pressure increases more than the max allowed over the duration."
-    },
-    "SET_DEFAULT_VACUUM_CHECK": {
-        "device": "injector",
-        "params": [
-            {"name": "Max-PSI-Increase", "type": float, "min": 0, "max": 10},
-            {"name": "Duration(s)", "type": float, "min": 1, "max": 300}
-        ],
-        "help": "Sets the default parameters for future VACUUM_CHECK commands."
-    },
     "SET_HEATER_SETPOINT": {
         "device": "injector",
         "params": [{"name": "Temp(°C)", "type": float, "min": 20, "max": 150}],
@@ -115,16 +99,17 @@ COMMANDS = {
     "DISABLE_PINCH": {"device": "injector", "params": [], "help": "Disables the pinch motor."},
     "HEATER_PID_ON": {"device": "injector", "params": [], "help": "Turns the heater PID controller on."},
     "HEATER_PID_OFF": {"device": "injector", "params": [], "help": "Turns the heater PID controller off."},
-    "VACUUM_ON": {"device": "injector", "params": [], "help": "Turns the vacuum pump on."},
-    "VACUUM_OFF": {"device": "injector", "params": [], "help": "Turns the vacuum pump off."},
-    "VACUUM_VALVE_ON": {"device": "injector", "params": [], "help": "Opens the vacuum valve."},
-    "VACUUM_VALVE_OFF": {"device": "injector", "params": [], "help": "Closes the vacuum valve."},
+    "VACUUM_ON": {"device": "injector", "params": [], "help": "Turns the vacuum pump ON and opens the valve."},
+    "VACUUM_OFF": {"device": "injector", "params": [], "help": "Turns the vacuum pump OFF and closes the valve."},
     "START_DEMO": {"device": "fillhead", "params": [], "help": "Starts the circle demo on the fillhead."},
     "ABORT": {"device": "both", "params": [], "help": "Stops all motion on the target device."},
 
     # --- Script-Control Commands ---
-    "WAIT": {"device": "script", "params": [{"name": "Milliseconds", "type": float, "min": 0, "max": 600000}],
-             "help": "Pauses script execution for a given time in milliseconds."},
+    "VACUUM_CHECK": { "device": "script", "params": [], "help": "Checks for vacuum leak based on set parameters."},
+    "SET_VACUUM_CHECK_PASS_PRESS_DROP": { "device": "script", "params": [{"name": "Max-PSI-Increase", "type": float, "min": 0, "max": 10}], "help": "Sets the max allowed pressure increase for VACUUM_CHECK."},
+    "SET_VACUUM_CHECK_DURATION": { "device": "script", "params": [{"name": "Duration(s)", "type": float, "min": 1, "max": 300}], "help": "Sets the duration for VACUUM_CHECK."},
+    "WAIT_MS": {"device": "script", "params": [{"name": "Milliseconds", "type": float, "min": 0, "max": 600000}], "help": "Pauses script execution for a given time in milliseconds."},
+    "WAIT_S": {"device": "script", "params": [{"name": "Seconds", "type": float, "min": 0, "max": 600}], "help": "Pauses script execution for a given time in seconds."},
     "WAIT_UNTIL_VACUUM": {"device": "script",
                           "params": [{"name": "Target-PSI", "type": float, "min": -14.5, "max": 0, "optional": True},
                                      {"name": "Timeout(s)", "type": float, "min": 1, "max": 600, "optional": True}],

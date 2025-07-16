@@ -363,12 +363,16 @@ void Injector::handleHeaterOff() {
 void Injector::handleVacuumOn() {
 	PIN_VACUUM_RELAY.State(true);
 	vacuumOn = true;
+	PIN_VACUUM_VALVE_RELAY.State(true);
+	vacuumValveOn = true;
 	sendStatus(STATUS_PREFIX_DONE, "VACUUM_ON complete.");
 }
 
 void Injector::handleVacuumOff() {
 	PIN_VACUUM_RELAY.State(false);
 	vacuumOn = false;
+	PIN_VACUUM_VALVE_RELAY.State(false);
+	vacuumValveOn = false;
 	sendStatus(STATUS_PREFIX_DONE, "VACUUM_OFF complete.");
 }
 
@@ -665,16 +669,4 @@ void Injector::handleHeaterPidOff() {
 		PIN_HEATER_RELAY.State(false);
 		sendStatus(STATUS_PREFIX_DONE, "HEATER_PID_OFF complete.");
 	}
-}
-
-void Injector::handleVacuumValveOn() {
-	PIN_VACUUM_VALVE_RELAY.State(true);
-	vacuumValveOn = true;
-	sendStatus(STATUS_PREFIX_DONE, "VACUUM_VALVE_ON complete.");
-}
-
-void Injector::handleVacuumValveOff() {
-	PIN_VACUUM_VALVE_RELAY.State(false);
-	vacuumValveOn = false;
-	sendStatus(STATUS_PREFIX_DONE, "VACUUM_VALVE_OFF complete.");
 }

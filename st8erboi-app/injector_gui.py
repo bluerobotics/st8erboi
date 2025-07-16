@@ -63,7 +63,6 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
         'pinch_homed_var': tk.StringVar(value="N/A"),
         'temp_c_var': tk.StringVar(value="--- °C"),
         'vacuum_state_var': tk.StringVar(value="Off"),
-        'vacuum_valve_state_var': tk.StringVar(value="Off"),
         'heater_mode_var': tk.StringVar(value="OFF"),
         'vacuum_psig_var': tk.StringVar(value="--- PSIG"),
         'pid_setpoint_var': tk.StringVar(value="70.0"),
@@ -403,10 +402,10 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
     ttk.Button(pid_btn_frame, text="Manual OFF", command=lambda: send_injector_cmd("HEATER_OFF")).pack(side=tk.LEFT,
                                                                                                        padx=5)
 
-    vac_frame = tk.LabelFrame(right_of_modes_area, text="Vacuum Pump Control", bg="#2a2d3b", fg="#aaddff",
+    vac_frame = tk.LabelFrame(right_of_modes_area, text="Vacuum Control", bg="#2a2d3b", fg="#aaddff",
                               font=("Segoe UI", 9, "bold"), padx=10, pady=5)
     vac_frame.pack(fill=tk.X, pady=5)
-    tk.Label(vac_frame, text="Vacuum Pump:", bg=vac_frame['bg'], fg='white', font=font_small).pack(side=tk.LEFT)
+    tk.Label(vac_frame, text="Vacuum Pump & Valve:", bg=vac_frame['bg'], fg='white', font=font_small).pack(side=tk.LEFT)
     ttk.Button(vac_frame, text="ON", style="Green.TButton", command=lambda: send_injector_cmd("VACUUM_ON")).pack(
         side=tk.LEFT, padx=5)
     ttk.Button(vac_frame, text="OFF", style="Red.TButton", command=lambda: send_injector_cmd("VACUUM_OFF")).pack(
@@ -415,20 +414,6 @@ def create_injector_tab(notebook, send_injector_cmd, shared_gui_refs):
                                                                                               padx=(20, 5))
     tk.Label(vac_frame, textvariable=variables['vacuum_state_var'], bg=vac_frame['bg'], fg='lightgreen',
              font=font_small).pack(side=tk.LEFT)
-
-    vac_valve_frame = tk.LabelFrame(right_of_modes_area, text="Vacuum Valve Control", bg="#2a2d3b", fg="#aaddff",
-                                    font=("Segoe UI", 9, "bold"), padx=10, pady=5)
-    vac_valve_frame.pack(fill=tk.X, pady=(0, 5))
-    tk.Label(vac_valve_frame, text="Vacuum Valve:", bg=vac_valve_frame['bg'], fg='white', font=font_small).pack(
-        side=tk.LEFT)
-    ttk.Button(vac_valve_frame, text="ON", style="Green.TButton",
-               command=lambda: send_injector_cmd("VACUUM_VALVE_ON")).pack(side=tk.LEFT, padx=5)
-    ttk.Button(vac_valve_frame, text="OFF", style="Red.TButton",
-               command=lambda: send_injector_cmd("VACUUM_VALVE_OFF")).pack(side=tk.LEFT, padx=5)
-    tk.Label(vac_valve_frame, text="Status:", bg=vac_valve_frame['bg'], fg='white', font=font_small).pack(side=tk.LEFT,
-                                                                                                          padx=(20, 5))
-    tk.Label(vac_valve_frame, textvariable=variables['vacuum_valve_state_var'], bg=vac_valve_frame['bg'],
-             fg='lightgreen', font=font_small).pack(side=tk.LEFT)
 
     enable_disable_master_frame = tk.Frame(right_of_modes_area, bg="#21232b")
     enable_disable_master_frame.pack(fill=tk.X, pady=(0, 5), padx=0)

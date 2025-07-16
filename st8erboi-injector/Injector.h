@@ -27,7 +27,7 @@
 // --- Thermocouple Conversion Coefficients (Corrected for 0-10V Range) ---
 #define TC_V_REF 10.0f          // ADC reference voltage is 10V for ClearCore analog inputs.
 #define TC_V_OFFSET 1.25f       // The sensor's voltage at 0 degrees C (from user spec).
-#define TC_GAIN 100.0f          // Gain (e.g., degrees C per Volt).
+#define TC_GAIN 200.0f          // Gain (e.g., degrees C per Volt).
 
 // --- NEW: PID Control Parameters ---
 #define PID_UPDATE_INTERVAL_MS 100 // How often to run the PID calculation
@@ -76,8 +76,6 @@
 // --- Vacuum controls ---
 #define CMD_STR_VACUUM_ON "VACUUM_ON"
 #define CMD_STR_VACUUM_OFF "VACUUM_OFF"
-#define CMD_STR_VACUUM_VALVE_ON "VACUUM_VALVE_ON"   // <-- NEW
-#define CMD_STR_VACUUM_VALVE_OFF "VACUUM_VALVE_OFF" // <-- NEW
 
 // --- Environmental controls ---
 #define CMD_STR_HEATER_ON "HEATER_ON"
@@ -147,8 +145,6 @@ typedef enum {
 	// --- Vacuum ---
 	CMD_VACUUM_ON,
 	CMD_VACUUM_OFF,
-	CMD_VACUUM_VALVE_ON,   // <-- NEW
-	CMD_VACUUM_VALVE_OFF,  // <-- NEW
 	// --- Heater ---
 	CMD_HEATER_ON,
 	CMD_HEATER_OFF,
@@ -289,8 +285,6 @@ class Injector {
 	// --- Vacuum Handlers ---
 	void handleVacuumOn();
 	void handleVacuumOff();
-	void handleVacuumValveOn();  // <-- NEW
-	void handleVacuumValveOff(); // <-- NEW
 	
 	// --- Heater Handlers ---
 	void handleHeaterOn();

@@ -140,7 +140,7 @@ void Injector::sendGuiTelemetry(void){
 	"machine_mm:%.2f,cartridge_mm:%.2f,"
 	"dispensed_ml:%.2f,target_ml:%.2f,"
 	"peer_disc:%d,peer_ip:%s,"
-	"temp_c:%.1f,vacuum:%d,vac_valve:%d,vacuum_psig:%.2f,heater_mode:%s," // <-- NEW vac_valve field
+	"temp_c:%.1f,vacuum:%d,vacuum_psig:%.2f,heater_mode:%s,"
 	"pid_setpoint:%.1f,pid_kp:%.2f,pid_ki:%.2f,pid_kd:%.2f,pid_output:%.1f",
 	mainStateStr(), homingStateStr(), homingPhaseStr(), feedStateStr(), errorStateStr(),
 	torque0Str, hlfb0_val, (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
@@ -149,7 +149,7 @@ void Injector::sendGuiTelemetry(void){
 	machine_pos_mm, cartridge_pos_mm,
 	current_dispensed_for_telemetry, current_target_for_telemetry,
 	(int)peerDiscovered, peerIp.StringValue(),
-	temperatureCelsius, (int)vacuumOn, (int)vacuumValveOn, vacuumPressurePsig, heaterStateStr(), // <-- Pass new variable
+	temperatureCelsius, (int)vacuumOn, vacuumPressurePsig, heaterStateStr(), // <-- Pass new variable
 	pid_setpoint, pid_kp, pid_ki, pid_kd, pid_output);
 
 	sendStatus(TELEM_PREFIX_GUI, msg);
@@ -191,8 +191,6 @@ UserCommand Injector::parseCommand(const char *msg) {
 	if (strncmp(msg, CMD_STR_SET_HEATER_SETPOINT, strlen(CMD_STR_SET_HEATER_SETPOINT)) == 0) return CMD_SET_HEATER_SETPOINT;
 	if (strcmp(msg, CMD_STR_HEATER_PID_ON) == 0) return CMD_HEATER_PID_ON;
 	if (strcmp(msg, CMD_STR_HEATER_PID_OFF) == 0) return CMD_HEATER_PID_OFF;
-	if (strcmp(msg, CMD_STR_VACUUM_VALVE_ON) == 0) return CMD_VACUUM_VALVE_ON;   // <-- NEW
-	if (strcmp(msg, CMD_STR_VACUUM_VALVE_OFF) == 0) return CMD_VACUUM_VALVE_OFF; // <-- NEW
 
 	return CMD_UNKNOWN;
 }
@@ -246,8 +244,6 @@ void Injector::handleMessage(const char *msg) {
 		case CMD_SET_HEATER_SETPOINT:       handleSetHeaterSetpoint(msg); break;
 		case CMD_HEATER_PID_ON:             handleHeaterPidOn(); break;
 		case CMD_HEATER_PID_OFF:            handleHeaterPidOff(); break;
-		case CMD_VACUUM_VALVE_ON:           handleVacuumValveOn(); break; // <-- NEW
-		case CMD_VACUUM_VALVE_OFF:          handleVacuumValveOff(); break;// <-- NEW
 
 		case CMD_UNKNOWN:
 		default:

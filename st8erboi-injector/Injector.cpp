@@ -59,7 +59,7 @@ Injector::Injector() {
 	
 	vacuumValveOn = false;
 	
-	pid_setpoint = 0.0f;
+	pid_setpoint = 70.0f;
 	pid_kp = 60;
 	pid_ki = 2.5;
 	pid_kd = 40;
