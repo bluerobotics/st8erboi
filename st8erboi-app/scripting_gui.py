@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 import queue
 import threading
+import os
 from script_validator import COMMANDS, validate_script
 from script_processor import ScriptRunner
 
@@ -103,6 +104,10 @@ class CustomText(tk.Text):
                 args[0:2] == ("yview", "scroll")
         ):
             self.event_generate("<<Change>>", when="tail")
+
+        if (args[0] in ("insert", "delete", "replace")):
+            self.event_generate("<<Modified>>", when="tail")
+
         return result
 
 
@@ -336,7 +341,6 @@ def create_status_overview(parent, gui_refs):
         'fh_z_homed': tk.StringVar(value='Not Homed'),
         'inj_state': tk.StringVar(value='---'), 'inj_temp': tk.StringVar(value='---'),
         'inj_vac': tk.StringVar(value='---'),
-        'inj_vac_check': tk.StringVar(value='N/A'),
         'inj_heater_status': tk.StringVar(value='OFF'),
         'inj_dispensed_feed': tk.StringVar(value='---'),
         'inj_dispensed_total': tk.StringVar(value='---'),
@@ -393,12 +397,12 @@ def create_status_overview(parent, gui_refs):
                                                                                                             sticky='e',
                                                                                                             padx=5,
                                                                                                             pady=2)
-    vac_check_label = tk.Label(inj_grid_frame, textvariable=vars['inj_vac_check'], bg=card_color,
+    vac_check_label = tk.Label(inj_grid_frame, textvariable=gui_refs['vacuum_check_status_var'], bg=card_color,
                                font=font_status_value)
     vac_check_label.grid(row=2, column=1, sticky='w')
 
     def update_vac_check_color(*args):
-        status = vars['inj_vac_check'].get()
+        status = gui_refs['vacuum_check_status_var'].get()
         color = "white"
         if status == "PASS":
             color = "lightgreen"
@@ -406,7 +410,8 @@ def create_status_overview(parent, gui_refs):
             color = "orange red"
         vac_check_label.config(fg=color)
 
-    vars['inj_vac_check'].trace_add('write', update_vac_check_color)
+    gui_refs['vacuum_check_status_var'].trace_add('write', update_vac_check_color)
+    update_vac_check_color()
 
     tk.Label(inj_grid_frame, text="Dispensed (Feed):", bg=card_color, fg=label_color, font=font_status_label).grid(
         row=3, column=0, sticky='e', padx=5, pady=2)
@@ -426,7 +431,6 @@ def create_status_overview(parent, gui_refs):
             vars['inj_dispensed_feed'].set(gui_refs.get('inject_dispensed_ml_var', tk.StringVar(value='N/A')).get())
             vars['inj_dispensed_total'].set(gui_refs.get('cartridge_steps_var', tk.StringVar(value='N/A')).get())
             vars['inj_heater_status'].set(gui_refs.get('heater_mode_var', tk.StringVar(value='OFF')).get())
-            vars['inj_vac_check'].set(gui_refs.get('vacuum_check_status_var', tk.StringVar(value='N/A')).get())
 
             vars['fh_x_pos'].set(f"{float(gui_refs.get('fh_pos_m0_var', tk.StringVar(value='0.0')).get()):.2f}")
             vars['fh_y_pos'].set(f"{float(gui_refs.get('fh_pos_m1_var', tk.StringVar(value='0.0')).get()):.2f}")
@@ -448,9 +452,13 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
     script_runner = None
     last_exec_highlight = -1
     last_selection_highlight = 1
+    current_filepath = None
 
     message_queue = queue.Queue()
     original_terminal_cb = shared_gui_refs.get('terminal_cb')
+
+    if 'vacuum_check_status_var' not in shared_gui_refs:
+        shared_gui_refs['vacuum_check_status_var'] = tk.StringVar(value='N/A')
 
     def terminal_wrapper(message):
         if "DONE:" in message:
@@ -479,15 +487,30 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
     script_editor.tag_config("error_highlight", background="#552222")
     script_editor.text.tag_lower("selection_highlight", "sel")
     script_editor.insert(tk.END,
-                         "# Example Script (Prefixes are no longer needed!)\n\n# Turn on vacuum and check for leaks\nVACUUM_ON\nWAIT 1000\nVACUUM_CHECK 0.5 10\n\n# Home the Z-axis\nHOME_Z 15 50\n")
+                         "# Example Script\n# Type commands here or load a file.\n")
 
     status_overview_widget = create_status_overview(right_pane, shared_gui_refs)
     status_overview_widget.pack(fill=tk.X, expand=False, pady=(5, 0), padx=5)
     command_ref_widget = create_command_reference(right_pane, script_editor.text)
     command_ref_widget.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
 
+    def update_window_title():
+        root = notebook.winfo_toplevel()
+        filename = "Untitled"
+        if current_filepath:
+            filename = os.path.basename(current_filepath)
+
+        modified_star = "*" if script_editor.text.edit_modified() else ""
+        root.title(f"{filename}{modified_star} - Multi-Device Controller")
+
+    def on_script_modified(event=None):
+        update_window_title()
+
+    script_editor.text.bind("<<Modified>>", on_script_modified)
+
     def set_buttons_state(state):
         for btn in [run_button, run_from_line_button, step_button, stop_button, load_button, save_button,
+                    save_as_button, new_button,
                     validate_button]:
             btn.config(state=state)
 
@@ -530,12 +553,32 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
             status_callback_handler("Error: No line selected.", -1)
             return None, None
 
+    def check_script_validity(show_success=False):
+        script_content = script_editor.get("1.0", tk.END)
+        errors = validate_script(script_content)
+        script_editor.tag_remove("error_highlight", "1.0", tk.END)
+
+        if errors:
+            ValidationResultsWindow(scripting_tab, errors)
+            status_var.set(f"{len(errors)} error(s) found.")
+            for error in errors:
+                line_num = error['line']
+                script_editor.tag_add("error_highlight", f"{line_num}.0", f"{line_num}.end")
+            return False
+        else:
+            if show_success:
+                messagebox.showinfo("Validation Success", "Script is valid!")
+            status_var.set("Validation Successful")
+            return True
+
     def run_full_script():
+        if not check_script_validity(): return
         update_selection_highlight(1)
         script_content = script_editor.get("1.0", tk.END)
         run_script_from_content(script_content)
 
     def run_from_line():
+        if not check_script_validity(): return
         content, line_offset = get_current_line_info()
         if content is None: return
         all_lines = script_editor.get("1.0", tk.END).splitlines()
@@ -543,13 +586,13 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
         run_script_from_content(content_from_line, line_offset)
 
     def step_line():
+        if not check_script_validity(): return
         try:
             start_line_num = int(last_selection_highlight)
         except (ValueError, TypeError):
             start_line_num = 1
 
         all_lines = script_editor.get("1.0", tk.END).splitlines()
-
         next_valid_line_num = -1
         next_valid_line_content = ""
 
@@ -571,38 +614,88 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
         if script_runner: script_runner.stop()
         on_run_finished()
 
-    def load_script():
-        filepath = filedialog.askopenfilename(title="Open Script File",
-                                              filetypes=(("Text files", "*.txt"), ("All files", "*.*")))
-        if not filepath: return
-        with open(filepath, 'r') as f:
-            script_editor.delete('1.0', tk.END);
-            script_editor.insert('1.0', f.read())
-        script_editor.edit_reset();
+    def check_unsaved_changes():
+        if not script_editor.text.edit_modified():
+            return True
+
+        response = messagebox.askyesnocancel(
+            "Unsaved Changes",
+            "You have unsaved changes. Do you want to save them?"
+        )
+
+        if response is True:
+            return save_script()
+        elif response is False:
+            return True
+        else:
+            return False
+
+    def new_script():
+        nonlocal current_filepath
+        if not check_unsaved_changes():
+            return
+        script_editor.delete('1.0', tk.END)
+        script_editor.text.edit_modified(False)
+        current_filepath = None
+        update_window_title()
         update_selection_highlight(1)
 
+    def load_script():
+        nonlocal current_filepath
+        if not check_unsaved_changes():
+            return
+
+        filepath = filedialog.askopenfilename(
+            title="Open Script File",
+            filetypes=(("Text files", "*.txt"), ("All files", "*.*"))
+        )
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, 'r') as f:
+                script_editor.delete('1.0', tk.END)
+                script_editor.insert('1.0', f.read())
+
+            current_filepath = filepath
+            script_editor.text.edit_modified(False)
+            update_window_title()
+            update_selection_highlight(1)
+            status_var.set(f"Loaded {os.path.basename(current_filepath)}")
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Could not load file:\n{e}")
+
     def save_script():
-        filepath = filedialog.asksaveasfilename(title="Save Script As", defaultextension=".txt",
-                                                filetypes=(("Text files", "*.txt"), ("All files", "*.*")))
-        if not filepath: return
-        with open(filepath, 'w') as f: f.write(script_editor.get('1.0', tk.END))
-        status_var.set(f"Saved to {filepath.split('/')[-1]}")
+        nonlocal current_filepath
+        if current_filepath:
+            try:
+                with open(current_filepath, 'w') as f:
+                    f.write(script_editor.get('1.0', tk.END))
+                script_editor.text.edit_modified(False)
+                update_window_title()
+                status_var.set(f"Saved to {os.path.basename(current_filepath)}")
+                return True
+            except Exception as e:
+                messagebox.showerror("Save Error", f"Could not save file:\n{e}")
+                return False
+        else:
+            return save_script_as()
+
+    def save_script_as():
+        nonlocal current_filepath
+        filepath = filedialog.asksaveasfilename(
+            title="Save Script As",
+            defaultextension=".txt",
+            filetypes=(("Text files", "*.txt"), ("All files", "*.*"))
+        )
+        if not filepath:
+            return False
+
+        current_filepath = filepath
+        return save_script()
 
     def validate_script_ui():
-        script_content = script_editor.get("1.0", tk.END)
-        errors = validate_script(script_content)
-
-        script_editor.tag_remove("error_highlight", "1.0", tk.END)
-
-        if not errors:
-            messagebox.showinfo("Validation Success", "Script is valid!")
-            status_var.set("Validation Successful")
-        else:
-            ValidationResultsWindow(scripting_tab, errors)
-            status_var.set(f"{len(errors)} error(s) found.")
-            for error in errors:
-                line_num = error['line']
-                script_editor.tag_add("error_highlight", f"{line_num}.0", f"{line_num}.end")
+        check_script_validity(show_success=True)
 
     def update_selection_highlight(line_num):
         nonlocal last_selection_highlight
@@ -633,10 +726,14 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
 
     file_frame = tk.LabelFrame(btn_container, text="File & Validation", bg="#2a2d3b", fg="white", padx=5, pady=5)
     file_frame.pack(side=tk.LEFT, padx=5)
+    new_button = ttk.Button(file_frame, text="New", command=new_script)
+    new_button.pack(side=tk.LEFT)
     load_button = ttk.Button(file_frame, text="Load", command=load_script)
-    load_button.pack(side=tk.LEFT)
+    load_button.pack(side=tk.LEFT, padx=5)
     save_button = ttk.Button(file_frame, text="Save", command=save_script)
-    save_button.pack(side=tk.LEFT, padx=5)
+    save_button.pack(side=tk.LEFT)
+    save_as_button = ttk.Button(file_frame, text="Save As", command=save_script_as)
+    save_as_button.pack(side=tk.LEFT, padx=5)
     validate_button = ttk.Button(file_frame, text="Validate", command=validate_script_ui)
     validate_button.pack(side=tk.LEFT)
 
@@ -647,5 +744,7 @@ def create_scripting_tab(notebook, command_funcs, shared_gui_refs):
     status_var = tk.StringVar(value="Idle")
     status_label = tk.Label(btn_container, textvariable=status_var, bg=btn_container['bg'], fg="cyan", anchor='w')
     status_label.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+
+    update_window_title()
 
     return {}

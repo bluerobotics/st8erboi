@@ -1,7 +1,7 @@
 #include "injector.h"
 
 // String representations for enums
-const char *Injector::MainStateNames[MAIN_STATE_COUNT] = { "STANDBY_MODE", "JOG_MODE", "HOMING_MODE", "FEED_MODE", "DISABLED_MODE" };
+const char *Injector::MainStateNames[MAIN_STATE_COUNT] = { "STANDBY_MODE", "DISABLED_MODE" };
 const char *Injector::HomingStateNames[HOMING_STATE_COUNT] = { "HOMING_NONE", "HOMING_MACHINE", "HOMING_CARTRIDGE", "HOMING_PINCH" };
 const char *Injector::HomingPhaseNames[HOMING_PHASE_COUNT] = { "IDLE", "STARTING_MOVE", "RAPID_MOVE", "BACK_OFF", "TOUCH_OFF", "RETRACT", "COMPLETE", "ERROR" };
 const char *Injector::FeedStateNames[FEED_STATE_COUNT] = { "FEED_NONE", "FEED_STANDBY", "FEED_INJECT_STARTING", "FEED_INJECT_ACTIVE", "FEED_INJECT_PAUSED", "FEED_INJECT_RESUMING", "FEED_PURGE_STARTING", "FEED_PURGE_ACTIVE", "FEED_PURGE_PAUSED", "FEED_PURGE_RESUMING", "FEED_MOVING_TO_HOME", "FEED_MOVING_TO_RETRACT", "FEED_INJECTION_CANCELLED", "FEED_INJECTION_COMPLETED" };
@@ -193,274 +193,238 @@ void Injector::resetPid() {
 }
 
 void Injector::updateState() {
-	switch (mainState)
-	{
-		case STANDBY_MODE:
-		break;
+	if (mainState == DISABLED_MODE) {
+		return;
+	}
 
-		case HOMING_MODE: {
-			if (currentHomingPhase == HOMING_PHASE_COMPLETE || currentHomingPhase == HOMING_PHASE_ERROR) {
-				if (currentHomingPhase == HOMING_PHASE_COMPLETE) {
-					// FIX: Send a specific DONE message for the completed homing command
-					char doneMsg[64];
-					const char* commandStr = "UNKNOWN_HOME";
-					if (homingState == HOMING_MACHINE) {
-						commandStr = CMD_STR_MACHINE_HOME_MOVE;
-						} else if (homingState == HOMING_CARTRIDGE) {
-						commandStr = CMD_STR_CARTRIDGE_HOME_MOVE;
-						} else if (homingState == HOMING_PINCH) {
-						commandStr = CMD_STR_PINCH_HOME_MOVE;
-					}
-					snprintf(doneMsg, sizeof(doneMsg), "%s complete.", commandStr);
-					sendStatus(STATUS_PREFIX_DONE, doneMsg);
-					} else {
-					sendStatus(STATUS_PREFIX_ERROR,"Homing sequence ended with error. Returning to STANDBY_MODE.");
-				}
-				mainState = STANDBY_MODE;
-				homingState = HOMING_NONE;
-				currentHomingPhase = HOMING_PHASE_IDLE;
-				break;
+	// --- Homing State Logic ---
+	if (homingState != HOMING_NONE) {
+		if (currentHomingPhase == HOMING_PHASE_COMPLETE || currentHomingPhase == HOMING_PHASE_ERROR) {
+			if (currentHomingPhase == HOMING_PHASE_COMPLETE) {
+				char doneMsg[64];
+				const char* commandStr = "UNKNOWN_HOME";
+				if (homingState == HOMING_MACHINE) commandStr = CMD_STR_MACHINE_HOME_MOVE;
+				else if (homingState == HOMING_CARTRIDGE) commandStr = CMD_STR_CARTRIDGE_HOME_MOVE;
+				else if (homingState == HOMING_PINCH) commandStr = CMD_STR_PINCH_HOME_MOVE;
+				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", commandStr);
+				sendStatus(STATUS_PREFIX_DONE, doneMsg);
+			} else {
+				sendStatus(STATUS_PREFIX_ERROR,"Homing sequence ended with error.");
 			}
-
-			if (homingState != HOMING_NONE) {
-				uint32_t current_time = Milliseconds();
-				if (current_time - homingStartTime > MAX_HOMING_DURATION_MS) {
-					sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Timeout. Aborting.");
-					abortInjectorMove();
-					errorState = ERROR_HOMING_TIMEOUT;
-					currentHomingPhase = HOMING_PHASE_ERROR;
-					break;
-				}
-			}
-
-			if (homingState == HOMING_MACHINE || homingState == HOMING_CARTRIDGE) {
-				bool is_machine_homing = (homingState == HOMING_MACHINE);
-				int direction = is_machine_homing ? -1 : 1;
-
-				switch (currentHomingPhase) {
-					case HOMING_PHASE_IDLE:
-					break;
-					
-					case HOMING_PHASE_STARTING_MOVE: {
-						uint32_t current_time = Milliseconds();
-						if (current_time - homingStartTime > 50) {
-							if (checkInjectorMoving()) {
-								sendStatus(STATUS_PREFIX_START, "Homing: Move started. Entering RAPID_MOVE phase.");
-								currentHomingPhase = HOMING_PHASE_RAPID_MOVE;
-								} else {
-								sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Motor failed to start moving.");
-								errorState = ERROR_HOMING_NO_TORQUE_RAPID;
-								currentHomingPhase = HOMING_PHASE_ERROR;
-							}
-						}
-						break;
-					}
-
-					case HOMING_PHASE_RAPID_MOVE:
-					case HOMING_PHASE_TOUCH_OFF: {
-						if (checkInjectorTorqueLimit()) {
-							if (currentHomingPhase == HOMING_PHASE_RAPID_MOVE) {
-								const char* msg = is_machine_homing ? "Machine Homing: Torque (RAPID). Backing off." : "Cartridge Homing: Torque (RAPID). Backing off.";
-								sendStatus(STATUS_PREFIX_INFO, msg);
-								currentHomingPhase = HOMING_PHASE_BACK_OFF;
-								long back_off_s = -direction * homingDefaultBackoffSteps;
-								moveInjectorMotors(back_off_s, back_off_s, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
-								} else {
-								const char* msg = is_machine_homing ? "Machine Homing: Torque (TOUCH_OFF). Zeroing & Retracting." : "Cartridge Homing: Torque (TOUCH_OFF). Zeroing & Retracting.";
-								sendStatus(STATUS_PREFIX_INFO, msg);
-								if (is_machine_homing) {
-									machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
-									sendStatus(STATUS_PREFIX_INFO, "Machine home reference point set.");
-									} else {
-									cartridgeHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
-									sendStatus(STATUS_PREFIX_INFO, "Cartridge home reference point set.");
-								}
-								currentHomingPhase = HOMING_PHASE_RETRACT;
-								long retract_s = -direction * homing_actual_retract_steps;
-								moveInjectorMotors(retract_s, retract_s, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
-							}
-							} else if (!checkInjectorMoving()) {
-							const char* msg = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? "Machine Homing Err: No torque in RAPID." : "Machine Homing Err: No torque in TOUCH_OFF.";
-							sendStatus(STATUS_PREFIX_ERROR, msg);
-							errorState = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? ERROR_HOMING_NO_TORQUE_RAPID : ERROR_HOMING_NO_TORQUE_TOUCH;
-							currentHomingPhase = HOMING_PHASE_ERROR;
-						}
-						break;
-					}
-
-					case HOMING_PHASE_BACK_OFF: {
-						if (!checkInjectorMoving()) {
-							const char* msg = is_machine_homing ? "Machine Homing: Back-off done. Touching off." : "Cartridge Homing: Back-off done. Touching off.";
-							sendStatus(STATUS_PREFIX_INFO, msg);
-							currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
-							long touch_off_move_length = homingDefaultBackoffSteps * 2;
-							long final_touch_off_move_steps = direction * touch_off_move_length;
-							moveInjectorMotors(final_touch_off_move_steps, final_touch_off_move_steps, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
-						}
-						break;
-					}
-					
-					case HOMING_PHASE_RETRACT: {
-						if (!checkInjectorMoving()) {
-							const char* msg = is_machine_homing ? "Machine Homing: RETRACT complete. Success." : "Cartridge Homing: RETRACT complete. Success.";
-							sendStatus(STATUS_PREFIX_INFO, msg);
-							if (is_machine_homing) {
-								onHomingMachineDone();
-								} else {
-								onHomingCartridgeDone();
-							}
-							errorState = ERROR_NONE;
-							currentHomingPhase = HOMING_PHASE_COMPLETE;
-						}
-						break;
-					}
-
-					default:
-					break;
-				}
-			}
-			else if (homingState == HOMING_PINCH) {
-				switch (currentHomingPhase) {
-					case HOMING_PHASE_STARTING_MOVE: {
-						uint32_t current_time = Milliseconds();
-						if (current_time - homingStartTime > 50) {
-							if (checkInjectorMoving()) {
-								sendStatus(STATUS_PREFIX_START, "Pinch Homing: Move started. Entering TOUCH_OFF phase.");
-								currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
-								} else {
-								sendStatus(STATUS_PREFIX_ERROR, "Pinch Homing Error: Motor failed to start moving.");
-								currentHomingPhase = HOMING_PHASE_ERROR;
-							}
-						}
-						break;
-					}
-					case HOMING_PHASE_TOUCH_OFF: {
-						if (checkInjectorTorqueLimit()) {
-							sendStatus(STATUS_PREFIX_INFO, "Pinch Homing: Torque limit reached. Success.");
-							ConnectorM2.PositionRefSet(0);
-							onHomingPinchDone();
-							errorState = ERROR_NONE;
-							currentHomingPhase = HOMING_PHASE_COMPLETE;
-							} else if (!checkInjectorMoving()) {
-							sendStatus(STATUS_PREFIX_ERROR, "Pinch Homing Error: Motor stopped without reaching torque limit.");
-							currentHomingPhase = HOMING_PHASE_ERROR;
-						}
-						break;
-					}
-					default:
-					break;
-				}
+			homingState = HOMING_NONE;
+			currentHomingPhase = HOMING_PHASE_IDLE;
+		} else {
+			uint32_t current_time = Milliseconds();
+			if (current_time - homingStartTime > MAX_HOMING_DURATION_MS) {
+				sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Timeout. Aborting.");
+				abortInjectorMove();
+				errorState = ERROR_HOMING_TIMEOUT;
+				currentHomingPhase = HOMING_PHASE_ERROR;
 			}
 		}
-		break;
-		
-		case FEED_MODE: {
-			if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE ||
-			feedState == FEED_MOVING_TO_HOME || feedState == FEED_MOVING_TO_RETRACT ||
-			feedState == FEED_INJECT_RESUMING || feedState == FEED_PURGE_RESUMING ) {
-				if (checkInjectorTorqueLimit()) {
-					errorState = ERROR_TORQUE_ABORT;
-					sendStatus(STATUS_PREFIX_ERROR,"FEED_MODE: Torque limit! Operation stopped.");
-					finalizeAndResetActiveDispenseOperation(false);
-					feedState = FEED_STANDBY;
-					feedingDone = true;
-				}
-			}
 
-			if (!checkInjectorMoving()) {
-				if (!feedingDone) {
-					
-					if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE) {
-						if (active_dispense_INJECTION_ongoing) {
-							if (active_op_steps_per_ml > 0.0001f) {
-								long steps_moved_this_segment = ConnectorM0.PositionRefCommanded() - active_op_segment_initial_axis_steps;
-								float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / active_op_steps_per_ml;
-								active_op_total_dispensed_ml += segment_dispensed_ml;
+		if (homingState == HOMING_MACHINE || homingState == HOMING_CARTRIDGE) {
+			bool is_machine_homing = (homingState == HOMING_MACHINE);
+			int direction = is_machine_homing ? -1 : 1;
+
+			switch (currentHomingPhase) {
+				case HOMING_PHASE_STARTING_MOVE: {
+					uint32_t current_time = Milliseconds();
+					if (current_time - homingStartTime > 50) {
+						if (checkInjectorMoving()) {
+							sendStatus(STATUS_PREFIX_START, "Homing: Move started. Entering RAPID_MOVE phase.");
+							currentHomingPhase = HOMING_PHASE_RAPID_MOVE;
+						} else {
+							sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Motor failed to start moving.");
+							errorState = ERROR_HOMING_NO_TORQUE_RAPID;
+							currentHomingPhase = HOMING_PHASE_ERROR;
+						}
+					}
+					break;
+				}
+				case HOMING_PHASE_RAPID_MOVE:
+				case HOMING_PHASE_TOUCH_OFF: {
+					if (checkInjectorTorqueLimit()) {
+						if (currentHomingPhase == HOMING_PHASE_RAPID_MOVE) {
+							const char* msg = is_machine_homing ? "Machine Homing: Torque (RAPID). Backing off." : "Cartridge Homing: Torque (RAPID). Backing off.";
+							sendStatus(STATUS_PREFIX_INFO, msg);
+							currentHomingPhase = HOMING_PHASE_BACK_OFF;
+							long back_off_s = -direction * homingDefaultBackoffSteps;
+							moveInjectorMotors(back_off_s, back_off_s, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
+						} else {
+							const char* msg = is_machine_homing ? "Machine Homing: Torque (TOUCH_OFF). Zeroing & Retracting." : "Cartridge Homing: Torque (TOUCH_OFF). Zeroing & Retracting.";
+							sendStatus(STATUS_PREFIX_INFO, msg);
+							if (is_machine_homing) {
+								machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
+								sendStatus(STATUS_PREFIX_INFO, "Machine home reference point set.");
+							} else {
+								cartridgeHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
+								sendStatus(STATUS_PREFIX_INFO, "Cartridge home reference point set.");
 							}
-							last_completed_dispense_ml = active_op_total_dispensed_ml;
+							currentHomingPhase = HOMING_PHASE_RETRACT;
+							long retract_s = -direction * homing_actual_retract_steps;
+							moveInjectorMotors(retract_s, retract_s, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
 						}
-						feedState = FEED_INJECTION_COMPLETED;
+					} else if (!checkInjectorMoving()) {
+						const char* msg = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? "Machine Homing Err: No torque in RAPID." : "Machine Homing Err: No torque in TOUCH_OFF.";
+						sendStatus(STATUS_PREFIX_ERROR, msg);
+						errorState = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? ERROR_HOMING_NO_TORQUE_RAPID : ERROR_HOMING_NO_TORQUE_TOUCH;
+						currentHomingPhase = HOMING_PHASE_ERROR;
 					}
-					else if (feedState == FEED_MOVING_TO_HOME || feedState == FEED_MOVING_TO_RETRACT) {
-						feedState = FEED_INJECTION_COMPLETED;
-					}
-					
-					if (feedState == FEED_INJECTION_COMPLETED) {
-						// FIX: Send a specific DONE message for the completed feed command
-						if (activeFeedCommand != nullptr) {
-							char doneMsg[64];
-							snprintf(doneMsg, sizeof(doneMsg), "%s complete.", activeFeedCommand);
-							sendStatus(STATUS_PREFIX_DONE, doneMsg);
-						}
-						feedingDone = true;
-						onFeedingDone();
-						finalizeAndResetActiveDispenseOperation(true);
-						feedState = FEED_STANDBY;
-					}
+					break;
 				}
-				} else {
-				if (feedState == FEED_INJECT_STARTING) {
-					feedState = FEED_INJECT_ACTIVE;
-					active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-					sendStatus(STATUS_PREFIX_INFO, "Feed Op: Inject Active.");
-					} else if (feedState == FEED_PURGE_STARTING) {
-					feedState = FEED_PURGE_ACTIVE;
-					active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-					sendStatus(STATUS_PREFIX_INFO, "Feed Op: Purge Active.");
-					} else if (feedState == FEED_INJECT_RESUMING) {
-					feedState = FEED_INJECT_ACTIVE;
-					active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-					sendStatus(STATUS_PREFIX_INFO, "Feed Op: Inject Resumed, Active.");
-					} else if (feedState == FEED_PURGE_RESUMING) {
-					feedState = FEED_PURGE_ACTIVE;
-					active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
-					sendStatus(STATUS_PREFIX_INFO, "Feed Op: Purge Resumed, Active.");
+				case HOMING_PHASE_BACK_OFF: {
+					if (!checkInjectorMoving()) {
+						const char* msg = is_machine_homing ? "Machine Homing: Back-off done. Touching off." : "Cartridge Homing: Back-off done. Touching off.";
+						sendStatus(STATUS_PREFIX_INFO, msg);
+						currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
+						long touch_off_move_length = homingDefaultBackoffSteps * 2;
+						long final_touch_off_move_steps = direction * touch_off_move_length;
+						moveInjectorMotors(final_touch_off_move_steps, final_touch_off_move_steps, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
+					}
+					break;
 				}
+				case HOMING_PHASE_RETRACT: {
+					if (!checkInjectorMoving()) {
+						const char* msg = is_machine_homing ? "Machine Homing: RETRACT complete. Success." : "Cartridge Homing: RETRACT complete. Success.";
+						sendStatus(STATUS_PREFIX_INFO, msg);
+						if (is_machine_homing) onHomingMachineDone();
+						else onHomingCartridgeDone();
+						errorState = ERROR_NONE;
+						currentHomingPhase = HOMING_PHASE_COMPLETE;
+					}
+					break;
+				}
+				default: break;
 			}
-
-			if ((feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) &&
-			!feedingDone && !checkInjectorMoving()) {
-
-				long current_pos = ConnectorM0.PositionRefCommanded();
-				long steps_moved_this_segment = current_pos - active_op_segment_initial_axis_steps;
-
-				if (active_op_steps_per_ml > 0.0001f) {
-					float segment_dispensed_ml = fabs(steps_moved_this_segment) / active_op_steps_per_ml;
-					active_op_total_dispensed_ml += segment_dispensed_ml;
-
-					long total_steps_dispensed = (long)(active_op_total_dispensed_ml * active_op_steps_per_ml);
-					active_op_remaining_steps = active_op_total_target_steps - total_steps_dispensed;
-
-					if (active_op_remaining_steps < 0) active_op_remaining_steps = 0;
+		} else if (homingState == HOMING_PINCH) {
+			switch (currentHomingPhase) {
+				case HOMING_PHASE_STARTING_MOVE: {
+					uint32_t current_time = Milliseconds();
+					if (current_time - homingStartTime > 50) {
+						if (checkInjectorMoving()) {
+							sendStatus(STATUS_PREFIX_START, "Pinch Homing: Move started. Entering TOUCH_OFF phase.");
+							currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
+						} else {
+							sendStatus(STATUS_PREFIX_ERROR, "Pinch Homing Error: Motor failed to start moving.");
+							currentHomingPhase = HOMING_PHASE_ERROR;
+						}
+					}
+					break;
 				}
+				case HOMING_PHASE_TOUCH_OFF: {
+					if (checkInjectorTorqueLimit()) {
+						sendStatus(STATUS_PREFIX_INFO, "Pinch Homing: Torque limit reached. Success.");
+						ConnectorM2.PositionRefSet(0);
+						onHomingPinchDone();
+						errorState = ERROR_NONE;
+						currentHomingPhase = HOMING_PHASE_COMPLETE;
+					} else if (!checkInjectorMoving()) {
+						sendStatus(STATUS_PREFIX_ERROR, "Pinch Homing Error: Motor stopped without reaching torque limit.");
+						currentHomingPhase = HOMING_PHASE_ERROR;
+					}
+					break;
+				}
+				default: break;
+			}
+		}
+	}
 
+	// --- Feed State Logic ---
+	if (active_dispense_INJECTION_ongoing) {
+		if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE ||
+			feedState == FEED_MOVING_TO_HOME || feedState == FEED_MOVING_TO_RETRACT ||
+			feedState == FEED_INJECT_RESUMING || feedState == FEED_PURGE_RESUMING) {
+			if (checkInjectorTorqueLimit()) {
+				errorState = ERROR_TORQUE_ABORT;
+				sendStatus(STATUS_PREFIX_ERROR,"FEED_MODE: Torque limit! Operation stopped.");
+				finalizeAndResetActiveDispenseOperation(false);
+				feedState = FEED_STANDBY;
 				feedingDone = true;
-				sendStatus(STATUS_PREFIX_INFO, "Feed Op: Operation Paused. Waiting for Resume/Cancel.");
 			}
-		} break;
+		}
 
-		case JOG_MODE:
+		if (!checkInjectorMoving()) {
+			if (!feedingDone) {
+				if (feedState == FEED_INJECT_ACTIVE || feedState == FEED_PURGE_ACTIVE) {
+					if (active_op_steps_per_ml > 0.0001f) {
+						long steps_moved_this_segment = ConnectorM0.PositionRefCommanded() - active_op_segment_initial_axis_steps;
+						float segment_dispensed_ml = (float)fabs(steps_moved_this_segment) / active_op_steps_per_ml;
+						active_op_total_dispensed_ml += segment_dispensed_ml;
+					}
+					last_completed_dispense_ml = active_op_total_dispensed_ml;
+					feedState = FEED_INJECTION_COMPLETED;
+				} else if (feedState == FEED_MOVING_TO_HOME || feedState == FEED_MOVING_TO_RETRACT) {
+					feedState = FEED_INJECTION_COMPLETED;
+				}
+				
+				if (feedState == FEED_INJECTION_COMPLETED) {
+					if (activeFeedCommand != nullptr) {
+						char doneMsg[64];
+						snprintf(doneMsg, sizeof(doneMsg), "%s complete.", activeFeedCommand);
+						sendStatus(STATUS_PREFIX_DONE, doneMsg);
+					}
+					feedingDone = true;
+					onFeedingDone();
+					finalizeAndResetActiveDispenseOperation(true);
+					feedState = FEED_STANDBY;
+				}
+			}
+		} else {
+			if (feedState == FEED_INJECT_STARTING) {
+				feedState = FEED_INJECT_ACTIVE;
+				active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+				sendStatus(STATUS_PREFIX_INFO, "Feed Op: Inject Active.");
+			} else if (feedState == FEED_PURGE_STARTING) {
+				feedState = FEED_PURGE_ACTIVE;
+				active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+				sendStatus(STATUS_PREFIX_INFO, "Feed Op: Purge Active.");
+			} else if (feedState == FEED_INJECT_RESUMING) {
+				feedState = FEED_INJECT_ACTIVE;
+				active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+				sendStatus(STATUS_PREFIX_INFO, "Feed Op: Inject Resumed, Active.");
+			} else if (feedState == FEED_PURGE_RESUMING) {
+				feedState = FEED_PURGE_ACTIVE;
+				active_op_segment_initial_axis_steps = ConnectorM0.PositionRefCommanded();
+				sendStatus(STATUS_PREFIX_INFO, "Feed Op: Purge Resumed, Active.");
+			}
+		}
+
+		if ((feedState == FEED_INJECT_PAUSED || feedState == FEED_PURGE_PAUSED) &&
+		!feedingDone && !checkInjectorMoving()) {
+			long current_pos = ConnectorM0.PositionRefCommanded();
+			long steps_moved_this_segment = current_pos - active_op_segment_initial_axis_steps;
+			if (active_op_steps_per_ml > 0.0001f) {
+				float segment_dispensed_ml = fabs(steps_moved_this_segment) / active_op_steps_per_ml;
+				active_op_total_dispensed_ml += segment_dispensed_ml;
+				long total_steps_dispensed = (long)(active_op_total_dispensed_ml * active_op_steps_per_ml);
+				active_op_remaining_steps = active_op_total_target_steps - total_steps_dispensed;
+				if (active_op_remaining_steps < 0) active_op_remaining_steps = 0;
+			}
+			feedingDone = true;
+			sendStatus(STATUS_PREFIX_INFO, "Feed Op: Operation Paused. Waiting for Resume/Cancel.");
+		}
+	}
+
+	// --- Jog State Logic ---
+	if (!jogDone) {
 		if (checkInjectorTorqueLimit()) {
-			mainState = STANDBY_MODE;
+			abortInjectorMove();
 			errorState = ERROR_TORQUE_ABORT;
-			sendStatus(STATUS_PREFIX_INFO, "JOG_MODE: Torque limit, returning to STANDBY.");
-			} else if (!checkInjectorMoving() && !jogDone) {
+			sendStatus(STATUS_PREFIX_INFO, "JOG: Torque limit, returning to STANDBY.");
 			jogDone = true;
-			// FIX: Send a specific DONE message for the completed jog command
+			if (activeJogCommand != nullptr) {
+				activeJogCommand = nullptr;
+			}
+		} else if (!checkInjectorMoving()) {
+			jogDone = true;
 			if (activeJogCommand != nullptr) {
 				char doneMsg[64];
 				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", activeJogCommand);
 				sendStatus(STATUS_PREFIX_DONE, doneMsg);
-				activeJogCommand = nullptr; // Clear after sending
+				activeJogCommand = nullptr;
 			}
 		}
-		break;
-
-		case DISABLED_MODE:
-		break;
-		
-		default:
-		break;
 	}
 }
 

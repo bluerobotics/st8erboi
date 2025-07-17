@@ -45,7 +45,7 @@ void Injector::handleClearErrors() {
 void Injector::handleStandbyMode() {
 	bool wasError = (errorState != ERROR_NONE);
 	
-	if (mainState != STANDBY_MODE) {
+	if (mainState != STANDBY_MODE || homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone) {
 		abortInjectorMove();
 		Delay_ms(200);
 		mainState = STANDBY_MODE;
@@ -53,61 +53,21 @@ void Injector::handleStandbyMode() {
 		currentHomingPhase = HOMING_PHASE_IDLE;
 		feedState = FEED_STANDBY;
 		errorState = ERROR_NONE;
+		jogDone = true;
+		fullyResetActiveDispenseOperation();
 
 		if (wasError) {
 			sendStatus(STATUS_PREFIX_DONE, "STANDBY_MODE set and error cleared.");
 			} else {
 			sendStatus(STATUS_PREFIX_DONE, "STANDBY_MODE set.");
 		}
-		} else {
+	} else {
 		if (errorState != ERROR_NONE) {
 			errorState = ERROR_NONE;
 			sendStatus(STATUS_PREFIX_DONE, "Error cleared, still in STANDBY_MODE.");
-			} else {
+		} else {
 			sendStatus(STATUS_PREFIX_INFO, "Already in STANDBY_MODE.");
 		}
-	}
-}
-
-void Injector::handleJogMode() {
-	if (mainState != JOG_MODE) {
-		abortInjectorMove();
-		Delay_ms(200);
-		mainState = JOG_MODE;
-		homingState = HOMING_NONE;
-		feedState = FEED_NONE;
-		errorState = ERROR_NONE;
-		sendStatus(STATUS_PREFIX_DONE, "JOG_MODE set.");
-		} else {
-		sendStatus(STATUS_PREFIX_INFO, "Already in JOG_MODE.");
-	}
-}
-
-void Injector::handleHomingMode() {
-	if (mainState != HOMING_MODE) {
-		abortInjectorMove();
-		Delay_ms(200);
-		mainState = HOMING_MODE;
-		homingState = HOMING_NONE;
-		feedState = FEED_NONE;
-		errorState = ERROR_NONE;
-		sendStatus(STATUS_PREFIX_DONE, "HOMING_MODE set.");
-		} else {
-		sendStatus(STATUS_PREFIX_INFO, "Already in HOMING_MODE.");
-	}
-}
-
-void Injector::handleFeedMode() {
-	if (mainState != FEED_MODE) {
-		abortInjectorMove();
-		Delay_ms(200);
-		mainState = FEED_MODE;
-		feedState = FEED_STANDBY;
-		homingState = HOMING_NONE;
-		errorState = ERROR_NONE;
-		sendStatus(STATUS_PREFIX_DONE, "FEED_MODE set.");
-		} else {
-		sendStatus(STATUS_PREFIX_INFO, "Already in FEED_MODE.");
 	}
 }
 
@@ -120,8 +80,8 @@ void Injector::handleSetinjectorMotorsTorqueOffset(const char *msg) {
 }
 
 void Injector::handleJogMove(const char* msg) {
-	if (mainState != JOG_MODE) {
-		sendStatus(STATUS_PREFIX_ERROR, "JOG_MOVE ignored: Not in JOG_MODE.");
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
+		sendStatus(STATUS_PREFIX_ERROR, "JOG_MOVE ignored: Another operation is in progress.");
 		return;
 	}
 
@@ -146,7 +106,7 @@ void Injector::handleJogMove(const char* msg) {
 		int velocity_sps = (int)(vel_mms * STEPS_PER_MM_M0);
 		int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_M0);
 		
-		activeJogCommand = CMD_STR_JOG_MOVE; // FIX: Track active command
+		activeJogCommand = CMD_STR_JOG_MOVE;
 		moveInjectorMotors(steps1, steps2, torque_percent, velocity_sps, accel_sps2_val);
 		jogDone = false;
 		} else {
@@ -157,12 +117,8 @@ void Injector::handleJogMove(const char* msg) {
 }
 
 void Injector::handleMachineHomeMove(const char *msg) {
-	if (mainState != HOMING_MODE) {
-		sendStatus(STATUS_PREFIX_ERROR, "MACHINE_HOME_MOVE ignored: Not in HOMING_MODE.");
-		return;
-	}
-	if (currentHomingPhase != HOMING_PHASE_IDLE && currentHomingPhase != HOMING_PHASE_COMPLETE && currentHomingPhase != HOMING_PHASE_ERROR) {
-		sendStatus(STATUS_PREFIX_ERROR, "MACHINE_HOME_MOVE ignored: Homing operation already in progress.");
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
+		sendStatus(STATUS_PREFIX_ERROR, "MACHINE_HOME_MOVE ignored: Another operation is in progress.");
 		return;
 	}
 
@@ -217,12 +173,8 @@ void Injector::handleMachineHomeMove(const char *msg) {
 }
 
 void Injector::handleCartridgeHomeMove(const char *msg) {
-	if (mainState != HOMING_MODE) {
-		sendStatus(STATUS_PREFIX_ERROR, "CARTRIDGE_HOME_MOVE ignored: Not in HOMING_MODE.");
-		return;
-	}
-	if (currentHomingPhase != HOMING_PHASE_IDLE && currentHomingPhase != HOMING_PHASE_COMPLETE && currentHomingPhase != HOMING_PHASE_ERROR) {
-		sendStatus(STATUS_PREFIX_ERROR, "CARTRIDGE_HOME_MOVE ignored: Homing operation already in progress.");
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
+		sendStatus(STATUS_PREFIX_ERROR, "CARTRIDGE_HOME_MOVE ignored: Another operation is in progress.");
 		return;
 	}
 	
@@ -276,12 +228,8 @@ void Injector::handleCartridgeHomeMove(const char *msg) {
 }
 
 void Injector::handlePinchHomeMove() {
-	if (mainState != HOMING_MODE) {
-		sendStatus(STATUS_PREFIX_ERROR, "PINCH_HOME_MOVE ignored: Not in HOMING_MODE.");
-		return;
-	}
-	if (currentHomingPhase != HOMING_PHASE_IDLE && currentHomingPhase != HOMING_PHASE_COMPLETE && currentHomingPhase != HOMING_PHASE_ERROR) {
-		sendStatus(STATUS_PREFIX_ERROR, "PINCH_HOME_MOVE ignored: Homing operation already in progress.");
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
+		sendStatus(STATUS_PREFIX_ERROR, "PINCH_HOME_MOVE ignored: Another operation is in progress.");
 		return;
 	}
 	if (ConnectorM2.HlfbState() != MotorDriver::HLFB_ASSERTED) {
@@ -304,8 +252,8 @@ void Injector::handlePinchHomeMove() {
 }
 
 void Injector::handlePinchJogMove(const char *msg) {
-	if (mainState != JOG_MODE) {
-		sendStatus(STATUS_PREFIX_ERROR, "PINCH_JOG_MOVE ignored: Not in JOG_MODE.");
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
+		sendStatus(STATUS_PREFIX_ERROR, "PINCH_JOG_MOVE ignored: Another operation is in progress.");
 		return;
 	}
 
@@ -323,7 +271,7 @@ void Injector::handlePinchJogMove(const char *msg) {
 		const float steps_per_degree = 800.0f / 360.0f;
 		long steps_to_move = (long)(degrees * steps_per_degree);
 		
-		activeJogCommand = CMD_STR_PINCH_JOG_MOVE; // FIX: Track active command
+		activeJogCommand = CMD_STR_PINCH_JOG_MOVE;
 		movePinchMotor(steps_to_move, torque_percent, velocity_sps, accel_sps2);
 		} else {
 		char errorMsg[100];
@@ -377,18 +325,17 @@ void Injector::handleVacuumOff() {
 }
 
 void Injector::handleMoveToCartridgeHome() {
-	if (mainState != FEED_MODE) { return; }
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
+		sendStatus(STATUS_PREFIX_ERROR, "Err: Busy. Cannot move to cart home now.");
+		return;
+	}
 	if (!homingCartridgeDone) { errorState = ERROR_NO_CARTRIDGE_HOME; sendStatus(STATUS_PREFIX_ERROR, "Err: Cartridge not homed."); return; }
 	if (!motorsAreEnabled) { sendStatus(STATUS_PREFIX_ERROR, "Err: Motors disabled."); return; }
-	if (checkInjectorMoving() || active_dispense_INJECTION_ongoing) {
-		sendStatus(STATUS_PREFIX_ERROR, "Err: Busy. Cannot move to cart home now.");
-		errorState = ERROR_INVALID_INJECTION; return;
-	}
-
+	
 	fullyResetActiveDispenseOperation();
 	feedState = FEED_MOVING_TO_HOME;
 	feedingDone = false;
-	activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_HOME; // FIX: Track active command
+	activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_HOME;
 	
 	long current_axis_pos = ConnectorM0.PositionRefCommanded();
 	long steps_to_move_axis = cartridgeHomeReferenceSteps - current_axis_pos;
@@ -398,14 +345,13 @@ void Injector::handleMoveToCartridgeHome() {
 }
 
 void Injector::handleMoveToCartridgeRetract(const char *msg) {
-	if (mainState != FEED_MODE) { return; }
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
+		sendStatus(STATUS_PREFIX_ERROR, "Err: Busy. Cannot move to cart retract now.");
+		return;
+	}
 	if (!homingCartridgeDone) { errorState = ERROR_NO_CARTRIDGE_HOME; sendStatus(STATUS_PREFIX_ERROR, "Err: Cartridge not homed."); return; }
 	if (!motorsAreEnabled) { sendStatus(STATUS_PREFIX_ERROR, "Err: Motors disabled."); return; }
-	if (checkInjectorMoving() || active_dispense_INJECTION_ongoing) {
-		sendStatus(STATUS_PREFIX_ERROR, "Err: Busy. Cannot move to cart retract now.");
-		errorState = ERROR_INVALID_INJECTION; return;
-	}
-
+	
 	float offset_mm = 0.0f;
 	if (sscanf(msg + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT), "%f", &offset_mm) != 1 || offset_mm < 0) {
 		sendStatus(STATUS_PREFIX_ERROR, "Err: Invalid offset for MOVE_TO_CARTRIDGE_RETRACT."); return;
@@ -414,7 +360,7 @@ void Injector::handleMoveToCartridgeRetract(const char *msg) {
 	fullyResetActiveDispenseOperation();
 	feedState = FEED_MOVING_TO_RETRACT;
 	feedingDone = false;
-	activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_RETRACT; // FIX: Track active command
+	activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_RETRACT;
 
 	const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV;
 	long offset_steps = (long)(offset_mm * current_steps_per_mm);
@@ -429,13 +375,8 @@ void Injector::handleMoveToCartridgeRetract(const char *msg) {
 
 
 void Injector::handleInjectMove(const char *msg) {
-	if (mainState != FEED_MODE) {
-		sendStatus(STATUS_PREFIX_ERROR, "INJECT ignored: Not in FEED_MODE.");
-		return;
-	}
-	if (checkInjectorMoving() || active_dispense_INJECTION_ongoing) {
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
 		sendStatus(STATUS_PREFIX_ERROR, "Error: Operation already in progress or motors busy.");
-		errorState = ERROR_INVALID_INJECTION;
 		return;
 	}
 
@@ -471,7 +412,7 @@ void Injector::handleInjectMove(const char *msg) {
 		active_op_torque_percent = (int)torque_percent;
 		if (active_op_velocity_sps <= 0) active_op_velocity_sps = 100;
 		
-		activeFeedCommand = CMD_STR_INJECT_MOVE; // FIX: Track active command
+		activeFeedCommand = CMD_STR_INJECT_MOVE;
 		
 		sendStatus(STATUS_PREFIX_START, "INJECT_MOVE initiated.");
 		moveInjectorMotors(active_op_remaining_steps, active_op_remaining_steps,
@@ -482,10 +423,8 @@ void Injector::handleInjectMove(const char *msg) {
 }
 
 void Injector::handlePurgeMove(const char *msg) {
-	if (mainState != FEED_MODE) { sendStatus(STATUS_PREFIX_ERROR, "PURGE ignored: Not in FEED_MODE."); return; }
-	if (checkInjectorMoving() || active_dispense_INJECTION_ongoing) {
+	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
 		sendStatus(STATUS_PREFIX_ERROR, "Error: Operation already in progress or motors busy.");
-		errorState = ERROR_INVALID_INJECTION;
 		return;
 	}
 
@@ -521,7 +460,7 @@ void Injector::handlePurgeMove(const char *msg) {
 		active_op_torque_percent = (int)torque_percent;
 		if (active_op_velocity_sps <= 0) active_op_velocity_sps = 200;
 		
-		activeFeedCommand = CMD_STR_PURGE_MOVE; // FIX: Track active command
+		activeFeedCommand = CMD_STR_PURGE_MOVE;
 		
 		sendStatus(STATUS_PREFIX_START, "PURGE_MOVE initiated.");
 		moveInjectorMotors(active_op_remaining_steps, active_op_remaining_steps,
@@ -617,7 +556,7 @@ void Injector::finalizeAndResetActiveDispenseOperation(bool operationCompletedSu
 	active_dispense_INJECTION_ongoing = false;
 	active_op_target_ml = 0.0f;
 	active_op_remaining_steps = 0;
-	activeFeedCommand = nullptr; // FIX: Clear the active command
+	activeFeedCommand = nullptr;
 }
 
 void Injector::fullyResetActiveDispenseOperation() {
@@ -629,7 +568,7 @@ void Injector::fullyResetActiveDispenseOperation() {
 	active_op_segment_initial_axis_steps = 0;
 	active_op_initial_axis_steps = 0;
 	active_op_steps_per_ml = 0.0f;
-	activeFeedCommand = nullptr; // FIX: Clear the active command
+	activeFeedCommand = nullptr;
 }
 
 void Injector::handleSetHeaterGains(const char* msg) {

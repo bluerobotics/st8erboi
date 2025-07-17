@@ -162,10 +162,6 @@ UserCommand Injector::parseCommand(const char *msg) {
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
 	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS;
-	if (strcmp(msg, CMD_STR_STANDBY_MODE) == 0) return CMD_STANDBY_MODE;
-	if (strcmp(msg, CMD_STR_JOG_MODE) == 0) return CMD_JOG_MODE;
-	if (strcmp(msg, CMD_STR_HOMING_MODE) == 0) return CMD_HOMING_MODE;
-	if (strcmp(msg, CMD_STR_FEED_MODE) == 0) return CMD_FEED_MODE;
 	if (strncmp(msg, CMD_STR_SET_INJECTOR_TORQUE_OFFSET, strlen(CMD_STR_SET_INJECTOR_TORQUE_OFFSET)) == 0) return CMD_SET_TORQUE_OFFSET;
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
 	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
@@ -215,10 +211,6 @@ void Injector::handleMessage(const char *msg) {
 		case CMD_DISABLE:                   handleDisable(); break;
 		case CMD_ABORT:                     handleAbort(); break;
 		case CMD_CLEAR_ERRORS:              handleClearErrors(); break;
-		case CMD_STANDBY_MODE:              handleStandbyMode(); break;
-		case CMD_JOG_MODE:                  handleJogMode(); break;
-		case CMD_HOMING_MODE:               handleHomingMode(); break;
-		case CMD_FEED_MODE:                 handleFeedMode(); break;
 		case CMD_SET_TORQUE_OFFSET:         handleSetinjectorMotorsTorqueOffset(msg); break;
 		case CMD_JOG_MOVE:                  handleJogMove(msg); break;
 		case CMD_MACHINE_HOME_MOVE:         handleMachineHomeMove(msg); break;

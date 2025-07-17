@@ -43,10 +43,30 @@ COMMANDS = {
         ],
         "help": "Sets the PID gains for the heater."
     },
-    "MACHINE_HOME_MOVE": {"device": "injector", "params": [],
-                          "help": "Homes the main machine axis using firmware defaults."},
-    "CARTRIDGE_HOME_MOVE": {"device": "injector", "params": [],
-                            "help": "Homes the injector relative to the cartridge using firmware defaults."},
+    "MACHINE_HOME_MOVE": {
+        "device": "injector",
+        "params": [
+            {"name": "Stroke(mm)", "type": float, "min": 1, "max": 1000},
+            {"name": "RapidSpeed(mm/s)", "type": float, "min": 1, "max": 200},
+            {"name": "TouchSpeed(mm/s)", "type": float, "min": 0.1, "max": 50},
+            {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000},
+            {"name": "Retract(mm)", "type": float, "min": 0, "max": 100},
+            {"name": "Torque(%)", "type": float, "min": 1, "max": 100}
+        ],
+        "help": "Homes the main machine axis against the hard stop."
+    },
+    "CARTRIDGE_HOME_MOVE": {
+        "device": "injector",
+        "params": [
+            {"name": "Stroke(mm)", "type": float, "min": 1, "max": 1000},
+            {"name": "RapidSpeed(mm/s)", "type": float, "min": 1, "max": 200},
+            {"name": "TouchSpeed(mm/s)", "type": float, "min": 0.1, "max": 50},
+            {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000},
+            {"name": "Retract(mm)", "type": float, "min": 0, "max": 100},
+            {"name": "Torque(%)", "type": float, "min": 1, "max": 100}
+        ],
+        "help": "Homes the injector against the cartridge."
+    },
 
     # --- Fillhead Commands ---
     "MOVE_X": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
