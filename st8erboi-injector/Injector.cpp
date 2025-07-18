@@ -51,6 +51,7 @@ Injector::Injector() {
 
 	machineHomeReferenceSteps = 0;
 	cartridgeHomeReferenceSteps = 0;
+    pinchHomeReferenceSteps = 0;
 	homingDefaultBackoffSteps = 200;
 	
 	feedDefaultTorquePercent = 30;
@@ -223,111 +224,98 @@ void Injector::updateState() {
 			}
 		}
 
-		if (homingState == HOMING_MACHINE || homingState == HOMING_CARTRIDGE) {
-			bool is_machine_homing = (homingState == HOMING_MACHINE);
-			int direction = is_machine_homing ? -1 : 1;
+        // Common logic for all multi-phase homing routines
+        bool is_multiphase_homing = (homingState == HOMING_MACHINE || homingState == HOMING_CARTRIDGE || homingState == HOMING_PINCH);
+        if (is_multiphase_homing) {
+            int direction = 1;
+            if (homingState == HOMING_MACHINE || homingState == HOMING_PINCH) {
+                direction = -1; // Move in negative direction to find hard stop
+            }
 
-			switch (currentHomingPhase) {
-				case HOMING_PHASE_STARTING_MOVE: {
-					uint32_t current_time = Milliseconds();
-					if (current_time - homingStartTime > 50) {
-						if (checkInjectorMoving()) {
-							sendStatus(STATUS_PREFIX_START, "Homing: Move started. Entering RAPID_MOVE phase.");
-							currentHomingPhase = HOMING_PHASE_RAPID_MOVE;
-						} else {
-							sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Motor failed to start moving.");
-							errorState = ERROR_HOMING_NO_TORQUE_RAPID;
-							currentHomingPhase = HOMING_PHASE_ERROR;
-						}
-					}
-					break;
-				}
-				case HOMING_PHASE_RAPID_MOVE:
-				case HOMING_PHASE_TOUCH_OFF: {
-					if (checkInjectorTorqueLimit()) {
-						if (currentHomingPhase == HOMING_PHASE_RAPID_MOVE) {
-							const char* msg = is_machine_homing ? "Machine Homing: Torque (RAPID). Backing off." : "Cartridge Homing: Torque (RAPID). Backing off.";
-							sendStatus(STATUS_PREFIX_INFO, msg);
-							currentHomingPhase = HOMING_PHASE_BACK_OFF;
-							long back_off_s = -direction * homingDefaultBackoffSteps;
-							moveInjectorMotors(back_off_s, back_off_s, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
-						} else {
-							const char* msg = is_machine_homing ? "Machine Homing: Torque (TOUCH_OFF). Zeroing & Retracting." : "Cartridge Homing: Torque (TOUCH_OFF). Zeroing & Retracting.";
-							sendStatus(STATUS_PREFIX_INFO, msg);
-							if (is_machine_homing) {
-								machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
-								sendStatus(STATUS_PREFIX_INFO, "Machine home reference point set.");
-							} else {
-								cartridgeHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
-								sendStatus(STATUS_PREFIX_INFO, "Cartridge home reference point set.");
-							}
-							currentHomingPhase = HOMING_PHASE_RETRACT;
-							long retract_s = -direction * homing_actual_retract_steps;
-							moveInjectorMotors(retract_s, retract_s, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
-						}
-					} else if (!checkInjectorMoving()) {
-						const char* msg = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? "Machine Homing Err: No torque in RAPID." : "Machine Homing Err: No torque in TOUCH_OFF.";
-						sendStatus(STATUS_PREFIX_ERROR, msg);
-						errorState = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? ERROR_HOMING_NO_TORQUE_RAPID : ERROR_HOMING_NO_TORQUE_TOUCH;
-						currentHomingPhase = HOMING_PHASE_ERROR;
-					}
-					break;
-				}
-				case HOMING_PHASE_BACK_OFF: {
-					if (!checkInjectorMoving()) {
-						const char* msg = is_machine_homing ? "Machine Homing: Back-off done. Touching off." : "Cartridge Homing: Back-off done. Touching off.";
-						sendStatus(STATUS_PREFIX_INFO, msg);
-						currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
-						long touch_off_move_length = homingDefaultBackoffSteps * 2;
-						long final_touch_off_move_steps = direction * touch_off_move_length;
-						moveInjectorMotors(final_touch_off_move_steps, final_touch_off_move_steps, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
-					}
-					break;
-				}
-				case HOMING_PHASE_RETRACT: {
-					if (!checkInjectorMoving()) {
-						const char* msg = is_machine_homing ? "Machine Homing: RETRACT complete. Success." : "Cartridge Homing: RETRACT complete. Success.";
-						sendStatus(STATUS_PREFIX_INFO, msg);
-						if (is_machine_homing) onHomingMachineDone();
-						else onHomingCartridgeDone();
-						errorState = ERROR_NONE;
-						currentHomingPhase = HOMING_PHASE_COMPLETE;
-					}
-					break;
-				}
-				default: break;
-			}
-		} else if (homingState == HOMING_PINCH) {
-			switch (currentHomingPhase) {
-				case HOMING_PHASE_STARTING_MOVE: {
-					uint32_t current_time = Milliseconds();
-					if (current_time - homingStartTime > 50) {
-						if (checkInjectorMoving()) {
-							sendStatus(STATUS_PREFIX_START, "Pinch Homing: Move started. Entering TOUCH_OFF phase.");
-							currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
-						} else {
-							sendStatus(STATUS_PREFIX_ERROR, "Pinch Homing Error: Motor failed to start moving.");
-							currentHomingPhase = HOMING_PHASE_ERROR;
-						}
-					}
-					break;
-				}
-				case HOMING_PHASE_TOUCH_OFF: {
-					if (checkInjectorTorqueLimit()) {
-						sendStatus(STATUS_PREFIX_INFO, "Pinch Homing: Torque limit reached. Success.");
-						ConnectorM2.PositionRefSet(0);
-						onHomingPinchDone();
-						errorState = ERROR_NONE;
-						currentHomingPhase = HOMING_PHASE_COMPLETE;
-					} else if (!checkInjectorMoving()) {
-						sendStatus(STATUS_PREFIX_ERROR, "Pinch Homing Error: Motor stopped without reaching torque limit.");
-						currentHomingPhase = HOMING_PHASE_ERROR;
-					}
-					break;
-				}
-				default: break;
-			}
-		}
+            switch (currentHomingPhase) {
+                case HOMING_PHASE_STARTING_MOVE: {
+                    uint32_t current_time = Milliseconds();
+                    if (current_time - homingStartTime > 50) {
+                        if (checkInjectorMoving()) {
+                            sendStatus(STATUS_PREFIX_START, "Homing: Move started. Entering RAPID_MOVE phase.");
+                            currentHomingPhase = HOMING_PHASE_RAPID_MOVE;
+                        } else {
+                            sendStatus(STATUS_PREFIX_ERROR, "Homing Error: Motor failed to start moving.");
+                            errorState = ERROR_HOMING_NO_TORQUE_RAPID;
+                            currentHomingPhase = HOMING_PHASE_ERROR;
+                        }
+                    }
+                    break;
+                }
+                case HOMING_PHASE_RAPID_MOVE:
+                case HOMING_PHASE_TOUCH_OFF: {
+                    if (checkInjectorTorqueLimit()) {
+                        if (currentHomingPhase == HOMING_PHASE_RAPID_MOVE) {
+                            sendStatus(STATUS_PREFIX_INFO, "Homing: Torque (RAPID). Backing off.");
+                            currentHomingPhase = HOMING_PHASE_BACK_OFF;
+                            long back_off_s = -direction * homingDefaultBackoffSteps;
+                            if (homingState == HOMING_PINCH) {
+                                movePinchMotor(back_off_s, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
+                            } else {
+                                moveInjectorMotors(back_off_s, back_off_s, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
+                            }
+                        } else { // TOUCH_OFF
+                            sendStatus(STATUS_PREFIX_INFO, "Homing: Torque (TOUCH_OFF). Zeroing & Retracting.");
+                            if (homingState == HOMING_MACHINE) {
+                                machineHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
+                                sendStatus(STATUS_PREFIX_INFO, "Machine home reference point set.");
+                            } else if (homingState == HOMING_CARTRIDGE) {
+                                cartridgeHomeReferenceSteps = ConnectorM0.PositionRefCommanded();
+                                sendStatus(STATUS_PREFIX_INFO, "Cartridge home reference point set.");
+                            } else { // HOMING_PINCH
+                                pinchHomeReferenceSteps = ConnectorM2.PositionRefCommanded();
+                                ConnectorM2.PositionRefSet(0); // Set current position as zero
+                                sendStatus(STATUS_PREFIX_INFO, "Pinch home reference point set and zeroed.");
+                            }
+                            currentHomingPhase = HOMING_PHASE_RETRACT;
+                            long retract_s = -direction * homing_actual_retract_steps;
+                            if (homingState == HOMING_PINCH) {
+                                movePinchMotor(retract_s, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
+                            } else {
+                                moveInjectorMotors(retract_s, retract_s, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
+                            }
+                        }
+                    } else if (!checkInjectorMoving()) {
+                        const char* msg = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? "Homing Err: No torque in RAPID." : "Homing Err: No torque in TOUCH_OFF.";
+                        sendStatus(STATUS_PREFIX_ERROR, msg);
+                        errorState = currentHomingPhase == HOMING_PHASE_RAPID_MOVE ? ERROR_HOMING_NO_TORQUE_RAPID : ERROR_HOMING_NO_TORQUE_TOUCH;
+                        currentHomingPhase = HOMING_PHASE_ERROR;
+                    }
+                    break;
+                }
+                case HOMING_PHASE_BACK_OFF: {
+                    if (!checkInjectorMoving()) {
+                        sendStatus(STATUS_PREFIX_INFO, "Homing: Back-off done. Touching off.");
+                        currentHomingPhase = HOMING_PHASE_TOUCH_OFF;
+                        long touch_off_move_length = homingDefaultBackoffSteps * 2;
+                        long final_touch_off_move_steps = direction * touch_off_move_length;
+                        if (homingState == HOMING_PINCH) {
+                            movePinchMotor(final_touch_off_move_steps, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
+                        } else {
+                            moveInjectorMotors(final_touch_off_move_steps, final_touch_off_move_steps, (int)homing_torque_percent_param, homing_actual_touch_sps, homing_actual_accel_sps2);
+                        }
+                    }
+                    break;
+                }
+                case HOMING_PHASE_RETRACT: {
+                    if (!checkInjectorMoving()) {
+                        sendStatus(STATUS_PREFIX_INFO, "Homing: RETRACT complete. Success.");
+                        if (homingState == HOMING_MACHINE) onHomingMachineDone();
+                        else if (homingState == HOMING_CARTRIDGE) onHomingCartridgeDone();
+                        else if (homingState == HOMING_PINCH) onHomingPinchDone();
+                        errorState = ERROR_NONE;
+                        currentHomingPhase = HOMING_PHASE_COMPLETE;
+                    }
+                    break;
+                }
+                default: break;
+            }
+        }
 	}
 
 	// --- Feed State Logic ---

@@ -101,10 +101,10 @@ void Injector::handleJogMove(const char* msg) {
 		if (vel_mms <= 0) vel_mms = 2.0f;
 		if (accel_mms2 <= 0) accel_mms2 = 10.0f;
 
-		long steps1 = (long)(dist_mm1 * STEPS_PER_MM_M0);
-		long steps2 = (long)(dist_mm2 * STEPS_PER_MM_M1);
-		int velocity_sps = (int)(vel_mms * STEPS_PER_MM_M0);
-		int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_M0);
+		long steps1 = (long)(dist_mm1 * STEPS_PER_MM_INJECTOR);
+		long steps2 = (long)(dist_mm2 * STEPS_PER_MM_INJECTOR);
+		int velocity_sps = (int)(vel_mms * STEPS_PER_MM_INJECTOR);
+		int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_INJECTOR);
 		
 		activeJogCommand = CMD_STR_JOG_MOVE;
 		moveInjectorMotors(steps1, steps2, torque_percent, velocity_sps, accel_sps2_val);
@@ -116,115 +116,74 @@ void Injector::handleJogMove(const char* msg) {
 	}
 }
 
-void Injector::handleMachineHomeMove(const char *msg) {
+void Injector::handleMachineHomeMove() {
 	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
 		sendStatus(STATUS_PREFIX_ERROR, "MACHINE_HOME_MOVE ignored: Another operation is in progress.");
 		return;
 	}
+    if (!motorsAreEnabled) {
+        sendStatus(STATUS_PREFIX_ERROR, "MACHINE_HOME_MOVE blocked: Motors disabled.");
+        homingState = HOMING_MACHINE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_MOTORS_DISABLED; return;
+    }
 
-	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent;
-	
-	int parsed_count = sscanf(msg + strlen(CMD_STR_MACHINE_HOME_MOVE), "%f %f %f %f %f %f",
-	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration_mm_s2, &retract_mm, &torque_percent);
+    // Hardcoded parameters
+    float stroke_mm = 500.0f;
+    float rapid_vel_mm_s = 20.0f;
+    float touch_vel_mm_s = 1.0f;
+    float acceleration_mm_s2 = 100.0f;
+    float retract_mm = 10.0f;
+    float torque_percent = 10.0f;
 
-	if (parsed_count == 6) {
-		if (PITCH_MM_PER_REV <= 0.0f) {
-			sendStatus(STATUS_PREFIX_ERROR, "FATAL HOMING ERROR: PITCH_MM_PER_REV is not set or is zero.");
-			homingState = HOMING_MACHINE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_INVALID_PARAMETERS; return;
-		}
-		if (!motorsAreEnabled) {
-			sendStatus(STATUS_PREFIX_ERROR, "MACHINE_HOME_MOVE blocked: Motors disabled.");
-			homingState = HOMING_MACHINE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_MOTORS_DISABLED; return;
-		}
-		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 20.0f;
-		if (rapid_vel_mm_s <= 0 || touch_vel_mm_s <= 0 || acceleration_mm_s2 <=0 || stroke_mm <= 0 || retract_mm < 0) {
-			sendStatus(STATUS_PREFIX_ERROR, "Error: Invalid parameters for Machine Home.");
-			homingState = HOMING_MACHINE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_INVALID_PARAMETERS; return;
-		}
+    homing_torque_percent_param = torque_percent;
+    homing_actual_stroke_steps = (long)(stroke_mm * STEPS_PER_MM_INJECTOR);
+    homing_actual_rapid_sps = (int)(rapid_vel_mm_s * STEPS_PER_MM_INJECTOR);
+    homing_actual_touch_sps = (int)(touch_vel_mm_s * STEPS_PER_MM_INJECTOR);
+    homing_actual_accel_sps2 = (int)(acceleration_mm_s2 * STEPS_PER_MM_INJECTOR);
+    homing_actual_retract_steps = (long)(retract_mm * STEPS_PER_MM_INJECTOR);
 
-		homing_stroke_mm_param = stroke_mm;
-		homing_rapid_vel_mm_s_param = rapid_vel_mm_s;
-		homing_touch_vel_mm_s_param = touch_vel_mm_s;
-		homing_acceleration_param = acceleration_mm_s2;
-		homing_retract_mm_param = retract_mm;
-		homing_torque_percent_param = torque_percent;
+    homingState = HOMING_MACHINE;
+    currentHomingPhase = HOMING_PHASE_STARTING_MOVE;
+    homingStartTime = Milliseconds();
+    errorState = ERROR_NONE;
 
-		const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV;
-		homing_actual_stroke_steps = (long)(stroke_mm * current_steps_per_mm);
-		homing_actual_rapid_sps = (int)(rapid_vel_mm_s * current_steps_per_mm);
-		homing_actual_touch_sps = (int)(touch_vel_mm_s * current_steps_per_mm);
-		homing_actual_accel_sps2 = (int)(acceleration_mm_s2 * current_steps_per_mm);
-		homing_actual_retract_steps = (long)(retract_mm * current_steps_per_mm);
-
-		homingState = HOMING_MACHINE;
-		currentHomingPhase = HOMING_PHASE_STARTING_MOVE;
-		homingStartTime = Milliseconds();
-		errorState = ERROR_NONE;
-
-		sendStatus(STATUS_PREFIX_START, "MACHINE_HOME_MOVE initiated.");
-		long initial_move_steps = -1 * homing_actual_stroke_steps;
-		moveInjectorMotors(initial_move_steps, initial_move_steps, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
-		
-		} else {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid MACHINE_HOME_MOVE format. Expected 6 parameters.");
-		homingState = HOMING_MACHINE;
-		currentHomingPhase = HOMING_PHASE_ERROR;
-	}
+    sendStatus(STATUS_PREFIX_START, "MACHINE_HOME_MOVE initiated.");
+    long initial_move_steps = -1 * homing_actual_stroke_steps;
+    moveInjectorMotors(initial_move_steps, initial_move_steps, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
 }
 
-void Injector::handleCartridgeHomeMove(const char *msg) {
+void Injector::handleCartridgeHomeMove() {
 	if (homingState != HOMING_NONE || feedState != FEED_STANDBY || !jogDone || active_dispense_INJECTION_ongoing) {
 		sendStatus(STATUS_PREFIX_ERROR, "CARTRIDGE_HOME_MOVE ignored: Another operation is in progress.");
 		return;
 	}
-	
-	float stroke_mm, rapid_vel_mm_s, touch_vel_mm_s, acceleration_mm_s2, retract_mm, torque_percent;
-	int parsed_count = sscanf(msg + strlen(CMD_STR_CARTRIDGE_HOME_MOVE), "%f %f %f %f %f %f",
-	&stroke_mm, &rapid_vel_mm_s, &touch_vel_mm_s, &acceleration_mm_s2, &retract_mm, &torque_percent);
+    if (!motorsAreEnabled) {
+        sendStatus(STATUS_PREFIX_ERROR, "CARTRIDGE_HOME_MOVE blocked: Motors disabled.");
+        homingState = HOMING_CARTRIDGE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_MOTORS_DISABLED; return;
+    }
 
-	if (parsed_count == 6) {
-		if (PITCH_MM_PER_REV <= 0.0f) {
-			sendStatus(STATUS_PREFIX_ERROR, "FATAL HOMING ERROR: PITCH_MM_PER_REV is not set or is zero.");
-			homingState = HOMING_CARTRIDGE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_INVALID_PARAMETERS; return;
-		}
-		if (!motorsAreEnabled) {
-			sendStatus(STATUS_PREFIX_ERROR, "CARTRIDGE_HOME_MOVE blocked: Motors disabled.");
-			homingState = HOMING_CARTRIDGE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_MOTORS_DISABLED; return;
-		}
-		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 20.0f;
-		if (rapid_vel_mm_s <= 0 || touch_vel_mm_s <= 0 || acceleration_mm_s2 <=0 || stroke_mm <= 0 || retract_mm < 0) {
-			sendStatus(STATUS_PREFIX_ERROR, "Error: Invalid parameters for Cartridge Home.");
-			homingState = HOMING_CARTRIDGE; currentHomingPhase = HOMING_PHASE_ERROR; errorState = ERROR_INVALID_PARAMETERS; return;
-		}
+    // Hardcoded parameters
+    float stroke_mm = 500.0f;
+    float rapid_vel_mm_s = 20.0f;
+    float touch_vel_mm_s = 1.0f;
+    float acceleration_mm_s2 = 100.0f;
+    float retract_mm = 10.0f;
+    float torque_percent = 10.0f;
 
-		homing_stroke_mm_param = stroke_mm;
-		homing_rapid_vel_mm_s_param = rapid_vel_mm_s;
-		homing_touch_vel_mm_s_param = touch_vel_mm_s;
-		homing_acceleration_param = acceleration_mm_s2;
-		homing_retract_mm_param = retract_mm;
-		homing_torque_percent_param = torque_percent;
+    homing_torque_percent_param = torque_percent;
+    homing_actual_stroke_steps = (long)(stroke_mm * STEPS_PER_MM_INJECTOR);
+    homing_actual_rapid_sps = (int)(rapid_vel_mm_s * STEPS_PER_MM_INJECTOR);
+    homing_actual_touch_sps = (int)(touch_vel_mm_s * STEPS_PER_MM_INJECTOR);
+    homing_actual_accel_sps2 = (int)(acceleration_mm_s2 * STEPS_PER_MM_INJECTOR);
+    homing_actual_retract_steps = (long)(retract_mm * STEPS_PER_MM_INJECTOR);
 
-		const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV;
-		homing_actual_stroke_steps = (long)(stroke_mm * current_steps_per_mm);
-		homing_actual_rapid_sps = (int)(rapid_vel_mm_s * current_steps_per_mm);
-		homing_actual_touch_sps = (int)(touch_vel_mm_s * current_steps_per_mm);
-		homing_actual_accel_sps2 = (int)(acceleration_mm_s2 * current_steps_per_mm);
-		homing_actual_retract_steps = (long)(retract_mm * current_steps_per_mm);
+    homingState = HOMING_CARTRIDGE;
+    currentHomingPhase = HOMING_PHASE_STARTING_MOVE;
+    homingStartTime = Milliseconds();
+    errorState = ERROR_NONE;
 
-		homingState = HOMING_CARTRIDGE;
-		currentHomingPhase = HOMING_PHASE_STARTING_MOVE;
-		homingStartTime = Milliseconds();
-		errorState = ERROR_NONE;
-
-		sendStatus(STATUS_PREFIX_START, "CARTRIDGE_HOME_MOVE initiated.");
-		long initial_move_steps = 1 * homing_actual_stroke_steps;
-		moveInjectorMotors(initial_move_steps, initial_move_steps, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
-
-		} else {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid CARTRIDGE_HOME_MOVE format. Expected 6 parameters.");
-		homingState = HOMING_CARTRIDGE;
-		currentHomingPhase = HOMING_PHASE_ERROR;
-	}
+    sendStatus(STATUS_PREFIX_START, "CARTRIDGE_HOME_MOVE initiated.");
+    long initial_move_steps = 1 * homing_actual_stroke_steps;
+    moveInjectorMotors(initial_move_steps, initial_move_steps, (int)homing_torque_percent_param, homing_actual_rapid_sps, homing_actual_accel_sps2);
 }
 
 void Injector::handlePinchHomeMove() {
@@ -237,10 +196,20 @@ void Injector::handlePinchHomeMove() {
 		return;
 	}
 
-	long homing_steps = -800;
-	int velocity = 400;
-	int acceleration = 5000;
-	int torque_percent = 10;
+    // Hardcoded parameters for pinch valve
+    float stroke_mm = 50.0f; // A reasonable stroke for a pinch valve
+    float rapid_vel_mm_s = 5.0f;
+    float touch_vel_mm_s = 1.0f;
+    float acceleration_mm_s2 = 100.0f;
+    float retract_mm = 10.0f;
+    float torque_percent = 20.0f;
+
+    homing_torque_percent_param = torque_percent;
+    homing_actual_stroke_steps = (long)(stroke_mm * STEPS_PER_MM_PINCH);
+    homing_actual_rapid_sps = (int)(rapid_vel_mm_s * STEPS_PER_MM_PINCH);
+    homing_actual_touch_sps = (int)(touch_vel_mm_s * STEPS_PER_MM_PINCH);
+    homing_actual_accel_sps2 = (int)(acceleration_mm_s2 * STEPS_PER_MM_PINCH);
+    homing_actual_retract_steps = (long)(retract_mm * STEPS_PER_MM_PINCH);
 	
 	homingState = HOMING_PINCH;
 	currentHomingPhase = HOMING_PHASE_STARTING_MOVE;
@@ -248,7 +217,8 @@ void Injector::handlePinchHomeMove() {
 	errorState = ERROR_NONE;
 
 	sendStatus(STATUS_PREFIX_START, "PINCH_HOME_MOVE initiated.");
-	movePinchMotor(homing_steps, torque_percent, velocity, acceleration);
+    // Move towards the hard stop (negative direction)
+	movePinchMotor(-homing_actual_stroke_steps, (int)torque_percent, homing_actual_rapid_sps, homing_actual_accel_sps2);
 }
 
 void Injector::handlePinchJogMove(const char *msg) {
@@ -268,7 +238,7 @@ void Injector::handlePinchJogMove(const char *msg) {
 		if (velocity_sps <= 0) velocity_sps = 800;
 		if (accel_sps2 <= 0) accel_sps2 = 5000;
 
-		const float steps_per_degree = 800.0f / 360.0f;
+		const float steps_per_degree = (float)PULSES_PER_REV / 360.0f;
 		long steps_to_move = (long)(degrees * steps_per_degree);
 		
 		activeJogCommand = CMD_STR_PINCH_JOG_MOVE;
@@ -362,7 +332,7 @@ void Injector::handleMoveToCartridgeRetract(const char *msg) {
 	feedingDone = false;
 	activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_RETRACT;
 
-	const float current_steps_per_mm = (float)pulsesPerRev / PITCH_MM_PER_REV;
+	const float current_steps_per_mm = (float)PULSES_PER_REV / INJECTOR_PITCH_MM_PER_REV;
 	long offset_steps = (long)(offset_mm * current_steps_per_mm);
 	long target_absolute_axis_position = cartridgeHomeReferenceSteps + offset_steps;
 

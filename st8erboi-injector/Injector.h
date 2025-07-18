@@ -10,11 +10,11 @@
 #include <math.h>
 
 // --- System Parameters & Conversions ---
-#define PITCH_MM_PER_REV 5.0f
-#define pulsesPerRev 800
-#define STEPS_PER_MM_M0 160.0f
-#define STEPS_PER_MM_M1 160.0f
-#define STEPS_PER_MM_M2 160.0f
+#define INJECTOR_PITCH_MM_PER_REV 5.0f
+#define PINCH_PITCH_MM_PER_REV 2.0f
+#define PULSES_PER_REV 800
+#define STEPS_PER_MM_INJECTOR (PULSES_PER_REV / INJECTOR_PITCH_MM_PER_REV) // 160.0f
+#define STEPS_PER_MM_PINCH (PULSES_PER_REV / PINCH_PITCH_MM_PER_REV)     // 400.0f
 #define MAX_HOMING_DURATION_MS 30000 // 30 seconds
 
 // --- Hardware Pin Definitions (Corrected from user table) ---
@@ -53,8 +53,8 @@
 #define CMD_STR_SET_INJECTOR_TORQUE_OFFSET "SET_INJECTOR_TORQUE_OFFSET "
 #define CMD_STR_SET_PINCH_TORQUE_OFFSET "SET_PINCH_TORQUE_OFFSET "
 #define CMD_STR_JOG_MOVE "JOG_MOVE "
-#define CMD_STR_MACHINE_HOME_MOVE "MACHINE_HOME_MOVE "
-#define CMD_STR_CARTRIDGE_HOME_MOVE "CARTRIDGE_HOME_MOVE "
+#define CMD_STR_MACHINE_HOME_MOVE "MACHINE_HOME_MOVE"
+#define CMD_STR_CARTRIDGE_HOME_MOVE "CARTRIDGE_HOME_MOVE"
 #define CMD_STR_PINCH_HOME_MOVE "PINCH_HOME_MOVE"
 #define CMD_STR_INJECT_MOVE "INJECT_MOVE "
 #define CMD_STR_PURGE_MOVE "PURGE_MOVE "
@@ -186,11 +186,7 @@ class Injector {
 	uint32_t pid_last_time;
 	float pid_output;
 
-	float homing_stroke_mm_param;
-	float homing_rapid_vel_mm_s_param;
-	float homing_touch_vel_mm_s_param;
-	float homing_acceleration_param;
-	float homing_retract_mm_param;
+    // Homing parameters are now calculated at runtime from hardcoded values
 	float homing_torque_percent_param;
 	long homing_actual_stroke_steps;
 	long homing_actual_retract_steps;
@@ -249,8 +245,8 @@ class Injector {
 	void handleStandbyMode();
 	void handleSetinjectorMotorsTorqueOffset(const char* msg);
 	void handleJogMove(const char* msg);
-	void handleMachineHomeMove(const char* msg);
-	void handleCartridgeHomeMove(const char* msg);
+	void handleMachineHomeMove();
+	void handleCartridgeHomeMove();
 	void handlePinchHomeMove();
 	void handlePinchJogMove(const char* msg);
 	void handleEnablePinch();
@@ -311,7 +307,7 @@ class Injector {
 	float injectorMotorsTorqueOffset;
 	float smoothedTorqueValue0, smoothedTorqueValue1, smoothedTorqueValue2;
 	bool firstTorqueReading0, firstTorqueReading1, firstTorqueReading2;
-	int32_t machineHomeReferenceSteps, cartridgeHomeReferenceSteps;
+	int32_t machineHomeReferenceSteps, cartridgeHomeReferenceSteps, pinchHomeReferenceSteps;
 	
 	// --- NEW: Track active command for DONE messages ---
 	const char* activeFeedCommand;

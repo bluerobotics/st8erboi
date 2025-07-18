@@ -96,16 +96,16 @@ void Injector::sendGuiTelemetry(void){
 	long current_pos_steps_m1 = ConnectorM1.PositionRefCommanded();
 	long current_pos_steps_m2 = ConnectorM2.PositionRefCommanded();
 
-	float pos_mm_m0 = (float)current_pos_steps_m0 / STEPS_PER_MM_M0;
-	float pos_mm_m1 = (float)current_pos_steps_m1 / STEPS_PER_MM_M1;
-	float pos_mm_m2 = (float)current_pos_steps_m2 / STEPS_PER_MM_M2;
+	float pos_mm_m0 = (float)current_pos_steps_m0 / STEPS_PER_MM_INJECTOR;
+	float pos_mm_m1 = (float)current_pos_steps_m1 / STEPS_PER_MM_INJECTOR;
+	float pos_mm_m2 = (float)current_pos_steps_m2 / STEPS_PER_MM_PINCH;
 
 	int is_homed0 = homingMachineDone ? 1 : 0;
 	int is_homed1 = homingMachineDone ? 1 : 0;
 	int is_homed2 = homingPinchDone ? 1 : 0;
 
-	float machine_pos_mm = (float)(current_pos_steps_m0 - machineHomeReferenceSteps) / STEPS_PER_MM_M0;
-	float cartridge_pos_mm = (float)(current_pos_steps_m0 - cartridgeHomeReferenceSteps) / STEPS_PER_MM_M0;
+	float machine_pos_mm = (float)(current_pos_steps_m0 - machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
+	float cartridge_pos_mm = (float)(current_pos_steps_m0 - cartridgeHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
 
 	float current_dispensed_for_telemetry = 0.0f;
 	float current_target_for_telemetry = 0.0f;
@@ -125,10 +125,13 @@ void Injector::sendGuiTelemetry(void){
 		current_target_for_telemetry = 0.0f;
 	}
 
+	// **MODIFIED CODE BLOCK**
+	// Changed "---" to "0.0" for invalid torque to prevent GUI parsing errors.
 	char torque0Str[16], torque1Str[16], torque2Str[16];
-	if (displayTorque0 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque0Str, "---"); } else { snprintf(torque0Str, sizeof(torque0Str), "%.2f", displayTorque0); }
-	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "---"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
-	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "---"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
+	if (displayTorque0 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque0Str, "0.0"); } else { snprintf(torque0Str, sizeof(torque0Str), "%.2f", displayTorque0); }
+	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "0.0"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
+	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "0.0"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
+	// **END MODIFIED CODE BLOCK**
 
 	// --- FIX: Assemble telemetry with simplified heater status ---
 	char msg[512];
@@ -164,8 +167,8 @@ UserCommand Injector::parseCommand(const char *msg) {
 	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS;
 	if (strncmp(msg, CMD_STR_SET_INJECTOR_TORQUE_OFFSET, strlen(CMD_STR_SET_INJECTOR_TORQUE_OFFSET)) == 0) return CMD_SET_TORQUE_OFFSET;
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
-	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
-	if (strncmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
+	if (strcmp(msg, CMD_STR_MACHINE_HOME_MOVE) == 0) return CMD_MACHINE_HOME_MOVE;
+	if (strcmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE) == 0) return CMD_CARTRIDGE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_INJECT_MOVE, strlen(CMD_STR_INJECT_MOVE)) == 0) return CMD_INJECT_MOVE;
 	if (strncmp(msg, CMD_STR_PURGE_MOVE, strlen(CMD_STR_PURGE_MOVE)) == 0) return CMD_PURGE_MOVE;
 	if (strcmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
@@ -213,8 +216,8 @@ void Injector::handleMessage(const char *msg) {
 		case CMD_CLEAR_ERRORS:              handleClearErrors(); break;
 		case CMD_SET_TORQUE_OFFSET:         handleSetinjectorMotorsTorqueOffset(msg); break;
 		case CMD_JOG_MOVE:                  handleJogMove(msg); break;
-		case CMD_MACHINE_HOME_MOVE:         handleMachineHomeMove(msg); break;
-		case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHomeMove(msg); break;
+		case CMD_MACHINE_HOME_MOVE:         handleMachineHomeMove(); break;
+		case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHomeMove(); break;
 		case CMD_INJECT_MOVE:               handleInjectMove(msg); break;
 		case CMD_PURGE_MOVE:                handlePurgeMove(msg); break;
 		case CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(); break;

@@ -46,9 +46,24 @@ def create_shared_widgets(root, command_funcs):
 
     bottom_frame = tk.Frame(root, bg="#21232b")
 
-    terminal = tk.Text(bottom_frame, height=8, bg="#1b1e2b", fg="#0f8", insertbackground="white", wrap="word",
+    # **MODIFIED CODE BLOCK**
+    # Create a container frame for the terminal and its scrollbar
+    terminal_container = tk.Frame(bottom_frame)
+    terminal_container.pack(fill=tk.X, expand=True, pady=(5, 0))
+    terminal_container.grid_rowconfigure(0, weight=1)
+    terminal_container.grid_columnconfigure(0, weight=1)
+
+
+    # Create the terminal Text widget
+    terminal = tk.Text(terminal_container, height=8, bg="#1b1e2b", fg="#0f8", insertbackground="white", wrap="word",
                        highlightbackground="#34374b", highlightthickness=1, bd=0, font=("Consolas", 9))
-    terminal.pack(fill=tk.X, expand=False, pady=(5, 0))
+    terminal.grid(row=0, column=0, sticky="nsew")
+
+    # Create and link the scrollbar
+    scrollbar = ttk.Scrollbar(terminal_container, command=terminal.yview)
+    scrollbar.grid(row=0, column=1, sticky='ns')
+    terminal['yscrollcommand'] = scrollbar.set
+    # **END MODIFIED CODE BLOCK**
 
     options_frame = tk.Frame(bottom_frame, bg="#21232b")
     options_frame.pack(fill=tk.X, pady=(2, 0))
