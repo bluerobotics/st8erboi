@@ -4,12 +4,11 @@ import queue
 import os
 from script_validator import COMMANDS, validate_script
 from script_processor import ScriptRunner
-from injector_gui import create_injector_motor_boxes, create_injector_ancillary_controls
-from fillhead_gui import create_fillhead_motor_boxes, create_fillhead_ancillary_controls
+from injector_controls import create_injector_ancillary_controls
+from fillhead_controls import create_fillhead_ancillary_controls
 
 
-# --- Autocomplete and Text Editor Widgets (from original scripting_gui.py) ---
-# These classes remain the same as they are essential for the script editor's functionality.
+# --- Autocomplete and Text Editor Widgets ---
 class AutocompletePopup(tk.Toplevel):
     def __init__(self, parent, text_widget, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -52,10 +51,12 @@ class AutocompletePopup(tk.Toplevel):
 
 class TextLineNumbers(tk.Canvas):
     def __init__(self, *args, **kwargs):
-        tk.Canvas.__init__(self, *args, **kwargs); self.textwidget = None
+        tk.Canvas.__init__(self, *args, **kwargs);
+        self.textwidget = None
 
     def attach(self, text_widget):
-        self.textwidget = text_widget; self.redraw()
+        self.textwidget = text_widget;
+        self.redraw()
 
     def redraw(self, *args):
         self.delete("all");
@@ -83,8 +84,9 @@ class CustomText(tk.Text):
         except tk.TclError:
             return None
         if (args[0] in ("insert", "delete", "replace") or args[0:3] == ("mark", "set", "insert") or args[0:2] == (
-        "xview", "moveto") or args[0:2] == ("xview", "scroll") or args[0:2] == ("yview", "moveto") or args[0:2] == (
-        "yview", "scroll")): self.event_generate("<<Change>>", when="tail")
+                "xview", "moveto") or args[0:2] == ("xview", "scroll") or args[0:2] == ("yview", "moveto") or args[
+                                                                                                              0:2] == (
+                "yview", "scroll")): self.event_generate("<<Change>>", when="tail")
         if (args[0] in ("insert", "delete", "replace")): self.event_generate("<<Modified>>", when="tail")
         return result
 
@@ -186,6 +188,57 @@ class ValidationResultsWindow(tk.Toplevel):
 
 # --- GUI Creation Functions ---
 
+def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
+    """Creates the central motor power enable/disable controls."""
+    power_frame = tk.LabelFrame(parent, text="Motor Power", bg="#2a2d3b", fg="white", padx=5, pady=5)
+    power_frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
+
+    # Grid configuration
+    power_frame.grid_columnconfigure(0, weight=1)
+    power_frame.grid_columnconfigure(1, weight=1)
+    power_frame.grid_columnconfigure(2, weight=1)
+
+    send_injector_cmd = command_funcs['send_injector']
+    send_fillhead_cmd = command_funcs['send_fillhead']
+
+    # Injector Motors
+    ttk.Button(power_frame, text="Enable Injector", style='Small.TButton',
+               command=lambda: send_injector_cmd("ENABLE")).grid(row=0, column=0, sticky='ew', padx=(0, 1))
+    ttk.Button(power_frame, text="Disable Injector", style='Small.TButton',
+               command=lambda: send_injector_cmd("DISABLE")).grid(row=0, column=1, columnspan=2, sticky='ew',
+                                                                  padx=(1, 0))
+
+    # Pinch Motor
+    ttk.Button(power_frame, text="Enable Pinch", style='Small.TButton',
+               command=lambda: send_injector_cmd("ENABLE_PINCH")).grid(row=1, column=0, sticky='ew', padx=(0, 1),
+                                                                       pady=(2, 0))
+    ttk.Button(power_frame, text="Disable Pinch", style='Small.TButton',
+               command=lambda: send_injector_cmd("DISABLE_PINCH")).grid(row=1, column=1, columnspan=2, sticky='ew',
+                                                                        padx=(1, 0), pady=(2, 0))
+
+    # Separator
+    ttk.Separator(power_frame, orient='horizontal').grid(row=2, column=0, columnspan=3, sticky='ew', pady=5)
+
+    # Fillhead Motors
+    ttk.Button(power_frame, text="Enable X", style='Small.TButton', command=lambda: send_fillhead_cmd("ENABLE_X")).grid(
+        row=3, column=0, sticky='ew', padx=(0, 1))
+    ttk.Button(power_frame, text="Enable Y", style='Small.TButton', command=lambda: send_fillhead_cmd("ENABLE_Y")).grid(
+        row=3, column=1, sticky='ew', padx=1)
+    ttk.Button(power_frame, text="Enable Z", style='Small.TButton', command=lambda: send_fillhead_cmd("ENABLE_Z")).grid(
+        row=3, column=2, sticky='ew', padx=(1, 0))
+
+    ttk.Button(power_frame, text="Disable X", style='Small.TButton',
+               command=lambda: send_fillhead_cmd("DISABLE_X")).grid(row=4, column=0, sticky='ew', padx=(0, 1),
+                                                                    pady=(2, 0))
+    ttk.Button(power_frame, text="Disable Y", style='Small.TButton',
+               command=lambda: send_fillhead_cmd("DISABLE_Y")).grid(row=4, column=1, sticky='ew', padx=1, pady=(2, 0))
+    ttk.Button(power_frame, text="Disable Z", style='Small.TButton',
+               command=lambda: send_fillhead_cmd("DISABLE_Z")).grid(row=4, column=2, sticky='ew', padx=(1, 0),
+                                                                    pady=(2, 0))
+
+    return {}
+
+
 def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
     """Creates the scrollable panel containing all manual device controls."""
     canvas = tk.Canvas(parent, bg="#2a2d3b", highlightthickness=0)
@@ -206,21 +259,13 @@ def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
     scrollbar.pack(side="right", fill="y")
 
     all_widgets = {}
-    ui_elements = {}  # For jog button interlock
+    ui_elements = {}
 
-    # --- Consolidated Motor Controls ---
-    all_motors_lf = tk.LabelFrame(scrollable_frame, text="All Motor Controls", bg="#2a2d3b", fg="white", padx=10,
-                                  pady=10, font=("Segoe UI", 10, "bold"))
-    all_motors_lf.pack(fill=tk.X, expand=True, padx=5, pady=5)
+    # Central Motor Power Controls
+    power_widgets = create_motor_power_controls(scrollable_frame, command_funcs, shared_gui_refs)
+    all_widgets.update(power_widgets)
 
-    injector_motor_widgets = create_injector_motor_boxes(all_motors_lf, command_funcs['send_injector'], shared_gui_refs,
-                                                         ui_elements)
-    all_widgets.update(injector_motor_widgets)
-
-    fillhead_motor_widgets = create_fillhead_motor_boxes(all_motors_lf, command_funcs['send_fillhead'], shared_gui_refs)
-    all_widgets.update(fillhead_motor_widgets)
-
-    # --- Other Ancillary Controls ---
+    # Ancillary Controls (Jog, Home, Feed)
     injector_ancillary_widgets = create_injector_ancillary_controls(scrollable_frame, command_funcs['send_injector'],
                                                                     shared_gui_refs, ui_elements)
     all_widgets.update(injector_ancillary_widgets)
@@ -231,33 +276,36 @@ def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
     return all_widgets
 
 
-def create_main_view(root, command_funcs, shared_gui_refs):
-    """Creates the main application view, replacing the old tabbed interface."""
-    main_container = tk.Frame(root, bg="#21232b")
-    main_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+def create_manual_controls_display(parent, command_funcs, shared_gui_refs):
+    """
+    Creates the collapsible manual controls display for the left bar.
+    """
+    container = tk.Frame(parent, bg="#21232b")
+    container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(10, 0))
 
-    # --- Collapsible Manual Controls Panel ---
-    manual_panel = tk.Frame(main_container, bg="#2a2d3b", width=450)
+    manual_panel = tk.Frame(container, bg="#2a2d3b")
     manual_widgets = create_manual_controls_panel(manual_panel, command_funcs, shared_gui_refs)
 
     def toggle_manual_controls():
         if manual_panel.winfo_ismapped():
             manual_panel.pack_forget()
-            toggle_button.config(text="S\nH\nO\nW\n \nM\nA\nN\nU\nA\nL")
+            toggle_button.config(text="Show Manual Controls ▼")
         else:
-            manual_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5), pady=0)
-            toggle_button.config(text="H\nI\nD\nE\n \nM\nA\nN\nU\nA\nL")
+            manual_panel.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(5, 0))
+            toggle_button.config(text="Hide Manual Controls ▲")
 
-    # --- Toggle Button ---
-    toggle_button = tk.Button(main_container, text="S\nH\nO\nW\n \nM\nA\nN\nU\nA\nL",
-                              relief=tk.FLAT, bg="#4a5568", fg="white",
-                              activebackground="#5a6268", activeforeground="white",
-                              font=("Segoe UI", 9, "bold"), width=2,
-                              command=toggle_manual_controls)
-    toggle_button.pack(side=tk.LEFT, fill=tk.Y, padx=(5, 0), pady=5)
+    toggle_button = ttk.Button(container, text="Show Manual Controls ▼", command=toggle_manual_controls,
+                               style="Neutral.TButton")
+    toggle_button.pack(side=tk.TOP, fill=tk.X, ipady=5)
 
-    # --- Main Scripting Area ---
-    scripting_area = tk.Frame(main_container, bg="#21232b")
+    return manual_widgets
+
+
+def create_scripting_area(parent, command_funcs, shared_gui_refs):
+    """
+    Creates the main scripting area, including the editor and command reference.
+    """
+    scripting_area = tk.Frame(parent, bg="#21232b")
     scripting_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     paned_window = ttk.PanedWindow(scripting_area, orient=tk.HORIZONTAL)
@@ -293,13 +341,12 @@ def create_main_view(root, command_funcs, shared_gui_refs):
     script_editor.tag_config("error_highlight", background="#552222")
     script_editor.text.tag_lower("selection_highlight", "sel");
     script_editor.insert(tk.END, "# Example Script\n# Type commands here or load a file.\n")
-    status_overview_widget = create_status_overview(right_pane, shared_gui_refs);
-    status_overview_widget.pack(fill=tk.X, expand=False, pady=(0, 0), padx=5)
+
     command_ref_widget = create_command_reference(right_pane, script_editor.text);
     command_ref_widget.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
 
     def update_window_title():
-        root = main_container.winfo_toplevel();
+        root = scripting_area.winfo_toplevel();
         filename = "Untitled"
         if current_filepath: filename = os.path.basename(current_filepath)
         modified_star = "*" if script_editor.text.edit_modified() else "";
@@ -324,7 +371,8 @@ def create_main_view(root, command_funcs, shared_gui_refs):
             last_exec_highlight = line_num
 
     def on_run_finished():
-        set_buttons_state(tk.NORMAL); status_callback_handler("Idle", -1)
+        set_buttons_state(tk.NORMAL);
+        status_callback_handler("Idle", -1)
 
     def on_step_finished():
         set_buttons_state(tk.NORMAL);
@@ -343,10 +391,14 @@ def create_main_view(root, command_funcs, shared_gui_refs):
 
     def get_current_line_info():
         try:
-            line_num = int(last_selection_highlight); content = script_editor.get(f"{line_num}.0",
-                                                                                  f"{line_num}.end"); line_offset = line_num - 1; return content, line_offset
+            line_num = int(last_selection_highlight);
+            content = script_editor.get(f"{line_num}.0",
+                                        f"{line_num}.end");
+            line_offset = line_num - 1;
+            return content, line_offset
         except (tk.TclError, ValueError, TypeError):
-            status_callback_handler("Error: No line selected.", -1); return None, None
+            status_callback_handler("Error: No line selected.", -1);
+            return None, None
 
     def check_script_validity(show_success=False):
         script_content = script_editor.get("1.0", tk.END);
@@ -389,13 +441,15 @@ def create_main_view(root, command_funcs, shared_gui_refs):
         for i in range(start_line_num - 1, len(all_lines)):
             line_content = all_lines[i].strip()
             if line_content and not line_content.startswith('#'): next_valid_line_num = i + 1; next_valid_line_content = \
-            all_lines[i]; break
+                all_lines[i]; break
         if next_valid_line_num != -1:
-            update_selection_highlight(next_valid_line_num); run_script_from_content(next_valid_line_content,
-                                                                                     next_valid_line_num - 1,
-                                                                                     is_step=True)
+            update_selection_highlight(next_valid_line_num);
+            run_script_from_content(next_valid_line_content,
+                                    next_valid_line_num - 1,
+                                    is_step=True)
         else:
-            status_var.set("End of script reached."); on_run_finished()
+            status_var.set("End of script reached.");
+            on_run_finished()
 
     def stop_script():
         if script_runner: script_runner.stop()
@@ -428,7 +482,8 @@ def create_main_view(root, command_funcs, shared_gui_refs):
         if not filepath: return
         try:
             with open(filepath, 'r') as f:
-                script_editor.delete('1.0', tk.END); script_editor.insert('1.0', f.read())
+                script_editor.delete('1.0', tk.END);
+                script_editor.insert('1.0', f.read())
             current_filepath = filepath;
             script_editor.text.edit_modified(False);
             update_window_title();
@@ -448,7 +503,8 @@ def create_main_view(root, command_funcs, shared_gui_refs):
                 status_var.set(f"Saved to {os.path.basename(current_filepath)}");
                 return True
             except Exception as e:
-                messagebox.showerror("Save Error", f"Could not save file:\n{e}"); return False
+                messagebox.showerror("Save Error", f"Could not save file:\n{e}");
+                return False
         else:
             return save_script_as()
 
@@ -472,8 +528,10 @@ def create_main_view(root, command_funcs, shared_gui_refs):
         last_selection_highlight = line_num
 
     def on_line_click(event):
-        index = script_editor.text.index(f"@{event.x},{event.y}"); line_num = int(
-            index.split('.')[0]); update_selection_highlight(line_num)
+        index = script_editor.text.index(f"@{event.x},{event.y}");
+        line_num = int(
+            index.split('.')[0]);
+        update_selection_highlight(line_num)
 
     script_editor.bind("<Button-1>", on_line_click);
     update_selection_highlight(1)
@@ -508,7 +566,7 @@ def create_main_view(root, command_funcs, shared_gui_refs):
     status_label.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
     update_window_title()
 
-    return {**manual_widgets}
+    return {}
 
 
 def create_command_reference(parent, script_editor_widget):
@@ -558,142 +616,3 @@ def create_command_reference(parent, script_editor_widget):
     tree.bind("<Button-3>", show_context_menu);
     tree.bind("<Double-1>", lambda e: add_to_script())
     return ref_frame
-
-
-def create_status_overview(parent, gui_refs):
-    status_container = tk.Frame(parent, bg="#21232b")
-    font_title = ("Segoe UI", 14, "bold");
-    font_readout_label = ("Segoe UI", 10);
-    font_readout_value = ("Consolas", 28, "bold");
-    font_homed_status = ("Segoe UI", 9, "italic");
-    font_status_label = ("Segoe UI", 11);
-    font_status_value = ("Segoe UI", 11, "bold")
-    bg_color = "#21232b";
-    card_color = "#2a2d3b";
-    title_color = "#ffffff";
-    label_color = "#adb5bd"
-
-    def create_rounded_rect(canvas, x1, y1, x2, y2, radius, **kwargs):
-        points = [x1 + radius, y1, x1 + radius, y1, x2 - radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius, x2,
-                  y1 + radius, x2, y2 - radius, x2, y2 - radius, x2, y2, x2 - radius, y2, x2 - radius, y2, x1 + radius,
-                  y2, x1 + radius, y2, x1, y2, x1, y2 - radius, x1, y2 - radius, x1, y1 + radius, x1, y1 + radius, x1,
-                  y1]
-        return canvas.create_polygon(points, **kwargs, smooth=True)
-
-    fh_card_frame = tk.Frame(status_container, bg=bg_color);
-    fh_card_frame.pack(fill=tk.X, pady=(5, 10))
-    fh_canvas = tk.Canvas(fh_card_frame, bg=bg_color, highlightthickness=0, height=120);
-    fh_canvas.pack(fill=tk.X)
-    create_rounded_rect(fh_canvas, 2, 2, 600, 118, radius=20, fill=card_color)
-    fh_title = tk.Label(fh_card_frame, text="Fillhead Position", bg=card_color, fg=title_color, font=font_title);
-    fh_canvas.create_window(20, 25, window=fh_title, anchor="w")
-    xyz_frame = tk.Frame(fh_card_frame, bg=card_color);
-    fh_canvas.create_window(20, 50, window=xyz_frame, anchor="nw")
-    inj_card_frame = tk.Frame(status_container, bg=bg_color);
-    inj_card_frame.pack(fill=tk.X)
-    inj_canvas = tk.Canvas(inj_card_frame, bg=bg_color, highlightthickness=0, height=150);
-    inj_canvas.pack(fill=tk.X)
-    create_rounded_rect(inj_canvas, 2, 2, 600, 148, radius=20, fill=card_color)
-    inj_title = tk.Label(inj_card_frame, text="Injector Status", bg=card_color, fg="#aaddff", font=font_title);
-    inj_canvas.create_window(20, 25, window=inj_title, anchor="w")
-    inj_grid_frame = tk.Frame(inj_card_frame, bg=card_color);
-    inj_canvas.create_window(20, 50, window=inj_grid_frame, anchor="nw")
-    inj_grid_frame.grid_columnconfigure(1, weight=1);
-    inj_grid_frame.grid_columnconfigure(3, weight=1)
-    vars = {'fh_x_pos': tk.StringVar(value='0.00'), 'fh_y_pos': tk.StringVar(value='0.00'),
-            'fh_z_pos': tk.StringVar(value='0.00'), 'fh_x_homed': tk.StringVar(value='Not Homed'),
-            'fh_y_homed': tk.StringVar(value='Not Homed'), 'fh_z_homed': tk.StringVar(value='Not Homed'),
-            'inj_state': tk.StringVar(value='---'), 'inj_temp': tk.StringVar(value='---'),
-            'inj_vac': tk.StringVar(value='---'), 'inj_heater_status': tk.StringVar(value='OFF'),
-            'inj_dispensed_feed': tk.StringVar(value='---'), 'inj_dispensed_total': tk.StringVar(value='---'), }
-    for i, axis in enumerate(['X', 'Y', 'Z']):
-        color = ['cyan', 'yellow', '#ff8888'][i];
-        axis_frame = tk.Frame(xyz_frame, bg=card_color);
-        axis_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=20)
-        tk.Label(axis_frame, text=f"{axis} (mm)", bg=card_color, fg=color, font=font_readout_label).pack();
-        tk.Label(axis_frame, textvariable=vars[f'fh_{axis.lower()}_pos'], bg=card_color, fg=color,
-                 font=font_readout_value).pack()
-        homed_label = tk.Label(axis_frame, textvariable=vars[f'fh_{axis.lower()}_homed'], bg=card_color,
-                               font=font_homed_status);
-        homed_label.pack()
-
-        def make_tracer(var, label):
-            def tracer(*args): label.config(fg="lightgreen" if var.get() == "Homed" else "orange")
-
-            return tracer
-
-        vars[f'fh_{axis.lower()}_homed'].trace_add('write', make_tracer(vars[f'fh_{axis.lower()}_homed'], homed_label));
-        make_tracer(vars[f'fh_{axis.lower()}_homed'], homed_label)()
-    tk.Label(inj_grid_frame, text="State:", bg=card_color, fg=label_color, font=font_status_label).grid(row=0, column=0,
-                                                                                                        sticky='e',
-                                                                                                        padx=5, pady=2);
-    tk.Label(inj_grid_frame, textvariable=vars['inj_state'], bg=card_color, fg="cyan", font=font_status_value).grid(
-        row=0, column=1, sticky='w')
-    tk.Label(inj_grid_frame, text="Temp:", bg=card_color, fg=label_color, font=font_status_label).grid(row=0, column=2,
-                                                                                                       sticky='e',
-                                                                                                       padx=15, pady=2);
-    tk.Label(inj_grid_frame, textvariable=vars['inj_temp'], bg=card_color, fg="orange", font=font_status_value).grid(
-        row=0, column=3, sticky='w')
-    tk.Label(inj_grid_frame, text="Heater:", bg=card_color, fg=label_color, font=font_status_label).grid(row=1,
-                                                                                                         column=2,
-                                                                                                         sticky='e',
-                                                                                                         padx=15,
-                                                                                                         pady=2);
-    tk.Label(inj_grid_frame, textvariable=vars['inj_heater_status'], bg=card_color, fg="lightgreen",
-             font=font_status_value).grid(row=1, column=3, sticky='w')
-    tk.Label(inj_grid_frame, text="Vacuum:", bg=card_color, fg=label_color, font=font_status_label).grid(row=1,
-                                                                                                         column=0,
-                                                                                                         sticky='e',
-                                                                                                         padx=5,
-                                                                                                         pady=2);
-    tk.Label(inj_grid_frame, textvariable=vars['inj_vac'], bg=card_color, fg="lightblue", font=font_status_value).grid(
-        row=1, column=1, sticky='w')
-    tk.Label(inj_grid_frame, text="Vac Check:", bg=card_color, fg=label_color, font=font_status_label).grid(row=2,
-                                                                                                            column=0,
-                                                                                                            sticky='e',
-                                                                                                            padx=5,
-                                                                                                            pady=2)
-    vac_check_label = tk.Label(inj_grid_frame, textvariable=gui_refs['vacuum_check_status_var'], bg=card_color,
-                               font=font_status_value);
-    vac_check_label.grid(row=2, column=1, sticky='w')
-
-    def update_vac_check_color(*args):
-        status = gui_refs['vacuum_check_status_var'].get();
-        color = "white"
-        if status == "PASS":
-            color = "lightgreen"
-        elif status == "FAIL":
-            color = "orange red"
-        vac_check_label.config(fg=color)
-
-    gui_refs['vacuum_check_status_var'].trace_add('write', update_vac_check_color);
-    update_vac_check_color()
-    tk.Label(inj_grid_frame, text="Dispensed (Feed):", bg=card_color, fg=label_color, font=font_status_label).grid(
-        row=3, column=0, sticky='e', padx=5, pady=2);
-    tk.Label(inj_grid_frame, textvariable=vars['inj_dispensed_feed'], bg=card_color, fg="lightgreen",
-             font=font_status_value).grid(row=3, column=1, sticky='w')
-    tk.Label(inj_grid_frame, text="Dispensed (Total):", bg=card_color, fg=label_color, font=font_status_label).grid(
-        row=3, column=2, sticky='e', padx=15, pady=2);
-    tk.Label(inj_grid_frame, textvariable=vars['inj_dispensed_total'], bg=card_color, fg="lightgreen",
-             font=font_status_value).grid(row=3, column=3, sticky='w')
-
-    def update_loop():
-        try:
-            vars['inj_state'].set(gui_refs.get('main_state_var', tk.StringVar(value='N/A')).get());
-            vars['inj_temp'].set(gui_refs.get('temp_c_var', tk.StringVar(value='N/A')).get());
-            vars['inj_vac'].set(gui_refs.get('vacuum_psig_var', tk.StringVar(value='N/A')).get());
-            vars['inj_dispensed_feed'].set(gui_refs.get('inject_dispensed_ml_var', tk.StringVar(value='N/A')).get());
-            vars['inj_dispensed_total'].set(gui_refs.get('cartridge_steps_var', tk.StringVar(value='N/A')).get());
-            vars['inj_heater_status'].set(gui_refs.get('heater_mode_var', tk.StringVar(value='OFF')).get())
-            vars['fh_x_pos'].set(f"{float(gui_refs.get('fh_pos_m0_var', tk.StringVar(value='0.0')).get()):.2f}");
-            vars['fh_y_pos'].set(f"{float(gui_refs.get('fh_pos_m1_var', tk.StringVar(value='0.0')).get()):.2f}");
-            vars['fh_z_pos'].set(f"{float(gui_refs.get('fh_pos_m3_var', tk.StringVar(value='0.0')).get()):.2f}")
-            vars['fh_x_homed'].set(gui_refs.get('fh_homed_m0_var', tk.StringVar(value='Not Homed')).get());
-            vars['fh_y_homed'].set(gui_refs.get('fh_homed_m1_var', tk.StringVar(value='Not Homed')).get());
-            vars['fh_z_homed'].set(gui_refs.get('fh_homed_m3_var', tk.StringVar(value='Not Homed')).get())
-        except (ValueError, tk.TclError, AttributeError):
-            pass
-        status_container.after(250, update_loop)
-
-    status_container.after(250, update_loop)
-    return status_container

@@ -16,6 +16,7 @@ def create_fillhead_motor_boxes(parent, send_fillhead_cmd, shared_gui_refs):
             value="Disabled")
         if f'fh_homed_m{i}_var' not in shared_gui_refs: shared_gui_refs[f'fh_homed_m{i}_var'] = tk.StringVar(
             value="Not Homed")
+    if 'fh_state_var' not in shared_gui_refs: shared_gui_refs['fh_state_var'] = tk.StringVar(value="Idle")
 
     def update_button_styles(enabled_var, enable_btn, disable_btn):
         if enabled_var.get() == "Enabled":
@@ -27,7 +28,7 @@ def create_fillhead_motor_boxes(parent, send_fillhead_cmd, shared_gui_refs):
 
     def create_axis_control_frame(p, axis_name, axis_letter, motor_index, color):
         frame = tk.LabelFrame(p, text=axis_name, bg="#1b2432", fg=color, padx=5, pady=2, font=("Segoe UI", 9, "bold"))
-        frame.pack(fill=tk.X, pady=2, anchor='n')
+        frame.pack(fill=tk.X, pady=2, padx=5, anchor='n')
         frame.grid_columnconfigure(1, weight=1)
 
         enabled_var = shared_gui_refs[f'fh_enabled_m{motor_index}_var']
@@ -40,7 +41,6 @@ def create_fillhead_motor_boxes(parent, send_fillhead_cmd, shared_gui_refs):
         tk.Label(frame, textvariable=shared_gui_refs[f'fh_homed_m{motor_index}_var'], bg=frame['bg'],
                  fg="lightgreen").grid(row=1, column=1, sticky="w")
 
-        # Enable/Disable buttons are now inside this frame
         button_pair_frame = tk.Frame(frame, bg=frame['bg'])
         button_pair_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=(3, 0))
 
@@ -66,72 +66,94 @@ def create_fillhead_motor_boxes(parent, send_fillhead_cmd, shared_gui_refs):
 def create_fillhead_ancillary_controls(parent, send_fillhead_cmd):
     """Creates the Jog and Homing control frames for the Fillhead."""
 
-    # --- Jog Controls ---
     fh_jog_frame = tk.LabelFrame(parent, text="Fillhead Jog", bg="#2a2d3b", fg="white", padx=5, pady=5)
-    fh_jog_frame.pack(fill=tk.X, pady=5, anchor='n')
+    fh_jog_frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
 
     fh_jog_dist_mm_var = tk.StringVar(value="10.0");
     fh_jog_vel_mms_var = tk.StringVar(value="15.0");
     fh_jog_accel_mms2_var = tk.StringVar(value="50.0");
     fh_jog_torque_var = tk.StringVar(value="20")
+
     jog_params_frame = tk.Frame(fh_jog_frame, bg="#2a2d3b");
-    jog_params_frame.grid(row=0, column=0, columnspan=4, sticky='ew')
-    tk.Label(jog_params_frame, text="Distance (mm):", bg="#2a2d3b", fg="white").grid(row=0, column=0, padx=5, pady=2,
-                                                                                     sticky='e');
-    ttk.Entry(jog_params_frame, textvariable=fh_jog_dist_mm_var, width=8).grid(row=0, column=1)
-    tk.Label(jog_params_frame, text="Speed (mm/s):", bg="#2a2d3b", fg="white").grid(row=1, column=0, padx=5, pady=2,
-                                                                                    sticky='e');
-    ttk.Entry(jog_params_frame, textvariable=fh_jog_vel_mms_var, width=8).grid(row=1, column=1)
-    tk.Label(jog_params_frame, text="Accel (mm/s²):", bg="#2a2d3b", fg="white").grid(row=0, column=2, padx=5, pady=2,
-                                                                                     sticky='e');
-    ttk.Entry(jog_params_frame, textvariable=fh_jog_accel_mms2_var, width=8).grid(row=0, column=3)
-    tk.Label(jog_params_frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=1, column=2, padx=5, pady=2,
+    jog_params_frame.pack(fill=tk.X)
+    jog_params_frame.grid_columnconfigure((1, 3), weight=1)
+
+    tk.Label(jog_params_frame, text="Dist (mm):", bg="#2a2d3b", fg="white").grid(row=0, column=0, padx=(0, 5), pady=1,
+                                                                                 sticky='e');
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_dist_mm_var, width=8).grid(row=0, column=1, sticky='ew',
+                                                                               padx=(0, 2))
+    tk.Label(jog_params_frame, text="Speed (mm/s):", bg="#2a2d3b", fg="white").grid(row=0, column=2, padx=(2, 5),
+                                                                                    pady=1, sticky='e');
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_vel_mms_var, width=8).grid(row=0, column=3, sticky='ew')
+    tk.Label(jog_params_frame, text="Accel (mm/s²):", bg="#2a2d3b", fg="white").grid(row=1, column=0, padx=(0, 5),
+                                                                                     pady=1, sticky='e');
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_accel_mms2_var, width=8).grid(row=1, column=1, sticky='ew',
+                                                                                  padx=(0, 2))
+    tk.Label(jog_params_frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=1, column=2, padx=(2, 5), pady=1,
                                                                                   sticky='e');
-    ttk.Entry(jog_params_frame, textvariable=fh_jog_torque_var, width=8).grid(row=1, column=3)
+    ttk.Entry(jog_params_frame, textvariable=fh_jog_torque_var, width=8).grid(row=1, column=3, sticky='ew')
+
     jog_cmd_str = lambda \
         dist: f"{dist} {fh_jog_vel_mms_var.get()} {fh_jog_accel_mms2_var.get()} {fh_jog_torque_var.get()}"
+
     jog_btn_frame = tk.Frame(fh_jog_frame, bg="#2a2d3b");
-    jog_btn_frame.grid(row=2, column=0, columnspan=4, pady=5)
+    jog_btn_frame.pack(fill=tk.X, pady=5)
+
     ttk.Button(jog_btn_frame, text="X-",
-               command=lambda: send_fillhead_cmd(f"MOVE_X -{jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(
-        side=tk.LEFT);
+               command=lambda: send_fillhead_cmd(f"MOVE_X -{jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
+                                                                                                           expand=True,
+                                                                                                           fill=tk.X)
     ttk.Button(jog_btn_frame, text="X+",
-               command=lambda: send_fillhead_cmd(f"MOVE_X {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT)
+               command=lambda: send_fillhead_cmd(f"MOVE_X {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
+                                                                                                          expand=True,
+                                                                                                          fill=tk.X,
+                                                                                                          padx=2)
     ttk.Button(jog_btn_frame, text="Y-",
                command=lambda: send_fillhead_cmd(f"MOVE_Y -{jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
-                                                                                                           padx=10);
+                                                                                                           expand=True,
+                                                                                                           fill=tk.X,
+                                                                                                           padx=(8, 2))
     ttk.Button(jog_btn_frame, text="Y+",
-               command=lambda: send_fillhead_cmd(f"MOVE_Y {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT)
+               command=lambda: send_fillhead_cmd(f"MOVE_Y {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
+                                                                                                          expand=True,
+                                                                                                          fill=tk.X)
     ttk.Button(jog_btn_frame, text="Z-",
                command=lambda: send_fillhead_cmd(f"MOVE_Z -{jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
-                                                                                                           padx=10);
+                                                                                                           expand=True,
+                                                                                                           fill=tk.X,
+                                                                                                           padx=(8, 2))
     ttk.Button(jog_btn_frame, text="Z+",
-               command=lambda: send_fillhead_cmd(f"MOVE_Z {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT)
+               command=lambda: send_fillhead_cmd(f"MOVE_Z {jog_cmd_str(fh_jog_dist_mm_var.get())}")).pack(side=tk.LEFT,
+                                                                                                          expand=True,
+                                                                                                          fill=tk.X)
 
-    # --- Homing Controls ---
     fh_home_frame = tk.LabelFrame(parent, text="Fillhead Homing", bg="#2a2d3b", fg="white", padx=5, pady=5)
-    fh_home_frame.pack(fill=tk.X, pady=5, anchor='n')
+    fh_home_frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
     fh_home_torque_var = tk.StringVar(value="20");
     fh_home_distance_mm_var = tk.StringVar(value="420.0")
     home_params_frame = tk.Frame(fh_home_frame, bg="#2a2d3b");
-    home_params_frame.pack()
+    home_params_frame.pack(fill=tk.X)
+    home_params_frame.grid_columnconfigure(1, weight=1)
+    home_params_frame.grid_columnconfigure(3, weight=1)
+
     tk.Label(home_params_frame, text="Torque (%):", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="e", pady=1,
-                                                                                   padx=5);
-    ttk.Entry(home_params_frame, textvariable=fh_home_torque_var, width=10).grid(row=0, column=1, sticky="w", pady=1)
-    tk.Label(home_params_frame, text="Max Distance (mm):", bg="#2a2d3b", fg="white").grid(row=1, column=0, sticky="e",
-                                                                                          pady=1, padx=5);
-    ttk.Entry(home_params_frame, textvariable=fh_home_distance_mm_var, width=10).grid(row=1, column=1, sticky="w",
-                                                                                      pady=1)
+                                                                                   padx=(0, 5));
+    ttk.Entry(home_params_frame, textvariable=fh_home_torque_var, width=10).grid(row=0, column=1, sticky="ew",
+                                                                                 padx=(0, 2))
+    tk.Label(home_params_frame, text="Max Dist (mm):", bg="#2a2d3b", fg="white").grid(row=0, column=2, sticky="e",
+                                                                                      pady=1, padx=(2, 5));
+    ttk.Entry(home_params_frame, textvariable=fh_home_distance_mm_var, width=10).grid(row=0, column=3, sticky="ew")
+
     home_btn_frame = tk.Frame(fh_home_frame, bg="#2a2d3b");
-    home_btn_frame.pack(pady=(5, 0))
+    home_btn_frame.pack(pady=(5, 0), fill=tk.X)
     home_cmd_str = lambda axis: f"HOME_{axis} {fh_home_torque_var.get()} {fh_home_distance_mm_var.get()}"
     ttk.Button(home_btn_frame, text="Home X", command=lambda: send_fillhead_cmd(home_cmd_str("X"))).pack(side=tk.LEFT,
                                                                                                          expand=True,
-                                                                                                         fill=tk.X);
+                                                                                                         fill=tk.X)
     ttk.Button(home_btn_frame, text="Home Y", command=lambda: send_fillhead_cmd(home_cmd_str("Y"))).pack(side=tk.LEFT,
                                                                                                          expand=True,
                                                                                                          fill=tk.X,
-                                                                                                         padx=5);
+                                                                                                         padx=5)
     ttk.Button(home_btn_frame, text="Home Z", command=lambda: send_fillhead_cmd(home_cmd_str("Z"))).pack(side=tk.LEFT,
                                                                                                          expand=True,
                                                                                                          fill=tk.X)
