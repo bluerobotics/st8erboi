@@ -2,70 +2,10 @@ import tkinter as tk
 from tkinter import ttk
 
 
-def create_fillhead_motor_boxes(parent, send_fillhead_cmd, shared_gui_refs):
-    """
-    Creates and packs the individual motor status and control frames for the Fillhead
-    into a given parent widget.
-    """
-    ui_elements = {}
-
-    # Initialize StringVars if they don't exist
-    for i in range(4):
-        if f'fh_pos_m{i}_var' not in shared_gui_refs: shared_gui_refs[f'fh_pos_m{i}_var'] = tk.StringVar(value="0.00")
-        if f'fh_enabled_m{i}_var' not in shared_gui_refs: shared_gui_refs[f'fh_enabled_m{i}_var'] = tk.StringVar(
-            value="Disabled")
-        if f'fh_homed_m{i}_var' not in shared_gui_refs: shared_gui_refs[f'fh_homed_m{i}_var'] = tk.StringVar(
-            value="Not Homed")
-    if 'fh_state_var' not in shared_gui_refs: shared_gui_refs['fh_state_var'] = tk.StringVar(value="Idle")
-
-    def update_button_styles(enabled_var, enable_btn, disable_btn):
-        if enabled_var.get() == "Enabled":
-            enable_btn.config(style="Green.TButton")
-            disable_btn.config(style="Neutral.TButton")
-        else:
-            enable_btn.config(style="Neutral.TButton")
-            disable_btn.config(style="Red.TButton")
-
-    def create_axis_control_frame(p, axis_name, axis_letter, motor_index, color):
-        frame = tk.LabelFrame(p, text=axis_name, bg="#1b2432", fg=color, padx=5, pady=2, font=("Segoe UI", 9, "bold"))
-        frame.pack(fill=tk.X, pady=2, padx=5, anchor='n')
-        frame.grid_columnconfigure(1, weight=1)
-
-        enabled_var = shared_gui_refs[f'fh_enabled_m{motor_index}_var']
-
-        tk.Label(frame, text="Position (mm):", bg=frame['bg'], fg="white").grid(row=0, column=0, sticky="w")
-        tk.Label(frame, textvariable=shared_gui_refs[f'fh_pos_m{motor_index}_var'], bg=frame['bg'], fg=color).grid(
-            row=0, column=1, sticky="w")
-
-        tk.Label(frame, text="Homed:", bg=frame['bg'], fg="white").grid(row=1, column=0, sticky="w")
-        tk.Label(frame, textvariable=shared_gui_refs[f'fh_homed_m{motor_index}_var'], bg=frame['bg'],
-                 fg="lightgreen").grid(row=1, column=1, sticky="w")
-
-        button_pair_frame = tk.Frame(frame, bg=frame['bg'])
-        button_pair_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=(3, 0))
-
-        enable_btn = ttk.Button(button_pair_frame, text="Enable", width=7, style="Neutral.TButton",
-                                command=lambda: send_fillhead_cmd(f"ENABLE_{axis_letter}"))
-        enable_btn.pack(side=tk.LEFT, expand=True, fill=tk.X)
-
-        disable_btn = ttk.Button(button_pair_frame, text="Disable", width=7, style="Red.TButton",
-                                 command=lambda: send_fillhead_cmd(f"DISABLE_{axis_letter}"))
-        disable_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
-
-        enabled_var.trace_add('write', lambda *args: update_button_styles(enabled_var, enable_btn, disable_btn))
-        update_button_styles(enabled_var, enable_btn, disable_btn)
-
-    motor_map = [("Motor 0 (X)", "X", 0, "cyan"), ("Motor 1 (Y1)", "Y", 1, "yellow"),
-                 ("Motor 2 (Y2)", "Y", 2, "#ffed72"), ("Motor 3 (Z)", "Z", 3, "#ff8888")]
-    for name, letter, index, color in motor_map:
-        create_axis_control_frame(parent, name, letter, index, color)
-
-    return ui_elements
-
-
 def create_fillhead_ancillary_controls(parent, send_fillhead_cmd):
     """Creates the Jog and Homing control frames for the Fillhead."""
 
+    # --- Jog Controls ---
     fh_jog_frame = tk.LabelFrame(parent, text="Fillhead Jog", bg="#2a2d3b", fg="white", padx=5, pady=5)
     fh_jog_frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
 
@@ -127,6 +67,7 @@ def create_fillhead_ancillary_controls(parent, send_fillhead_cmd):
                                                                                                           expand=True,
                                                                                                           fill=tk.X)
 
+    # --- Homing Controls ---
     fh_home_frame = tk.LabelFrame(parent, text="Fillhead Homing", bg="#2a2d3b", fg="white", padx=5, pady=5)
     fh_home_frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
     fh_home_torque_var = tk.StringVar(value="20");
