@@ -2,13 +2,42 @@ import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 import queue
 import os
+import json
+from functools import partial
 from script_validator import COMMANDS, validate_script
 from script_processor import ScriptRunner
-from injector_controls import create_injector_ancillary_controls
-from fillhead_controls import create_fillhead_ancillary_controls
+
+# --- Constants for Recent Files ---
+RECENT_FILES_CONFIG = "recent_files.json"
+MAX_RECENT_FILES = 5
 
 
-# --- Autocomplete and Text Editor Widgets ---
+# --- Recent Files Management ---
+def load_recent_files():
+    """Loads the list of recent file paths from the config file."""
+    try:
+        with open(RECENT_FILES_CONFIG, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_recent_files(filepaths):
+    """Saves the list of recent file paths to the config file."""
+    with open(RECENT_FILES_CONFIG, 'w') as f:
+        json.dump(filepaths, f)
+
+
+def add_to_recent_files(filepath):
+    """Adds a new filepath to the top of the recent files list."""
+    filepaths = load_recent_files()
+    if filepath in filepaths:
+        filepaths.remove(filepath)
+    filepaths.insert(0, filepath)
+    save_recent_files(filepaths[:MAX_RECENT_FILES])
+
+
+# --- Autocomplete and Text Editor Widgets (Classes remain the same) ---
 class AutocompletePopup(tk.Toplevel):
     def __init__(self, parent, text_widget, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -84,9 +113,8 @@ class CustomText(tk.Text):
         except tk.TclError:
             return None
         if (args[0] in ("insert", "delete", "replace") or args[0:3] == ("mark", "set", "insert") or args[0:2] == (
-                "xview", "moveto") or args[0:2] == ("xview", "scroll") or args[0:2] == ("yview", "moveto") or args[
-                                                                                                              0:2] == (
-                "yview", "scroll")): self.event_generate("<<Change>>", when="tail")
+        "xview", "moveto") or args[0:2] == ("xview", "scroll") or args[0:2] == ("yview", "moveto") or args[0:2] == (
+        "yview", "scroll")): self.event_generate("<<Change>>", when="tail")
         if (args[0] in ("insert", "delete", "replace")): self.event_generate("<<Modified>>", when="tail")
         return result
 
@@ -187,129 +215,60 @@ class ValidationResultsWindow(tk.Toplevel):
 
 
 # --- GUI Creation Functions ---
+def create_command_reference(parent, script_editor_widget):
+    ref_frame = tk.LabelFrame(parent, text="Command Reference", bg="#2a2d3b", fg="white", padx=5, pady=5)
+    tree = ttk.Treeview(ref_frame, columns=('device', 'params', 'desc'), show='tree headings')
+    tree.heading('#0', text='Command');
+    tree.heading('device', text='Device');
+    tree.heading('params', text='Parameters');
+    tree.heading('desc', text='Description')
+    tree.column('#0', width=150, anchor='w');
+    tree.column('device', width=80, anchor='w');
+    tree.column('params', width=200, anchor='w');
+    tree.column('desc', width=250, anchor='w')
+    for cmd, details in sorted(COMMANDS.items(), key=lambda item: (item[1]['device'], item[0])):
+        device = details['device'];
+        params = " ".join([p['name'] for p in details['params']]);
+        desc = details['help'];
+        tree.insert('', 'end', text=cmd, values=(device.capitalize(), params, desc))
+    tree.pack(fill=tk.BOTH, expand=True)
+    context_menu = tk.Menu(parent, tearoff=0)
 
-def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
-    """Creates the central motor power enable/disable controls."""
-    power_frame = tk.LabelFrame(parent, text="Motor Power", bg="#2a2d3b", fg="white", padx=5, pady=5)
-    power_frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
+    def get_selected_command():
+        selected_item = tree.focus()
+        if not selected_item: return None
+        return tree.item(selected_item, "text")
 
-    # Grid configuration
-    power_frame.grid_columnconfigure(0, weight=1)
-    power_frame.grid_columnconfigure(1, weight=1)
-    power_frame.grid_columnconfigure(2, weight=1)
+    def copy_command():
+        command = get_selected_command()
+        if command: ref_frame.clipboard_clear(); ref_frame.clipboard_append(command)
 
-    send_injector_cmd = command_funcs['send_injector']
-    send_fillhead_cmd = command_funcs['send_fillhead']
+    def add_to_script():
+        command = get_selected_command()
+        if command: script_editor_widget.insert(tk.INSERT, f"{command} ")
 
-    # Injector Motors
-    ttk.Button(power_frame, text="Enable Injector", style='Small.TButton',
-               command=lambda: send_injector_cmd("ENABLE")).grid(row=0, column=0, sticky='ew', padx=(0, 1))
-    ttk.Button(power_frame, text="Disable Injector", style='Small.TButton',
-               command=lambda: send_injector_cmd("DISABLE")).grid(row=0, column=1, columnspan=2, sticky='ew',
-                                                                  padx=(1, 0))
+    context_menu.add_command(label="Copy Command", command=copy_command);
+    context_menu.add_command(label="Add to Script", command=add_to_script)
 
-    # Pinch Motor
-    ttk.Button(power_frame, text="Enable Pinch", style='Small.TButton',
-               command=lambda: send_injector_cmd("ENABLE_PINCH")).grid(row=1, column=0, sticky='ew', padx=(0, 1),
-                                                                       pady=(2, 0))
-    ttk.Button(power_frame, text="Disable Pinch", style='Small.TButton',
-               command=lambda: send_injector_cmd("DISABLE_PINCH")).grid(row=1, column=1, columnspan=2, sticky='ew',
-                                                                        padx=(1, 0), pady=(2, 0))
+    def show_context_menu(event):
+        iid = tree.identify_row(event.y)
+        if iid: tree.selection_set(iid); tree.focus(iid); context_menu.post(event.x_root, event.y_root)
 
-    # Separator
-    ttk.Separator(power_frame, orient='horizontal').grid(row=2, column=0, columnspan=3, sticky='ew', pady=5)
-
-    # Fillhead Motors
-    ttk.Button(power_frame, text="Enable X", style='Small.TButton', command=lambda: send_fillhead_cmd("ENABLE_X")).grid(
-        row=3, column=0, sticky='ew', padx=(0, 1))
-    ttk.Button(power_frame, text="Enable Y", style='Small.TButton', command=lambda: send_fillhead_cmd("ENABLE_Y")).grid(
-        row=3, column=1, sticky='ew', padx=1)
-    ttk.Button(power_frame, text="Enable Z", style='Small.TButton', command=lambda: send_fillhead_cmd("ENABLE_Z")).grid(
-        row=3, column=2, sticky='ew', padx=(1, 0))
-
-    ttk.Button(power_frame, text="Disable X", style='Small.TButton',
-               command=lambda: send_fillhead_cmd("DISABLE_X")).grid(row=4, column=0, sticky='ew', padx=(0, 1),
-                                                                    pady=(2, 0))
-    ttk.Button(power_frame, text="Disable Y", style='Small.TButton',
-               command=lambda: send_fillhead_cmd("DISABLE_Y")).grid(row=4, column=1, sticky='ew', padx=1, pady=(2, 0))
-    ttk.Button(power_frame, text="Disable Z", style='Small.TButton',
-               command=lambda: send_fillhead_cmd("DISABLE_Z")).grid(row=4, column=2, sticky='ew', padx=(1, 0),
-                                                                    pady=(2, 0))
-
-    return {}
+    tree.bind("<Button-3>", show_context_menu);
+    tree.bind("<Double-1>", lambda e: add_to_script())
+    return ref_frame
 
 
-def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
-    """Creates the scrollable panel containing all manual device controls."""
-    canvas = tk.Canvas(parent, bg="#2a2d3b", highlightthickness=0)
-    scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-    scrollable_frame = tk.Frame(canvas, bg="#2a2d3b")
-
-    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
-    def _on_mousewheel(event):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    canvas.configure(yscrollcommand=scrollbar.set)
-
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    all_widgets = {}
-    ui_elements = {}
-
-    # Central Motor Power Controls
-    power_widgets = create_motor_power_controls(scrollable_frame, command_funcs, shared_gui_refs)
-    all_widgets.update(power_widgets)
-
-    # Ancillary Controls (Jog, Home, Feed)
-    injector_ancillary_widgets = create_injector_ancillary_controls(scrollable_frame, command_funcs['send_injector'],
-                                                                    shared_gui_refs, ui_elements)
-    all_widgets.update(injector_ancillary_widgets)
-
-    fillhead_ancillary_widgets = create_fillhead_ancillary_controls(scrollable_frame, command_funcs['send_fillhead'])
-    all_widgets.update(fillhead_ancillary_widgets)
-
-    return all_widgets
-
-
-def create_manual_controls_display(parent, command_funcs, shared_gui_refs):
-    """
-    Creates the collapsible manual controls display for the left bar.
-    """
-    container = tk.Frame(parent, bg="#21232b")
-    container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(10, 0))
-
-    manual_panel = tk.Frame(container, bg="#2a2d3b")
-    manual_widgets = create_manual_controls_panel(manual_panel, command_funcs, shared_gui_refs)
-
-    def toggle_manual_controls():
-        if manual_panel.winfo_ismapped():
-            manual_panel.pack_forget()
-            toggle_button.config(text="Show Manual Controls ▼")
-        else:
-            manual_panel.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(5, 0))
-            toggle_button.config(text="Hide Manual Controls ▲")
-
-    toggle_button = ttk.Button(container, text="Show Manual Controls ▼", command=toggle_manual_controls,
-                               style="Neutral.TButton")
-    toggle_button.pack(side=tk.TOP, fill=tk.X, ipady=5)
-
-    return manual_widgets
-
-
-def create_scripting_area(parent, command_funcs, shared_gui_refs):
+def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     """
     Creates the main scripting area, including the editor and command reference.
+    Returns a dictionary containing file commands and a callback to update the recent menu.
     """
     scripting_area = tk.Frame(parent, bg="#21232b")
-    scripting_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scripting_area.pack(fill=tk.BOTH, expand=True)
 
     paned_window = ttk.PanedWindow(scripting_area, orient=tk.HORIZONTAL)
-    paned_window.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
     left_pane = tk.Frame(paned_window, bg="#21232b")
     paned_window.add(left_pane, weight=3)
     right_pane = tk.Frame(paned_window, bg="#21232b")
@@ -323,6 +282,8 @@ def create_scripting_area(parent, command_funcs, shared_gui_refs):
     original_terminal_cb = shared_gui_refs.get('terminal_cb')
     if 'vacuum_check_status_var' not in shared_gui_refs:
         shared_gui_refs['vacuum_check_status_var'] = tk.StringVar(value='N/A')
+
+    recent_files_menu_ref = None
 
     def terminal_wrapper(message):
         if "DONE:" in message: message_queue.put(message)
@@ -352,14 +313,111 @@ def create_scripting_area(parent, command_funcs, shared_gui_refs):
         modified_star = "*" if script_editor.text.edit_modified() else "";
         root.title(f"{filename}{modified_star} - Multi-Device Controller")
 
-    def on_script_modified(event=None):
-        update_window_title()
+    script_editor.text.bind("<<Modified>>", lambda e: update_window_title())
 
-    script_editor.text.bind("<<Modified>>", on_script_modified)
+    status_var = tk.StringVar(value="Idle")
 
+    # --- Recent Files Menu Management ---
+    def update_recent_files_display():
+        if not recent_files_menu_ref:
+            return
+        recent_files_menu_ref.delete(0, tk.END)
+        filepaths = load_recent_files()
+        if not filepaths:
+            recent_files_menu_ref.add_command(label="Empty", state=tk.DISABLED)
+        else:
+            for path in filepaths:
+                # Use partial to capture the path variable correctly in the loop
+                recent_files_menu_ref.add_command(label=os.path.basename(path),
+                                                  command=partial(load_specific_script, path))
+
+    def set_recent_menu_reference(menu_obj):
+        nonlocal recent_files_menu_ref
+        recent_files_menu_ref = menu_obj
+        update_recent_files_display()
+
+    # --- File Operations ---
+    def check_unsaved_changes():
+        if not script_editor.text.edit_modified(): return True
+        response = messagebox.askyesnocancel("Unsaved Changes", "You have unsaved changes. Do you want to save them?")
+        if response is True:
+            return save_script()
+        elif response is False:
+            return True
+        else:
+            return False
+
+    def new_script():
+        nonlocal current_filepath
+        if not check_unsaved_changes(): return
+        script_editor.delete('1.0', tk.END);
+        script_editor.text.edit_modified(False);
+        current_filepath = None;
+        update_window_title();
+        update_selection_highlight(1)
+
+    def save_script():
+        nonlocal current_filepath
+        if current_filepath:
+            try:
+                with open(current_filepath, 'w') as f:
+                    f.write(script_editor.get('1.0', tk.END))
+                script_editor.text.edit_modified(False);
+                update_window_title();
+                status_var.set(f"Saved to {os.path.basename(current_filepath)}");
+                add_to_recent_files(current_filepath)
+                update_recent_files_display()
+                return True
+            except Exception as e:
+                messagebox.showerror("Save Error", f"Could not save file:\n{e}");
+                return False
+        else:
+            return save_script_as()
+
+    def save_script_as():
+        nonlocal current_filepath
+        filepath = filedialog.asksaveasfilename(title="Save Script As", defaultextension=".txt",
+                                                filetypes=(("Text files", "*.txt"), ("All files", "*.*")))
+        if not filepath: return False
+        current_filepath = filepath;
+        return save_script()
+
+    def load_specific_script(filepath):
+        nonlocal current_filepath
+        if not check_unsaved_changes(): return
+        if not os.path.exists(filepath):
+            messagebox.showerror("File Not Found", f"Could not find file:\n{filepath}")
+            # Remove from recent list if it doesn't exist
+            filepaths = load_recent_files()
+            if filepath in filepaths:
+                filepaths.remove(filepath)
+                save_recent_files(filepaths)
+            update_recent_files_display()
+            return
+        try:
+            with open(filepath, 'r') as f:
+                script_editor.delete('1.0', tk.END);
+                script_editor.insert('1.0', f.read())
+            current_filepath = filepath;
+            script_editor.text.edit_modified(False);
+            update_window_title();
+            update_selection_highlight(1);
+            status_var.set(f"Loaded {os.path.basename(current_filepath)}")
+            add_to_recent_files(filepath)
+            update_recent_files_display()
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Could not load file:\n{e}")
+
+    def load_script():
+        filepath = filedialog.askopenfilename(title="Open Script File",
+                                              filetypes=(("Text files", "*.txt"), ("All files", "*.*")))
+        if not filepath: return
+        load_specific_script(filepath)
+
+    # --- Script Execution Logic ---
     def set_buttons_state(state):
-        for btn in [run_button, run_from_line_button, step_button, stop_button, load_button, save_button,
-                    save_as_button, new_button, validate_button]: btn.config(state=state)
+        for btn in [run_button, run_from_line_button, step_button, stop_button, validate_button]: btn.config(
+            state=state)
 
     def status_callback_handler(message, line_num):
         nonlocal last_exec_highlight;
@@ -392,8 +450,7 @@ def create_scripting_area(parent, command_funcs, shared_gui_refs):
     def get_current_line_info():
         try:
             line_num = int(last_selection_highlight);
-            content = script_editor.get(f"{line_num}.0",
-                                        f"{line_num}.end");
+            content = script_editor.get(f"{line_num}.0", f"{line_num}.end");
             line_offset = line_num - 1;
             return content, line_offset
         except (tk.TclError, ValueError, TypeError):
@@ -441,12 +498,10 @@ def create_scripting_area(parent, command_funcs, shared_gui_refs):
         for i in range(start_line_num - 1, len(all_lines)):
             line_content = all_lines[i].strip()
             if line_content and not line_content.startswith('#'): next_valid_line_num = i + 1; next_valid_line_content = \
-                all_lines[i]; break
+            all_lines[i]; break
         if next_valid_line_num != -1:
             update_selection_highlight(next_valid_line_num);
-            run_script_from_content(next_valid_line_content,
-                                    next_valid_line_num - 1,
-                                    is_step=True)
+            run_script_from_content(next_valid_line_content, next_valid_line_num - 1, is_step=True)
         else:
             status_var.set("End of script reached.");
             on_run_finished()
@@ -454,70 +509,6 @@ def create_scripting_area(parent, command_funcs, shared_gui_refs):
     def stop_script():
         if script_runner: script_runner.stop()
         on_run_finished()
-
-    def check_unsaved_changes():
-        if not script_editor.text.edit_modified(): return True
-        response = messagebox.askyesnocancel("Unsaved Changes", "You have unsaved changes. Do you want to save them?")
-        if response is True:
-            return save_script()
-        elif response is False:
-            return True
-        else:
-            return False
-
-    def new_script():
-        nonlocal current_filepath
-        if not check_unsaved_changes(): return
-        script_editor.delete('1.0', tk.END);
-        script_editor.text.edit_modified(False);
-        current_filepath = None;
-        update_window_title();
-        update_selection_highlight(1)
-
-    def load_script():
-        nonlocal current_filepath
-        if not check_unsaved_changes(): return
-        filepath = filedialog.askopenfilename(title="Open Script File",
-                                              filetypes=(("Text files", "*.txt"), ("All files", "*.*")))
-        if not filepath: return
-        try:
-            with open(filepath, 'r') as f:
-                script_editor.delete('1.0', tk.END);
-                script_editor.insert('1.0', f.read())
-            current_filepath = filepath;
-            script_editor.text.edit_modified(False);
-            update_window_title();
-            update_selection_highlight(1);
-            status_var.set(f"Loaded {os.path.basename(current_filepath)}")
-        except Exception as e:
-            messagebox.showerror("Load Error", f"Could not load file:\n{e}")
-
-    def save_script():
-        nonlocal current_filepath
-        if current_filepath:
-            try:
-                with open(current_filepath, 'w') as f:
-                    f.write(script_editor.get('1.0', tk.END))
-                script_editor.text.edit_modified(False);
-                update_window_title();
-                status_var.set(f"Saved to {os.path.basename(current_filepath)}");
-                return True
-            except Exception as e:
-                messagebox.showerror("Save Error", f"Could not save file:\n{e}");
-                return False
-        else:
-            return save_script_as()
-
-    def save_script_as():
-        nonlocal current_filepath
-        filepath = filedialog.asksaveasfilename(title="Save Script As", defaultextension=".txt",
-                                                filetypes=(("Text files", "*.txt"), ("All files", "*.*")))
-        if not filepath: return False
-        current_filepath = filepath;
-        return save_script()
-
-    def validate_script_ui():
-        check_script_validity(show_success=True)
 
     def update_selection_highlight(line_num):
         nonlocal last_selection_highlight
@@ -529,15 +520,17 @@ def create_scripting_area(parent, command_funcs, shared_gui_refs):
 
     def on_line_click(event):
         index = script_editor.text.index(f"@{event.x},{event.y}");
-        line_num = int(
-            index.split('.')[0]);
+        line_num = int(index.split('.')[0]);
         update_selection_highlight(line_num)
 
     script_editor.bind("<Button-1>", on_line_click);
     update_selection_highlight(1)
+
+    # --- Control Buttons ---
     btn_container = tk.Frame(control_frame, bg="#2a2d3b");
     btn_container.pack(fill=tk.X, padx=5, pady=5)
-    exec_frame = tk.LabelFrame(btn_container, text="Execution", bg="#2a2d3b", fg="white", padx=5, pady=5);
+
+    exec_frame = tk.LabelFrame(btn_container, text="Execution & Validation", bg="#2a2d3b", fg="white", padx=5, pady=5);
     exec_frame.pack(side=tk.LEFT, padx=(0, 5))
     run_button = ttk.Button(exec_frame, text="Run Script", command=run_full_script, style="Green.TButton");
     run_button.pack(side=tk.LEFT)
@@ -545,74 +538,26 @@ def create_scripting_area(parent, command_funcs, shared_gui_refs):
     run_from_line_button.pack(side=tk.LEFT, padx=5)
     step_button = ttk.Button(exec_frame, text="Step Line", command=step_line);
     step_button.pack(side=tk.LEFT)
-    file_frame = tk.LabelFrame(btn_container, text="File & Validation", bg="#2a2d3b", fg="white", padx=5, pady=5);
-    file_frame.pack(side=tk.LEFT, padx=5)
-    new_button = ttk.Button(file_frame, text="New", command=new_script);
-    new_button.pack(side=tk.LEFT)
-    load_button = ttk.Button(file_frame, text="Load", command=load_script);
-    load_button.pack(side=tk.LEFT, padx=5)
-    save_button = ttk.Button(file_frame, text="Save", command=save_script);
-    save_button.pack(side=tk.LEFT)
-    save_as_button = ttk.Button(file_frame, text="Save As", command=save_script_as);
-    save_as_button.pack(side=tk.LEFT, padx=5)
-    validate_button = ttk.Button(file_frame, text="Validate", command=validate_script_ui);
-    validate_button.pack(side=tk.LEFT)
+    validate_button = ttk.Button(exec_frame, text="Validate", command=lambda: check_script_validity(show_success=True));
+    validate_button.pack(side=tk.LEFT, padx=5)
+
     control_frame_btns = tk.LabelFrame(btn_container, text="Control", bg="#2a2d3b", fg="white", padx=5, pady=5);
     control_frame_btns.pack(side=tk.LEFT, padx=5)
     stop_button = ttk.Button(control_frame_btns, text="Stop", command=stop_script, style="Red.TButton");
     stop_button.pack(side=tk.LEFT)
-    status_var = tk.StringVar(value="Idle")
+
     status_label = tk.Label(btn_container, textvariable=status_var, bg=btn_container['bg'], fg="cyan", anchor='w');
     status_label.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
     update_window_title()
 
-    return {}
-
-
-def create_command_reference(parent, script_editor_widget):
-    ref_frame = tk.LabelFrame(parent, text="Command Reference", bg="#2a2d3b", fg="white", padx=5, pady=5)
-    tree = ttk.Treeview(ref_frame, columns=('device', 'params', 'desc'), show='tree headings')
-    tree.heading('#0', text='Command');
-    tree.heading('device', text='Device');
-    tree.heading('params', text='Parameters');
-    tree.heading('desc', text='Description')
-    tree.column('#0', width=150, anchor='w');
-    tree.column('device', width=80, anchor='w');
-    tree.column('params', width=200, anchor='w');
-    tree.column('desc', width=250, anchor='w')
-    style = ttk.Style();
-    style.configure("Treeview", background="#1b1e2b", foreground="white", fieldbackground="#1b1e2b",
-                    font=('Segoe UI', 8));
-    style.configure("Treeview.Heading", font=('Segoe UI', 9, 'bold'));
-    style.map("Treeview", background=[('selected', '#0078d7')])
-    for cmd, details in sorted(COMMANDS.items(), key=lambda item: (item[1]['device'], item[0])):
-        device = details['device'];
-        params = " ".join([p['name'] for p in details['params']]);
-        desc = details['help'];
-        tree.insert('', 'end', text=cmd, values=(device.capitalize(), params, desc))
-    tree.pack(fill=tk.BOTH, expand=True)
-    context_menu = tk.Menu(parent, tearoff=0)
-
-    def get_selected_command():
-        selected_item = tree.focus()
-        if not selected_item: return None
-        return tree.item(selected_item, "text")
-
-    def copy_command():
-        command = get_selected_command()
-        if command: ref_frame.clipboard_clear(); ref_frame.clipboard_append(command)
-
-    def add_to_script():
-        command = get_selected_command()
-        if command: script_editor_widget.insert(tk.INSERT, f"{command} ")
-
-    context_menu.add_command(label="Copy Command", command=copy_command);
-    context_menu.add_command(label="Add to Script", command=add_to_script)
-
-    def show_context_menu(event):
-        iid = tree.identify_row(event.y)
-        if iid: tree.selection_set(iid); tree.focus(iid); context_menu.post(event.x_root, event.y_root)
-
-    tree.bind("<Button-3>", show_context_menu);
-    tree.bind("<Double-1>", lambda e: add_to_script())
-    return ref_frame
+    # --- Return file commands and menu update callback ---
+    file_commands = {
+        "new": new_script,
+        "load": load_script,
+        "save": save_script,
+        "save_as": save_script_as
+    }
+    return {
+        "file_commands": file_commands,
+        "update_recent_menu_callback": set_recent_menu_reference
+    }

@@ -4,6 +4,7 @@ import math
 
 MOTOR_STEPS_PER_REV = 800
 
+
 def create_injector_jog_controls(parent, send_cmd_func, variables, ui_elements):
     """
     Creates jog controls specifically for the injector motors (M0 & M1).
@@ -11,11 +12,12 @@ def create_injector_jog_controls(parent, send_cmd_func, variables, ui_elements):
     jog_controls_frame = tk.LabelFrame(parent, text="Injector Jog",
                                        bg="#2a2d3b", fg="#0f8", font=("Segoe UI", 9, "bold"),
                                        padx=5, pady=5)
-    jog_controls_frame.pack(fill=tk.X, expand=True, pady=(5, 0), padx=5)
+    jog_controls_frame.pack(fill=tk.X, expand=False, pady=(5, 0), padx=5)  # Set expand to False
 
     font_small = ('Segoe UI', 9)
     field_width = 8
 
+    # Refactored to a 2-column layout to save horizontal space
     jog_params_frame = tk.Frame(jog_controls_frame, bg=jog_controls_frame['bg'])
     jog_params_frame.pack(fill=tk.X, pady=(0, 5))
     jog_params_frame.grid_columnconfigure(1, weight=1)
@@ -28,7 +30,7 @@ def create_injector_jog_controls(parent, send_cmd_func, variables, ui_elements):
                                                                                                                padx=(
                                                                                                                0, 5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_dist_mm_var'], width=field_width, font=font_small).grid(
-        row=0, column=1, sticky="ew")
+        row=0, column=1, sticky="ew", padx=(0, 5))
     tk.Label(jog_params_frame, text="Vel (mm/s):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
                                                                                                                 column=2,
                                                                                                                 sticky="e",
@@ -37,10 +39,11 @@ def create_injector_jog_controls(parent, send_cmd_func, variables, ui_elements):
                                                                                                                 5, 5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_velocity_var'], width=field_width, font=font_small).grid(
         row=0, column=3, sticky="ew")
+
     tk.Label(jog_params_frame, text="Accel (mm/s²):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(
         row=1, column=0, sticky="e", pady=1, padx=(0, 5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_acceleration_var'], width=field_width,
-              font=font_small).grid(row=1, column=1, sticky="ew")
+              font=font_small).grid(row=1, column=1, sticky="ew", padx=(0, 5))
     tk.Label(jog_params_frame, text="Torque (%):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=1,
                                                                                                                 column=2,
                                                                                                                 sticky="e",
@@ -91,11 +94,12 @@ def create_pinch_jog_controls(parent, send_cmd_func, variables):
     jog_controls_frame = tk.LabelFrame(parent, text="Pinch Jog",
                                        bg="#2a2d3b", fg="#E0B0FF", font=("Segoe UI", 9, "bold"),
                                        padx=5, pady=5)
-    jog_controls_frame.pack(fill=tk.X, expand=True, pady=(5, 0), padx=5)
+    jog_controls_frame.pack(fill=tk.X, expand=False, pady=(5, 0), padx=5)  # Set expand to False
 
     font_small = ('Segoe UI', 9)
     field_width = 8
 
+    # Refactored to a 2-column layout
     jog_params_frame = tk.Frame(jog_controls_frame, bg=jog_controls_frame['bg'])
     jog_params_frame.pack(fill=tk.X, pady=(0, 5))
     jog_params_frame.grid_columnconfigure(1, weight=1)
@@ -108,7 +112,7 @@ def create_pinch_jog_controls(parent, send_cmd_func, variables):
                                                                                                               padx=(
                                                                                                               0, 5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_pinch_degrees_var'], width=field_width,
-              font=font_small).grid(row=0, column=1, sticky="ew")
+              font=font_small).grid(row=0, column=1, sticky="ew", padx=(0, 5))
     tk.Label(jog_params_frame, text="Vel (sps):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=0,
                                                                                                                column=2,
                                                                                                                sticky="e",
@@ -117,6 +121,7 @@ def create_pinch_jog_controls(parent, send_cmd_func, variables):
                                                                                                                5, 5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_pinch_velocity_sps_var'], width=field_width,
               font=font_small).grid(row=0, column=3, sticky="ew")
+
     tk.Label(jog_params_frame, text="Accel (sps²):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=1,
                                                                                                                   column=0,
                                                                                                                   sticky="e",
@@ -124,7 +129,7 @@ def create_pinch_jog_controls(parent, send_cmd_func, variables):
                                                                                                                   padx=(
                                                                                                                   0, 5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_pinch_accel_sps2_var'], width=field_width,
-              font=font_small).grid(row=1, column=1, sticky="ew")
+              font=font_small).grid(row=1, column=1, sticky="ew", padx=(0, 5))
     tk.Label(jog_params_frame, text="Torque (%):", bg=jog_params_frame['bg'], fg="white", font=font_small).grid(row=1,
                                                                                                                 column=2,
                                                                                                                 sticky="e",
@@ -158,11 +163,12 @@ def create_homing_controls(parent, send_cmd_func, variables):
     homing_controls_frame = tk.LabelFrame(parent, text="Homing Controls",
                                           bg="#2b1e34", fg="#D8BFD8", font=("Segoe UI", 10, "bold"),
                                           bd=2, relief="ridge", padx=10, pady=10)
-    homing_controls_frame.pack(fill=tk.X, expand=True, padx=5, pady=5)
+    homing_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=5)  # Set expand to False
 
     font_small = ('Segoe UI', 9)
     field_width_homing = 10
 
+    # Refactored to a 2-column layout
     params_frame = tk.Frame(homing_controls_frame, bg=homing_controls_frame['bg'])
     params_frame.pack(fill=tk.X)
     params_frame.grid_columnconfigure(1, weight=1)
@@ -225,11 +231,12 @@ def create_feed_controls(parent, send_cmd_func, ui_elements, variables):
     feed_controls_frame = tk.LabelFrame(parent, text="Feed Controls",
                                         bg="#1e3434", fg="#AFEEEE", font=("Segoe UI", 10, "bold"),
                                         bd=2, relief="ridge", padx=10, pady=10)
-    feed_controls_frame.pack(fill=tk.X, expand=True, padx=5, pady=5)
+    feed_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=5)  # Set expand to False
 
     font_small = ('Segoe UI', 9)
     field_width_feed = 8
 
+    # Refactored to a 2-column layout
     params_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg'])
     params_frame.pack(fill=tk.X)
     params_frame.grid_columnconfigure((1, 3), weight=1)
@@ -257,16 +264,20 @@ def create_feed_controls(parent, send_cmd_func, ui_elements, variables):
     ttk.Entry(params_frame, textvariable=variables['feed_torque_percent_var'], width=field_width_feed,
               font=font_small).grid(row=2, column=3, sticky="ew")
 
+    # Use grid for calc frame for better alignment control
     calc_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg'])
     calc_frame.pack(fill=tk.X, pady=(5, 0))
-    tk.Label(calc_frame, text="Calc ml/rev:", bg=feed_controls_frame['bg'], fg='white', font=font_small).pack(
-        side=tk.LEFT)
+    calc_frame.grid_columnconfigure((1, 3), weight=1)
+    tk.Label(calc_frame, text="Calc ml/rev:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(row=0,
+                                                                                                              column=0,
+                                                                                                              sticky='e')
     tk.Label(calc_frame, textvariable=variables['feed_ml_per_rev_var'], bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).pack(side=tk.LEFT, padx=5)
-    tk.Label(calc_frame, text="Calc Steps/ml:", bg=feed_controls_frame['bg'], fg='white', font=font_small).pack(
-        side=tk.LEFT, padx=(10, 0))
+             font=font_small).grid(row=0, column=1, sticky='w', padx=5)
+    tk.Label(calc_frame, text="Calc Steps/ml:", bg=feed_controls_frame['bg'], fg='white', font=font_small).grid(row=0,
+                                                                                                                column=2,
+                                                                                                                sticky='e')
     tk.Label(calc_frame, textvariable=variables['feed_steps_per_ml_var'], bg=feed_controls_frame['bg'], fg='cyan',
-             font=font_small).pack(side=tk.LEFT, padx=5)
+             font=font_small).grid(row=0, column=3, sticky='w', padx=5)
 
     ttk.Separator(feed_controls_frame, orient='horizontal').pack(fill=tk.X, pady=8)
 
@@ -315,22 +326,23 @@ def create_feed_controls(parent, send_cmd_func, ui_elements, variables):
     tk.Label(inject_status_frame, textvariable=variables['inject_dispensed_ml_var'], bg=feed_controls_frame['bg'],
              fg='lightgreen', font=font_small).pack(side=tk.LEFT, padx=5)
 
+    # Refactored buttons to a 2x2 grid
     inject_op_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg'])
     inject_op_frame.pack(fill=tk.X)
-    for i in range(4): inject_op_frame.grid_columnconfigure(i, weight=1)
+    inject_op_frame.grid_columnconfigure((0, 1), weight=1)
     ui_elements['start_inject_btn'] = ttk.Button(inject_op_frame, text="Start Inject", style='Start.TButton',
                                                  state='normal', command=lambda: send_cmd_func(
             f"INJECT_MOVE {variables['inject_amount_ml_var'].get()} {variables['inject_speed_ml_s_var'].get()} {variables['feed_acceleration_var'].get()} {variables['feed_steps_per_ml_var'].get()} {variables['feed_torque_percent_var'].get()}"))
     ui_elements['start_inject_btn'].grid(row=0, column=0, sticky="ew", padx=(0, 2))
     ui_elements['pause_inject_btn'] = ttk.Button(inject_op_frame, text="Pause", style='Pause.TButton', state='disabled',
                                                  command=lambda: send_cmd_func("PAUSE_INJECTION"))
-    ui_elements['pause_inject_btn'].grid(row=0, column=1, sticky="ew", padx=2)
+    ui_elements['pause_inject_btn'].grid(row=0, column=1, sticky="ew", padx=(2, 0))
     ui_elements['resume_inject_btn'] = ttk.Button(inject_op_frame, text="Resume", style='Resume.TButton',
                                                   state='disabled', command=lambda: send_cmd_func("RESUME_INJECTION"))
-    ui_elements['resume_inject_btn'].grid(row=0, column=2, sticky="ew", padx=2)
+    ui_elements['resume_inject_btn'].grid(row=1, column=0, sticky="ew", padx=(0, 2), pady=4)
     ui_elements['cancel_inject_btn'] = ttk.Button(inject_op_frame, text="Cancel", style='Cancel.TButton',
                                                   state='disabled', command=lambda: send_cmd_func("CANCEL_INJECTION"))
-    ui_elements['cancel_inject_btn'].grid(row=0, column=3, sticky="ew", padx=(2, 0))
+    ui_elements['cancel_inject_btn'].grid(row=1, column=1, sticky="ew", padx=(2, 0), pady=4)
 
     ttk.Separator(feed_controls_frame, orient='horizontal').pack(fill=tk.X, pady=8)
 
@@ -361,22 +373,23 @@ def create_feed_controls(parent, send_cmd_func, ui_elements, variables):
     tk.Label(purge_status_frame, textvariable=variables['purge_dispensed_ml_var'], bg=feed_controls_frame['bg'],
              fg='lightgreen', font=font_small).pack(side=tk.LEFT, padx=5)
 
+    # Refactored buttons to a 2x2 grid
     purge_op_frame = tk.Frame(feed_controls_frame, bg=feed_controls_frame['bg'])
     purge_op_frame.pack(fill=tk.X)
-    for i in range(4): purge_op_frame.grid_columnconfigure(i, weight=1)
+    purge_op_frame.grid_columnconfigure((0, 1), weight=1)
     ui_elements['start_purge_btn'] = ttk.Button(purge_op_frame, text="Start Purge", style='Start.TButton',
                                                 state='normal', command=lambda: send_cmd_func(
             f"PURGE_MOVE {variables['purge_amount_ml_var'].get()} {variables['purge_speed_ml_s_var'].get()} {variables['feed_acceleration_var'].get()} {variables['feed_steps_per_ml_var'].get()} {variables['feed_torque_percent_var'].get()}"))
     ui_elements['start_purge_btn'].grid(row=0, column=0, sticky="ew", padx=(0, 2))
     ui_elements['pause_purge_btn'] = ttk.Button(purge_op_frame, text="Pause", style='Pause.TButton', state='disabled',
                                                 command=lambda: send_cmd_func("PAUSE_INJECTION"))
-    ui_elements['pause_purge_btn'].grid(row=0, column=1, sticky="ew", padx=2)
+    ui_elements['pause_purge_btn'].grid(row=0, column=1, sticky="ew", padx=(2, 0))
     ui_elements['resume_purge_btn'] = ttk.Button(purge_op_frame, text="Resume", style='Resume.TButton',
                                                  state='disabled', command=lambda: send_cmd_func("RESUME_INJECTION"))
-    ui_elements['resume_purge_btn'].grid(row=0, column=2, sticky="ew", padx=2)
+    ui_elements['resume_purge_btn'].grid(row=1, column=0, sticky="ew", padx=(0, 2), pady=4)
     ui_elements['cancel_purge_btn'] = ttk.Button(purge_op_frame, text="Cancel", style='Cancel.TButton',
                                                  state='disabled', command=lambda: send_cmd_func("CANCEL_INJECTION"))
-    ui_elements['cancel_purge_btn'].grid(row=0, column=3, sticky="ew", padx=(2, 0))
+    ui_elements['cancel_purge_btn'].grid(row=1, column=1, sticky="ew", padx=(2, 0), pady=4)
 
 
 def create_injector_ancillary_controls(parent, send_injector_cmd, shared_gui_refs, ui_elements):
@@ -424,7 +437,7 @@ def create_injector_ancillary_controls(parent, send_injector_cmd, shared_gui_ref
     if 'purge_dispensed_ml_var' not in variables: variables['purge_dispensed_ml_var'] = tk.StringVar(value='---')
 
     ancillary_frame = tk.Frame(parent, bg="#2a2d3b")
-    ancillary_frame.pack(fill=tk.X, expand=True)
+    ancillary_frame.pack(fill=tk.X, expand=False)  # Set expand to False
 
     def toggle_individual_jog():
         new_state = tk.NORMAL if variables['jog_individual_unlocked_var'].get() else tk.DISABLED

@@ -74,8 +74,9 @@ def send_to_device(device_key, msg, gui_refs):
 
 def monitor_connections(gui_refs):
     """
-    Runs in a thread to monitor device connection status, handle auto-discovery,
-    and re-establish peer-to-peer links if they drop.
+    Runs in a thread to monitor device connection status for timeouts and to
+    handle auto-discovery for disconnected devices. Peering is handled by the
+    handle_connection function when devices connect.
     """
     terminal_cb = gui_refs.get('terminal_cb')
     while True:
@@ -83,42 +84,42 @@ def monitor_connections(gui_refs):
         for key, device in devices.items():
             prev_conn_status = device["connected"]
 
+            # 1. Check for timeouts
             if prev_conn_status and (now - device["last_rx"]) > TIMEOUT_THRESHOLD:
                 device["connected"] = False
-                device["peer_connected"] = False
+                device["peer_connected"] = False # Reset peer status on disconnect
                 device["ip"] = None
 
-            if prev_conn_status and not device["connected"]:
-                status_text = f"🔌 {key.capitalize()} Disconnected"
-                log_to_terminal(status_text, terminal_cb)
-                gui_refs[f'status_var_{key}'].set(status_text)
+                if prev_conn_status and not device["connected"]:
+                    status_text = f"🔌 {key.capitalize()} Disconnected"
+                    log_to_terminal(status_text, terminal_cb)
+                    gui_refs[f'status_var_{key}'].set(status_text)
 
-                other_key = "fillhead" if key == "injector" else "injector"
-                if devices[other_key]["connected"]:
-                    log_to_terminal(f"INFO: {key.capitalize()} disconnected. Informing peer.", terminal_cb)
-                    send_to_device(other_key, "CLEAR_PEER_IP", gui_refs)
+                    # Inform the other device that its peer has dropped
+                    other_key = "fillhead" if key == "injector" else "injector"
+                    if devices[other_key]["connected"]:
+                        log_to_terminal(f"INFO: {key.capitalize()} disconnected. Informing peer.", terminal_cb)
+                        send_to_device(other_key, "CLEAR_PEER_IP", gui_refs)
 
+            # 2. If a device is not connected, try to discover it
             if not device["connected"]:
                 if now - device["last_discovery_attempt"] > DISCOVERY_INTERVAL:
                     discover(key, gui_refs)
                     device["last_discovery_attempt"] = now
 
-        injector = devices["injector"]
-        fillhead = devices["fillhead"]
-
-        if injector["connected"] and fillhead["connected"]:
-            if not injector["peer_connected"] or not fillhead["peer_connected"]:
-                if now - injector["last_discovery_attempt"] > DISCOVERY_INTERVAL:
-                    log_to_terminal("INFO: Peer connection lost while devices are active. Re-brokering IPs.",
-                                    terminal_cb)
-
-                    if injector["ip"] and fillhead["ip"]:
-                        send_to_device("injector", f"SET_PEER_IP {fillhead['ip']}", gui_refs)
-                        send_to_device("fillhead", f"SET_PEER_IP {injector['ip']}", gui_refs)
-
-                    injector["last_discovery_attempt"] = now
-
         time.sleep(HEARTBEAT_INTERVAL)
+
+
+def telemetry_requester_loop(gui_refs, interval_ms):
+    """
+    Runs in a thread to periodically request telemetry from connected devices.
+    """
+    while True:
+        if devices["injector"]["connected"]:
+            send_to_device("injector", "REQUEST_TELEM", gui_refs)
+        if devices["fillhead"]["connected"]:
+            send_to_device("fillhead", "REQUEST_TELEM", gui_refs)
+        time.sleep(interval_ms / 1000.0)
 
 
 def handle_connection(device_key, source_ip, gui_refs):
@@ -275,7 +276,6 @@ def recv_loop(gui_refs):
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_fillhead_telemetry(msg, gui_refs)
-            # FIX: Added device-specific prefixes to the list of recognized status messages.
             elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "Axis X:", "Axis Y:", "Axis Z:", "INJ_DONE:", "FH_DONE:", "INJ_INFO:", "FH_INFO:", "INJ_ERROR:", "FH_ERROR:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
                 for key, device in devices.items():
