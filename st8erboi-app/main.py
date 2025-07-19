@@ -2,12 +2,13 @@ import tkinter as tk
 from tkinter import ttk
 import threading
 import comms
+import sv_ttk  # Import the new theme library
 from scripting_gui import create_scripting_interface
 from manual_controls import create_manual_controls_display
 from status_panel import create_status_bar
 from terminal import create_terminal_panel
 from styles import configure_styles
-from top_menu import create_top_menu  # Import the new top menu function
+from top_menu import create_top_menu
 
 GUI_UPDATE_INTERVAL_MS = 100
 
@@ -19,9 +20,13 @@ def main():
     """
     root = tk.Tk()
     root.title("Multi-Device Controller")
-    root.configure(bg="#21232b")
+
+    # Apply the theme BEFORE creating any widgets
+    sv_ttk.set_theme("dark")
+
     root.geometry("1600x950")
 
+    # Configure custom styles after the theme is set
     configure_styles()
 
     # --- Shared State and Functions ---
@@ -54,15 +59,18 @@ def main():
     }
 
     # --- Main Layout Frames ---
-    left_bar_frame = tk.Frame(root, bg="#21232b", width=350)
+    # The left bar holds status and manual controls.
+    left_bar_frame = ttk.Frame(root, width=350)
     left_bar_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0), pady=10)
     left_bar_frame.pack_propagate(False)
 
+    # The terminal is packed at the bottom of the root window.
     terminal_widgets = create_terminal_panel(root, shared_gui_refs)
     shared_gui_refs.update(terminal_widgets)
     terminal_widgets['terminal_frame'].pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(0, 10))
 
-    main_content_frame = tk.Frame(root, bg="#21232b")
+    # The main content frame holds the scripting interface.
+    main_content_frame = ttk.Frame(root)
     main_content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     # --- Populate UI Components ---
@@ -71,7 +79,7 @@ def main():
     scripting_widgets = create_scripting_interface(main_content_frame, command_funcs, shared_gui_refs)
     shared_gui_refs.update(scripting_widgets)
 
-    # 2. Top Menu Bar (needs file commands from scripting interface)
+    # 2. Top Menu Bar (created first, but needs file_commands)
     file_commands = scripting_widgets.get('file_commands', {})
     menu_widgets = create_top_menu(root, file_commands)
 
@@ -88,9 +96,9 @@ def main():
     shared_gui_refs.update(manual_control_widgets)
 
     # 5. Abort Button
-    abort_btn = tk.Button(left_bar_frame, text="🛑 ABORT MOVE", bg="#db2828", fg="white", font=("Segoe UI", 10, "bold"),
-                          command=command_funcs.get("abort"), relief="raised", bd=3, padx=10, pady=5)
-    abort_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0), ipady=5)
+    abort_btn = ttk.Button(left_bar_frame, text="🛑 ABORT MOVE", style="Red.TButton",
+                           command=command_funcs.get("abort"))
+    abort_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0), ipady=5, padx=5)
 
     # --- Start Communication Threads ---
     threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()

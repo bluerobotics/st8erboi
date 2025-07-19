@@ -4,48 +4,38 @@ from tkinter import messagebox, scrolledtext
 
 def create_top_menu(root, file_commands):
     """
-    Creates the main menu bar for the application, including a dynamic 'Recent Scripts' submenu,
-    and applies a modern dark theme.
+    Creates the main menu bar for the application. The styling is now handled
+    by the sv_ttk theme set in main.py.
 
     Args:
         root: The main Tkinter window.
         file_commands (dict): A dictionary mapping file operations to their functions.
 
     Returns:
-        dict: A dictionary containing a reference to the recent_files_menu object
-              so it can be updated dynamically.
+        dict: A dictionary containing a reference to the recent_files_menu object.
     """
     menubar = tk.Menu(root)
     root.config(menu=menubar)
 
-    # --- Menu Styling ---
-    # This provides a dark theme that works well on many systems.
-    # The borderwidth=0 is key to removing the white borders on some OSs.
-    menubar.config(bg="#2a2d3b", fg="white", activebackground="#4a4d5f", activeforeground="white", relief=tk.FLAT,
-                   borderwidth=0)
-
     # --- File Menu ---
-    file_menu = tk.Menu(menubar, tearoff=0, bg="#2a2d3b", fg="white",
-                        activebackground="#4a4d5f", activeforeground="white", relief=tk.FLAT, borderwidth=0)
+    file_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="File", menu=file_menu)
+
     file_menu.add_command(label="New Script", command=file_commands.get('new'), accelerator="Ctrl+N")
     file_menu.add_command(label="Load Script...", command=file_commands.get('load'), accelerator="Ctrl+O")
 
-    # Create a submenu for recent scripts
-    recent_files_menu = tk.Menu(file_menu, tearoff=0, bg="#2a2d3b", fg="white",
-                                activebackground="#4a4d5f", activeforeground="white", relief=tk.FLAT, borderwidth=0)
+    recent_files_menu = tk.Menu(file_menu, tearoff=0)
     file_menu.add_cascade(label="Recent Scripts", menu=recent_files_menu)
-    recent_files_menu.add_command(label="Empty", state=tk.DISABLED)  # Placeholder
+    recent_files_menu.add_command(label="Empty", state=tk.DISABLED)
 
-    file_menu.add_separator(background="#4a4d5f")
+    file_menu.add_separator()
     file_menu.add_command(label="Save Script", command=file_commands.get('save'), accelerator="Ctrl+S")
     file_menu.add_command(label="Save Script As...", command=file_commands.get('save_as'), accelerator="Ctrl+Shift+S")
-    file_menu.add_separator(background="#4a4d5f")
+    file_menu.add_separator()
     file_menu.add_command(label="Exit", command=root.quit)
 
     # --- Help Menu ---
-    help_menu = tk.Menu(menubar, tearoff=0, bg="#2a2d3b", fg="white",
-                        activebackground="#4a4d5f", activeforeground="white", relief=tk.FLAT, borderwidth=0)
+    help_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="Help", menu=help_menu)
     help_menu.add_command(label="Documentation", command=lambda: show_documentation_window(root))
     help_menu.add_command(label="About", command=lambda: show_about_window(root))
@@ -54,7 +44,7 @@ def create_top_menu(root, file_commands):
     root.bind("<Control-n>", lambda event: file_commands.get('new')())
     root.bind("<Control-o>", lambda event: file_commands.get('load')())
     root.bind("<Control-s>", lambda event: file_commands.get('save')())
-    root.bind("<Control-S>", lambda event: file_commands.get('save_as')())  # Uppercase 'S' for Shift+S
+    root.bind("<Control-S>", lambda event: file_commands.get('save_as')())
 
     return {'recent_files_menu': recent_files_menu}
 
@@ -69,7 +59,8 @@ def show_documentation_window(parent):
     text_area = scrolledtext.ScrolledText(doc_window, wrap=tk.WORD, bg="#1b1e2b", fg="white", font=("Consolas", 10))
     text_area.pack(expand=True, fill="both", padx=10, pady=10)
 
-    documentation_content = """# Application UI Structure (Revised)
+    documentation_content = """
+# Application UI Structure (Revised)
 
 This document outlines the hierarchical structure of the Tkinter UI elements in your application, reflecting the latest refactoring for improved modularity and clarity.
 
@@ -149,7 +140,7 @@ This file's role is unchanged. It defines the terminal output window and its ass
   - `bottom_frame` (`tk.Frame`): The main container for the terminal area.
     - `terminal` (`tk.Text`) and `scrollbar` (`ttk.Scrollbar`).
     - `options_frame` (`tk.Frame`) with `Checkbuttons`.
-"""
+    """
     text_area.insert(tk.END, documentation_content)
     text_area.config(state=tk.DISABLED)
     doc_window.transient(parent)
