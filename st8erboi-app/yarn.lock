@@ -4102,7 +4102,7 @@ __metadata:
     electron-builder: "npm:26.0.12"
     tailwindcss: "npm:^4.1.11"
     vite: "npm:^7.0.4"
-    vue: "npm:^3.5.17"
+    vue: "npm:^3.5.18"
   languageName: unknown
   linkType: soft
 
@@ -4481,7 +4481,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vue@npm:^3.5.17":
+"vue@npm:^3.5.18":
   version: 3.5.18
   resolution: "vue@npm:3.5.18"
   dependencies:
