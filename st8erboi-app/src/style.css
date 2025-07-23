@@ -2,12 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Your existing custom variables can still go here if needed */
+/* Your application's custom variables */
 :root {
-  --bg-main: #21232b;
-  --bg-panel: #2a2d3b;
-  --border-color: #4a5568;
-  --text-primary: #edf2f7;
-  --text-secondary: #a0aec0;
-  --accent-color: #4299e1;
+  --bg-main: #21232b;
+  --bg-panel: #2a2d3b;
+  --border-color: #4a5568;
+  --text-primary: #edf2f7;
+  --text-secondary: #a0aec0;
+  --accent-color: #4299e1;
 }
