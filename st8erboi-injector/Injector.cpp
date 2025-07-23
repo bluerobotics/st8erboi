@@ -228,7 +228,8 @@ void Injector::updateState() {
         bool is_multiphase_homing = (homingState == HOMING_MACHINE || homingState == HOMING_CARTRIDGE || homingState == HOMING_PINCH);
         if (is_multiphase_homing) {
             int direction = 1;
-            if (homingState == HOMING_MACHINE || homingState == HOMING_PINCH) {
+            // FIX: Pinch homing now moves in the positive direction. Only machine homes negatively.
+            if (homingState == HOMING_MACHINE) {
                 direction = -1; // Move in negative direction to find hard stop
             }
 
@@ -400,12 +401,12 @@ void Injector::updateState() {
 			abortInjectorMove();
 			errorState = ERROR_TORQUE_ABORT;
 			sendStatus(STATUS_PREFIX_INFO, "JOG: Torque limit, returning to STANDBY.");
-			jogDone = true;
+			onJogDone();
 			if (activeJogCommand != nullptr) {
 				activeJogCommand = nullptr;
 			}
 		} else if (!checkInjectorMoving()) {
-			jogDone = true;
+			onJogDone();
 			if (activeJogCommand != nullptr) {
 				char doneMsg[64];
 				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", activeJogCommand);

@@ -217,8 +217,9 @@ void Injector::handlePinchHomeMove() {
 	errorState = ERROR_NONE;
 
 	sendStatus(STATUS_PREFIX_START, "PINCH_HOME_MOVE initiated.");
-    // Move towards the hard stop (negative direction)
-	movePinchMotor(-homing_actual_stroke_steps, (int)torque_percent, homing_actual_rapid_sps, homing_actual_accel_sps2);
+    
+    // FIX: Move towards the hard stop in the positive "close" direction.
+	movePinchMotor(homing_actual_stroke_steps, (int)torque_percent, homing_actual_rapid_sps, homing_actual_accel_sps2);
 }
 
 void Injector::handlePinchJogMove(const char *msg) {
@@ -227,23 +228,28 @@ void Injector::handlePinchJogMove(const char *msg) {
 		return;
 	}
 
-	float degrees = 0;
-	int torque_percent = 0, velocity_sps = 0, accel_sps2 = 0;
+	float dist_mm = 0, vel_mms = 0, accel_mms2 = 0;
+	int torque_percent = 0;
 
-	int parsed_count = sscanf(msg + strlen(CMD_STR_PINCH_JOG_MOVE), "%f %d %d %d",
-	&degrees, &torque_percent, &velocity_sps, &accel_sps2);
+	// Parse distance, velocity, and acceleration as floats from the GUI
+	int parsed_count = sscanf(msg + strlen(CMD_STR_PINCH_JOG_MOVE), "%f %f %f %d",
+	                          &dist_mm, &vel_mms, &accel_mms2, &torque_percent);
 
 	if (parsed_count == 4) {
+		// Set safe defaults if parameters are invalid
 		if (torque_percent <= 0 || torque_percent > 100) torque_percent = 30;
-		if (velocity_sps <= 0) velocity_sps = 800;
-		if (accel_sps2 <= 0) accel_sps2 = 5000;
+		if (vel_mms <= 0) vel_mms = 5.0f;
+		if (accel_mms2 <= 0) accel_mms2 = 25.0f;
 
-		const float steps_per_degree = (float)PULSES_PER_REV / 360.0f;
-		long steps_to_move = (long)(degrees * steps_per_degree);
+		// Convert from mm-based units to step-based units for the motor driver
+		long steps_to_move = (long)(dist_mm * STEPS_PER_MM_PINCH);
+		int velocity_sps = (int)(vel_mms * STEPS_PER_MM_PINCH);
+		int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_PINCH);
 		
 		activeJogCommand = CMD_STR_PINCH_JOG_MOVE;
-		movePinchMotor(steps_to_move, torque_percent, velocity_sps, accel_sps2);
-		} else {
+		movePinchMotor(steps_to_move, torque_percent, velocity_sps, accel_sps2_val);
+		jogDone = false;
+	} else {
 		char errorMsg[100];
 		snprintf(errorMsg, sizeof(errorMsg), "Invalid PINCH_JOG_MOVE format. Expected 4 params, got %d.", parsed_count);
 		sendStatus(STATUS_PREFIX_ERROR, errorMsg);
