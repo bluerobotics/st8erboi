@@ -1,4 +1,12 @@
-@import "tailwindcss/preflight"; /* This replaces @tailwind base */
-@import "tailwindcss/utilities"; /* This replaces both @tailwind components and @tailwind utilities */
+@import "tailwindcss/preflight";
+@import "tailwindcss/utilities";
 
-/* You can still add your own custom base styles or component classes here if needed */
+/*
+  Use @layer base to add your own custom base styles.
+  This is the officially recommended approach.
+*/
+@layer base {
+  body {
+    @apply bg-gray-900 text-gray-200;
+  }
+}
