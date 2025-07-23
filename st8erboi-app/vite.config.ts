@@ -2,14 +2,12 @@ import { defineConfig } from 'vite'
 import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
 import vue from '@vitejs/plugin-vue'
-import tailwindcss from '@tailwindcss/vite' // 1. Import the new plugin
 
 // https://vitejs.dev/config/
 export default defineConfig({
   // The css block is no longer needed
   plugins: [
     vue(),
-    tailwindcss(), // 2. Add the Tailwind CSS Vite plugin
     electron({
       main: {
         // Entry point for the Electron main process

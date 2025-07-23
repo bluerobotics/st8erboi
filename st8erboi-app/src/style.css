@@ -1,3 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/preflight"; /* This replaces @tailwind base */
+@import "tailwindcss/utilities"; /* This replaces both @tailwind components and @tailwind utilities */
+
+/* You can still add your own custom base styles or component classes here if needed */
