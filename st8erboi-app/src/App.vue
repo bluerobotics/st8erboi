@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
     <img alt="st8erboi logo" :src="logo" class="w-24 h-24 mb-6" />
     <h1 class="text-3xl font-bold text-white mb-2">Welcome to st8erboi-app!</h1>
-    <p class="text-xl text-white mb-6">{{ message || 'Loading from backend...' }}</p>
+    <p class="text-xl text-white mb-6" v-if="message">{{ message }}</p>
 
     <div class="w-full max-w-md bg-gray-800 p-4 rounded-lg shadow-md">
       <h2 class="text-lg font-semibold text-gray-300 mb-4">System Status</h2>
@@ -20,13 +20,12 @@
           <span :class="tailwindLoaded ? 'text-green-400' : 'text-red-400'">● {{ tailwindLoaded ? 'Online' : 'Offline' }}</span>
         </li>
         <li class="flex justify-between items-center">
-          <span>Backend</span>
+          <span>Python Server</span>
           <span :class="backendOnline ? 'text-green-400' : 'text-red-400'">● {{ backendOnline ? 'Online' : 'Offline' }}</span>
         </li>
       </ul>
     </div>
   </div>
-  <div class="text-red-500">IF THIS IS RED, Tailwind is working ✅</div>
 </template>
 
 <script setup>
@@ -38,18 +37,18 @@ const backendOnline = ref(false);
 const tailwindLoaded = ref(false);
 
 onMounted(() => {
-  // Detect Tailwind via computed style on hidden element
-  const div = document.createElement('div');
-  div.className = 'hidden text-red-500';
-  document.body.appendChild(div);
-  const style = getComputedStyle(div);
-  tailwindLoaded.value = style.color === 'rgb(239, 68, 68)'; // Tailwind red-500
-  div.remove();
+  const test = document.createElement('div');
+  test.className = 'text-[rgb(239,68,68)]';
+  test.style.display = 'none';
+  document.body.appendChild(test);
+  const color = getComputedStyle(test).color;
+  tailwindLoaded.value = color.includes('239, 68, 68');
+  test.remove();
 
   fetch('http://127.0.0.1:5000/api/data')
     .then(response => response.json())
     .then(data => {
-      message.value = data.message;
+      message.value = '';
       backendOnline.value = true;
     })
     .catch(error => {
