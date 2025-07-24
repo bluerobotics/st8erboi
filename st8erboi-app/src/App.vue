@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-8">
-    <img alt="Vue logo" src="./assets/logo.png" class="w-24 h-24 mb-4" />
+    <img alt="st8erboi logo" :src="logo" class="w-24 h-24 mb-4" />
     <h1 class="text-4xl font-bold text-green-600 mb-4">
       Welcome to st8erboi-app!
     </h1>
@@ -10,6 +10,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import logo from './assets/logo.png'
 
 const message = ref('');
 
