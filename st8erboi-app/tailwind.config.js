@@ -1,11 +1,13 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
+  // FIX: Added paths to your source files.
+  // Tailwind will now scan these files for utility classes to include in the build.
   content: [
-    './index.html',
-    './src/**/*.{vue,js,ts,jsx,tsx}',
+    "./index.html",
+    "./src/**/*.{vue,js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {},
   },
   plugins: [],
-};
+}
