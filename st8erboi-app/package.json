@@ -2,7 +2,6 @@
   "name": "st8erboi-app",
   "private": true,
   "version": "0.0.0",
-  "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
     "dev:vite": "vite",
