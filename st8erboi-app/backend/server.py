@@ -157,10 +157,12 @@ class UdpComms:
                 now = time.time()
                 for name, device in self.device_manager.devices.items():
                     time_since_last = now - last_discovery_times[name]
-                    if device.is_connected:
-                        print(f"[DEBUG] Device '{name}' marked connected (should NOT broadcast).", flush=True)
-                    else:
-                        print(f"[DEBUG] Device '{name}' NOT connected, time since last broadcast: {time_since_last:.1f}s", flush=True)
+                    
+                    # This debug logic can be noisy, optionally comment out
+                    # if device.is_connected:
+                    #     print(f"[DEBUG] Device '{name}' marked connected (should NOT broadcast).", flush=True)
+                    # else:
+                    #     print(f"[DEBUG] Device '{name}' NOT connected, time since last broadcast: {time_since_last:.1f}s", flush=True)
 
                     if device.is_connected and (now - device.last_seen) > self.TIMEOUT_THRESHOLD:
                         log_queue.append(f"TIMEOUT: {name.capitalize()} disconnected.")
@@ -171,18 +173,18 @@ class UdpComms:
                     if not device.is_connected and (time_since_last > self.DISCOVERY_INTERVAL):
                         msg = f"DISCOVER_{name.upper()} PORT={self.CLIENT_PORT}"
                         try:
-                            print(f"SENDING BROADCAST -> {self.BROADCAST_ADDR}:{self.CLEARCORE_PORT}: {msg}", flush=True)
+                            # print(f"SENDING BROADCAST -> {self.BROADCAST_ADDR}:{self.CLEARCORE_PORT}: {msg}", flush=True)
                             log_queue.append(f"SEND -> {self.BROADCAST_ADDR}:{self.CLEARCORE_PORT}: {msg}")
                             self.sock.sendto(msg.encode(), (self.BROADCAST_ADDR, self.CLEARCORE_PORT))
                             last_discovery_times[name] = now
                         except Exception as inner_e:
-                            print(f"Inner broadcast error: {inner_e}", flush=True)
+                            # print(f"Inner broadcast error: {inner_e}", flush=True)
                             log_queue.append(f"Discovery broadcast error: {inner_e}")
 
                 time.sleep(1)
 
             except Exception as e:
-                print(f"Outer discovery loop error: {e}", flush=True)
+                # print(f"Outer discovery loop error: {e}", flush=True)
                 log_queue.append(f"Discovery loop error: {e}")
 
     def _telemetry_requester_loop(self):
@@ -199,8 +201,6 @@ class UdpComms:
                 data, addr = self.sock.recvfrom(2048)
                 msg = data.decode('utf-8', errors='replace').strip()
                 source_ip = addr[0]
-                
-                # print(f"[DEBUG RECEIVED]: {source_ip} says: '{msg}'")
                 
                 if "TELEM" not in msg:
                     log_queue.append(f"RECV <- {source_ip}: {msg}")
@@ -239,7 +239,7 @@ class UdpComms:
                 log_queue.append(f"INFO: {name.capitalize()} peer status changed to {device.is_peer_connected}")
                 self.device_manager.check_for_peer_connection()
         except Exception as e:
-            log_queue.append(f"Error parsing {name} telemetry: {e}")
+            log_queue.append(f"Error parsing {name} telemetry: {e} | MSG: {msg}")
 
     def _parse_key_value_payload(self, payload_str):
         return dict(item.split(':', 1) for item in payload_str.split(',') if ':' in item)
@@ -254,7 +254,10 @@ class UdpComms:
         return { "mainState": parts.get("MAIN_STATE", "---"), "feedState": parts.get("FEED_STATE", "IDLE"), "errorState": parts.get("ERROR_STATE", "No Error"), "positionMachine": self._safe_float(parts.get("machine_mm")), "positionCartridge": self._safe_float(parts.get("cartridge_mm")), "dispensedVolume": self._safe_float(parts.get("dispensed_ml")), "temperature": self._safe_float(parts.get("temp_c")), "vacuum": self._safe_float(parts.get('vacuum_psig')), "isPeerDiscovered": parts.get("peer_disc", "0") == "1", "peerIp": parts.get("peer_ip", "0.0.0.0"), "motors": [ {"enabled": parts.get("enabled0", "0") == "1", "homed": parts.get("homed0", "0") == "1", "torque": self._safe_float(parts.get("torque0")), "position": self._safe_float(parts.get("pos_mm0"))}, {"enabled": parts.get("enabled1", "0") == "1", "homed": parts.get("homed1", "0") == "1", "torque": self._safe_float(parts.get("torque1")), "position": self._safe_float(parts.get("pos_mm1"))}, {"enabled": parts.get("enabled2", "0") == "1", "homed": parts.get("homed2", "0") == "1", "torque": self._safe_float(parts.get("torque2")), "position": self._safe_float(parts.get("pos_mm2"))} ] }
 
     def _parse_fillhead_telemetry(self, msg):
-        payload = msg.split("FH_TELEM_GUI: ")[1]
+        # Note: The original code had a space "FH_TELEM_GUI: ".
+        # Ensure this matches the device's actual output.
+        # Removing the space for consistency with injector parsing.
+        payload = msg.split("FH_TELEM_GUI:")[1].strip()
         parts = self._parse_key_value_payload(payload)
         return { "stateX": parts.get("x_s", "UNKNOWN"), "stateY": parts.get("y_s", "UNKNOWN"), "stateZ": parts.get("z_s", "UNKNOWN"), "isPeerDiscovered": parts.get("pd", "0") == "1", "peerIp": parts.get("pip", "0.0.0.0"), "axes": { "x": {"position": self._safe_float(parts.get("x_p")), "torque": self._safe_float(parts.get("x_t")), "enabled": parts.get("x_e", "0") == "1", "homed": parts.get("x_h", "0") == "1"}, "y": {"position": self._safe_float(parts.get("y_p")), "torque": self._safe_float(parts.get("y_t")), "enabled": parts.get("y_e", "0") == "1", "homed": parts.get("y_h", "0") == "1"}, "z": {"position": self._safe_float(parts.get("z_p")), "torque": self._safe_float(parts.get("z_t")), "enabled": parts.get("z_e", "0") == "1", "homed": parts.get("z_h", "0") == "1"} } }
 
@@ -305,6 +308,8 @@ def validate_script():
 def run_script():
     return jsonify({"message": "Script execution not yet implemented."})
 
-
-comms.start_threads()
-app.run(debug=True, host='localhost', port=5000, use_reloader=False)
+if __name__ == '__main__':
+    comms.start_threads()
+    # use_reloader=False is critical when running from a script like this
+    # to prevent the script from running twice.
+    app.run(debug=True, port=5000, use_reloader=False)
