@@ -1,9 +1,10 @@
 // electron/main.js
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process'); // <-- Add this
+const { spawn } = require('child_process');
+const waitOn = require('wait-on');
 
-let pythonProcess = null; // <-- Add this
+let pythonProcess = null;
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -14,25 +15,44 @@ function createWindow() {
     },
   });
 
-  // Load the Vite dev server URL in development or the built file in production
-  const startUrl = process.env.NODE_ENV === 'development'
-    ? 'http://localhost:5173' // Default Vite port
-    : `file://${path.join(__dirname, '../dist/index.html')}`;
+  const isDev = process.env.NODE_ENV === 'development';
+  const devServerURL = 'http://localhost:5173';
+  const prodIndexPath = `file://${path.join(__dirname, '../dist/index.html')}`;
 
-  mainWindow.loadURL(startUrl);
+  if (isDev) {
+    // Wait for Vite dev server before loading
+    waitOn({ resources: [devServerURL], timeout: 20000 }) // 20s timeout
+      .then(() => {
+        mainWindow.loadURL(devServerURL);
+      })
+      .catch(err => {
+        console.error('❌ Vite dev server did not start in time:', err);
+      });
+  } else {
+    mainWindow.loadURL(prodIndexPath);
+  }
 }
 
 app.whenReady().then(() => {
-  // Spawn the Python backend process
-  pythonProcess = spawn('python', [path.join(__dirname, '../backend/server.py')]);
-  pythonProcess.stdout.on('data', (data) => {
-    console.log(`Python stdout: ${data}`);
+  console.log('🚀 Electron app is ready');
+
+  // Start the Python backend
+  const scriptPath = path.join(__dirname, '../backend/server.py');
+  pythonProcess = spawn('python', [scriptPath]);
+
+  pythonProcess.stdout.on('data', data => {
+    console.log(`🐍 Python stdout: ${data}`);
   });
-  pythonProcess.stderr.on('data', (data) => {
-    console.error(`Python stderr: ${data}`);
+
+  pythonProcess.stderr.on('data', data => {
+    console.error(`🐍 Python stderr: ${data}`);
   });
-  
-    createWindow();
+
+  pythonProcess.on('exit', code => {
+    console.log(`🐍 Python process exited with code ${code}`);
+  });
+
+  createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -42,11 +62,12 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // Kill Python backend before quitting
+  if (pythonProcess) {
+    pythonProcess.kill();
+  }
+
   if (process.platform !== 'darwin') {
-    // Kill the Python process before quitting the app
-    if (pythonProcess) {
-      pythonProcess.kill();
-    }
     app.quit();
   }
 });
