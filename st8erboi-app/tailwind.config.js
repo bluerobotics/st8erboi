@@ -1,7 +1,6 @@
-// tailwind.config.cjs
 export default {
+  darkMode: 'class', // ✅ required for manual dark mode
   content: ['./index.html', './src/**/*.{vue,js,ts}'],
-  darkMode: 'class',
   theme: {
     extend: {},
   },

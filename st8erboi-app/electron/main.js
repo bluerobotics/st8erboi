@@ -11,6 +11,7 @@ function createWindow() {
     width: 800,
     height: 600,
     icon: path.join(__dirname, '../src/assets/logo.png'),
+    backgroundColor: '#111827', // Tailwind's gray-900 for dark background
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
@@ -21,8 +22,7 @@ function createWindow() {
   const prodIndexPath = `file://${path.join(__dirname, '../dist/index.html')}`;
 
   if (isDev) {
-    // Wait for Vite dev server before loading
-    waitOn({ resources: [devServerURL], timeout: 20000 }) // 20s timeout
+    waitOn({ resources: [devServerURL], timeout: 20000 })
       .then(() => {
         mainWindow.loadURL(devServerURL);
       })
@@ -37,7 +37,6 @@ function createWindow() {
 app.whenReady().then(() => {
   console.log('🚀 Electron app is ready');
 
-  // Start the Python backend
   const scriptPath = path.join(__dirname, '../backend/server.py');
   pythonProcess = spawn('python', [scriptPath]);
 
@@ -63,11 +62,9 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  // Kill Python backend before quitting
   if (pythonProcess) {
     pythonProcess.kill();
   }
-
   if (process.platform !== 'darwin') {
     app.quit();
   }
