@@ -267,7 +267,7 @@ async function apiRequest(endpoint, options = {}) {
 // --- Lifecycle Hooks ---
 onMounted(() => {
   pollStatus(); // Initial poll
-  statusInterval.value = setInterval(pollStatus, 1500); // Poll slightly faster
+  statusInterval.value = setInterval(pollStatus, 200); // Poll slightly faster
 });
 
 onBeforeUnmount(() => {

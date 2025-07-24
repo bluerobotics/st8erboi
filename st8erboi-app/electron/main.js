@@ -37,8 +37,9 @@ function createWindow() {
 app.whenReady().then(() => {
   console.log('🚀 Electron app is ready');
 
-  const scriptPath = path.join(__dirname, '../backend/server.py');
-  pythonProcess = spawn('python', [scriptPath]);
+  // Critical Fix: Explicitly set the correct working directory (cwd)
+  const backendDir = path.join(__dirname, '../backend');
+  pythonProcess = spawn('python', ['server.py'], { cwd: backendDir });
 
   pythonProcess.stdout.on('data', data => {
     console.log(`🐍 Python stdout: ${data}`);

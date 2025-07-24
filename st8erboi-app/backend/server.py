@@ -10,7 +10,7 @@ from collections import deque
 # Device and Communication Management (Consolidated)
 # =============================================================================
 
-# FIX: Added a thread-safe queue to hold log messages from background threads.
+# A thread-safe queue to hold log messages from background threads.
 log_queue = deque(maxlen=100)
 
 class Device:
@@ -148,29 +148,42 @@ class UdpComms:
         return False, f"Cannot send to {device_name}: Not connected or IP unknown."
 
     def _discovery_and_monitoring_loop(self):
-        last_discovery_times = {"injector": 0, "fillhead": 0}
-        
+        now = time.time()
+        last_discovery_times = {"injector": now - self.DISCOVERY_INTERVAL, 
+                                "fillhead": now - self.DISCOVERY_INTERVAL}
+        print("Discovery thread started.", flush=True)
         while self.is_running:
-            now = time.time()
-            for name, device in self.device_manager.devices.items():
-                if device.is_connected and (now - device.last_seen) > self.TIMEOUT_THRESHOLD:
-                    log_queue.append(f"TIMEOUT: {name.capitalize()} disconnected.")
-                    device.set_connection_status(False)
-                    other_name = "fillhead" if name == "injector" else "injector"
-                    self.send_command_to_device(other_name, "CLEAR_PEER_IP")
+            try:
+                now = time.time()
+                for name, device in self.device_manager.devices.items():
+                    time_since_last = now - last_discovery_times[name]
+                    if device.is_connected:
+                        print(f"[DEBUG] Device '{name}' marked connected (should NOT broadcast).", flush=True)
+                    else:
+                        print(f"[DEBUG] Device '{name}' NOT connected, time since last broadcast: {time_since_last:.1f}s", flush=True)
 
-                if not device.is_connected and (now - last_discovery_times[name]) > self.DISCOVERY_INTERVAL:
-                    msg = f"DISCOVER_{name.upper()} PORT={self.CLIENT_PORT}"
-                    try:
-                        # FIX: Log discovery messages to the queue for the frontend
-                        log_queue.append(f"SEND -> {self.BROADCAST_ADDR}:{self.CLEARCORE_PORT}: {msg}")
-                        self.sock.sendto(msg.encode(), (self.BROADCAST_ADDR, self.CLEARCORE_PORT))
-                        last_discovery_times[name] = now
-                    except Exception as e:
-                        log_queue.append(f"Discovery broadcast error: {e}")
-            
-            # FIX: The sleep was in the wrong place, now it waits after checking all devices.
-            time.sleep(1)
+                    if device.is_connected and (now - device.last_seen) > self.TIMEOUT_THRESHOLD:
+                        log_queue.append(f"TIMEOUT: {name.capitalize()} disconnected.")
+                        device.set_connection_status(False)
+                        other_name = "fillhead" if name == "injector" else "injector"
+                        self.send_command_to_device(other_name, "CLEAR_PEER_IP")
+
+                    if not device.is_connected and (time_since_last > self.DISCOVERY_INTERVAL):
+                        msg = f"DISCOVER_{name.upper()} PORT={self.CLIENT_PORT}"
+                        try:
+                            print(f"SENDING BROADCAST -> {self.BROADCAST_ADDR}:{self.CLEARCORE_PORT}: {msg}", flush=True)
+                            log_queue.append(f"SEND -> {self.BROADCAST_ADDR}:{self.CLEARCORE_PORT}: {msg}")
+                            self.sock.sendto(msg.encode(), (self.BROADCAST_ADDR, self.CLEARCORE_PORT))
+                            last_discovery_times[name] = now
+                        except Exception as inner_e:
+                            print(f"Inner broadcast error: {inner_e}", flush=True)
+                            log_queue.append(f"Discovery broadcast error: {inner_e}")
+
+                time.sleep(1)
+
+            except Exception as e:
+                print(f"Outer discovery loop error: {e}", flush=True)
+                log_queue.append(f"Discovery loop error: {e}")
 
     def _telemetry_requester_loop(self):
         while self.is_running:
@@ -180,11 +193,14 @@ class UdpComms:
             time.sleep(self.TELEMETRY_INTERVAL)
 
     def _udp_receive_loop(self):
+        # print("UDP Receive thread started.")
         while self.is_running:
             try:
                 data, addr = self.sock.recvfrom(2048)
                 msg = data.decode('utf-8', errors='replace').strip()
                 source_ip = addr[0]
+                
+                # print(f"[DEBUG RECEIVED]: {source_ip} says: '{msg}'")
                 
                 if "TELEM" not in msg:
                     log_queue.append(f"RECV <- {source_ip}: {msg}")
@@ -256,7 +272,6 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
     """Returns device status and any new log messages."""
-    # FIX: Piggyback log messages onto the main status poll
     logs = []
     while True:
         try:
@@ -290,6 +305,6 @@ def validate_script():
 def run_script():
     return jsonify({"message": "Script execution not yet implemented."})
 
-if __name__ == '__main__':
-    comms.start_threads()
-    app.run(debug=True, port=5000, use_reloader=False)
+
+comms.start_threads()
+app.run(debug=True, host='localhost', port=5000, use_reloader=False)
