@@ -5,8 +5,20 @@
       <h1 class="text-2xl font-bold text-cyan-400">St8erBoi ClearCore Controller</h1>
     </header>
 
+    <!-- Loading State -->
+    <div v-if="isLoading" class="flex-grow flex items-center justify-center">
+        <div class="text-center">
+            <svg class="animate-spin h-10 w-10 text-cyan-400 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-xl text-gray-300">Connecting to Backend...</p>
+            <p class="text-sm text-gray-500 mt-2">If this persists, ensure the Python server is running correctly.</p>
+        </div>
+    </div>
+
     <!-- Main Content Area -->
-    <div class="flex-grow flex flex-col overflow-hidden">
+    <div v-else class="flex-grow flex flex-col overflow-hidden">
       
       <!-- Top Section (Tabs) -->
       <div class="p-4 flex-shrink-0">
@@ -68,11 +80,11 @@
             <div class="bg-gray-700/50 rounded-lg p-4 flex flex-col space-y-4">
               <h2 class="text-xl font-semibold text-green-300 border-b border-gray-600 pb-2">Fill Head</h2>
               <ControlSection title="Setup">
-                   <div class="flex items-center justify-between">
-                      <button @click="sendCommand('fillhead', 'ENABLE')" class="btn btn-success">Enable</button>
-                      <button @click="sendCommand('fillhead', 'DISABLE')" class="btn btn-warning">Disable</button>
-                      <button @click="sendCommand('fillhead', 'HOME')" class="btn btn-primary">Home Axis</button>
-                  </div>
+                      <div class="flex items-center justify-between">
+                          <button @click="sendCommand('fillhead', 'ENABLE')" class="btn btn-success">Enable</button>
+                          <button @click="sendCommand('fillhead', 'DISABLE')" class="btn btn-warning">Disable</button>
+                          <button @click="sendCommand('fillhead', 'HOME')" class="btn btn-primary">Home Axis</button>
+                      </div>
               </ControlSection>
               <ControlSection title="Actions">
                   <div class="space-y-4">
@@ -200,6 +212,7 @@ const InputGroup = {
 const activeTab = ref('manual');
 const lastMessage = ref('');
 const statusInterval = ref(null);
+const isLoading = ref(true); // <-- New state for loading indicator
 
 const allDevices = ref({});
 
@@ -237,7 +250,7 @@ const tabClass = computed(() => (tabName) => ({
 }));
 
 const statusClass = computed(() => (status) => ({
-  'bg-green-500': status === 'Connected' || status === 'Ready',
+  'bg-green-500': status === 'Connected' || status === 'Ready' || (typeof status === 'string' && status.toLowerCase() !== 'disconnected'),
   'bg-red-500': status === 'Disconnected' || status === 'Error',
   'bg-yellow-500': status === 'Connecting' || status === 'Busy',
   'animate-pulse': status === 'Connecting' || status === 'Busy',
@@ -252,14 +265,15 @@ async function apiRequest(endpoint, options = {}) {
     const response = await fetch(`${API_URL}/${endpoint}`, options);
     const data = await response.json();
     if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      throw new Error(data.error || `HTTP error! status: ${response.status}`);
     }
-    // The 'log' field from send_command is now handled by the main poll
     if (data.message) lastMessage.value = data.message;
     return data;
   } catch (error) {
     console.error(`API Error on ${endpoint}:`, error);
     lastMessage.value = error.message;
+    // Ensure loading is stopped even on error
+    isLoading.value = false;
     return null;
   }
 }
@@ -267,7 +281,7 @@ async function apiRequest(endpoint, options = {}) {
 // --- Lifecycle Hooks ---
 onMounted(() => {
   pollStatus(); // Initial poll
-  statusInterval.value = setInterval(pollStatus, 200); // Poll slightly faster
+  statusInterval.value = setInterval(pollStatus, 500); // Poll slightly less aggressively
 });
 
 onBeforeUnmount(() => {
@@ -275,16 +289,18 @@ onBeforeUnmount(() => {
 });
 
 // --- Watchers to update local state from polled data ---
+// FIX: Made watchers more robust to prevent crashes on initial load
 watch(() => allDevices.value.injector?.isConnected, (newVal) => {
-    injector.status = newVal ? (allDevices.value.injector.telemetry.mainState || 'Connected') : 'Disconnected';
+    injector.status = newVal ? (allDevices.value.injector.telemetry?.mainState || 'Connected') : 'Disconnected';
 });
 watch(() => allDevices.value.fillhead?.isConnected, (newVal) => {
-    fillhead.status = newVal ? (allDevices.value.fillhead.telemetry.stateX || 'Connected') : 'Disconnected';
+    fillhead.status = newVal ? (allDevices.value.fillhead.telemetry?.stateX || 'Connected') : 'Disconnected';
 });
 watch(() => allDevices.value.injector?.telemetry?.positionMachine, (newVal) => {
     injector.currentPosition = newVal !== undefined ? newVal.toFixed(3) : 'N/A';
 });
-watch(() => allDevices.value.fillhead?.telemetry?.axes?.x.position, (newVal) => {
+// CRITICAL FIX: Added extra optional chaining to prevent crash
+watch(() => allDevices.value.fillhead?.telemetry?.axes?.x?.position, (newVal) => {
     fillhead.currentPosition = newVal !== undefined ? newVal.toFixed(3) : 'N/A';
 });
 
@@ -294,17 +310,24 @@ watch(() => allDevices.value.fillhead?.telemetry?.axes?.x.position, (newVal) => 
 async function pollStatus() {
     const data = await apiRequest('devices');
     if (data) {
+        // Stop loading on the first successful data fetch
+        if (isLoading.value) {
+            isLoading.value = false;
+        }
+
         // Update device statuses
         if(data.devices) {
             allDevices.value = data.devices;
         }
 
-        // FIX: Check for and process logs from the background threads
+        // Process logs from the background threads
         if (data.logs && data.logs.length > 0) {
             data.logs.forEach(logMsg => {
-                // Heuristic to determine if it's a sent or received message
                 const type = logMsg.startsWith("SEND") ? 'sent' : 'received';
-                terminalLog.value.unshift({ type: type, message: logMsg });
+                // Prevent duplicate logs
+                if (!terminalLog.value.some(l => l.message === logMsg)) {
+                    terminalLog.value.unshift({ type: type, message: logMsg });
+                }
             });
         }
     }
@@ -318,9 +341,6 @@ async function sendCommand(device, command, params = {}) {
       lastMessage.value = `Error: ${device} is not connected.`;
       return;
   }
-
-  // The backend now logs sent commands, so we don't need to log here.
-  // This avoids duplicate messages in the terminal.
 
   await apiRequest('send_command', {
     method: 'POST',
