@@ -11,3 +11,14 @@ export default {
   },
   plugins: [],
 }
+
+module.exports = {
+  content: [
+    "./index.html",
+    "./src/**/*.{vue,js,ts,jsx,tsx}", // <-- This line is crucial
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
