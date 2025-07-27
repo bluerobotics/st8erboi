@@ -196,28 +196,35 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, onBeforeUnmount } from 'vue';
+import { ref, reactive, onMounted, computed, onBeforeUnmount, watch } from 'vue';
 
-// --- Helper Components (inlined for simplicity) ---
+// --- Helper Components (inlined for simplicity, but defined as setup components to avoid warnings) ---
 const ControlSection = {
   props: ['title'],
-  template: `<div class="bg-gray-800/50 p-3 rounded-md"><h3 class="font-bold text-gray-300 mb-2">{{ title }}</h3><slot></slot></div>`
+  setup(props, { slots }) {
+    return () => h('div', { class: 'bg-gray-800/50 p-3 rounded-md' }, [
+      h('h3', { class: 'font-bold text-gray-300 mb-2' }, props.title),
+      slots.default && slots.default()
+    ]);
+  }
 };
 
 const InputGroup = {
   props: ['label', 'modelValue'],
   emits: ['update:modelValue'],
-  template: `
-    <div>
-      <label class="block text-sm font-medium text-gray-400 mb-1">{{ label }}</label>
-      <input 
-        :value="modelValue" 
-        @input="$emit('update:modelValue', $event.target.value)"
-        type="number" 
-        class="form-input w-full"
-      >
-    </div>`
+  setup(props, { emit }) {
+    return () => h('div', {}, [
+      h('label', { class: 'block text-sm font-medium text-gray-400 mb-1' }, props.label),
+      h('input', {
+        type: 'number',
+        class: 'form-input w-full',
+        value: props.modelValue,
+        onInput: (event) => emit('update:modelValue', event.target.value)
+      })
+    ]);
+  }
 };
+
 
 // --- Refs and Reactive State ---
 const activeTab = ref('manual');
@@ -226,10 +233,8 @@ const lastError = ref('');
 const statusInterval = ref(null);
 const connectionState = ref('connecting'); // 'connecting', 'connected', 'error'
 
-// SINGLE SOURCE OF TRUTH for data from the backend
 const allDevices = ref({});
 
-// Local state for UI inputs, separate from backend data
 const injectorInputs = reactive({
   velocity: 10,
   acceleration: 100,
@@ -253,7 +258,6 @@ const terminalLog = ref([]);
 
 
 // --- Computed Properties (Derived State) ---
-// These automatically update when `allDevices` changes.
 const injector = computed(() => allDevices.value.injector || { isConnected: false, telemetry: {} });
 const fillhead = computed(() => allDevices.value.fillhead || { isConnected: false, telemetry: {} });
 
@@ -264,7 +268,6 @@ const injectorStatus = computed(() => {
 
 const fillheadStatus = computed(() => {
     if (!fillhead.value.isConnected) return 'Disconnected';
-    // Using stateX as an example for fillhead's status
     return fillhead.value.telemetry?.stateX || 'Connected';
 });
 
@@ -318,16 +321,30 @@ onBeforeUnmount(() => {
     if (statusInterval.value) clearInterval(statusInterval.value);
 });
 
+// --- NEW: Watcher for detailed debugging ---
+watch(allDevices, (newVal, oldVal) => {
+    console.log('%c[STATE CHANGED]%c', 'color: #7fdbff; font-weight: bold;', 'color: default;');
+    console.log('Previous State:', JSON.parse(JSON.stringify(oldVal)));
+    console.log('New State:', JSON.parse(JSON.stringify(newVal)));
+    console.log(`Computed Injector Status: ${injectorStatus.value}`);
+    console.log(`Computed Fillhead Status: ${fillheadStatus.value}`);
+    console.log('------------------------------------');
+}, { deep: true });
+
+
 // --- Methods ---
 async function pollStatus() {
+    console.log('%c[POLLING STATUS]%c', 'color: #f0c674; font-weight: bold;', 'color: default;');
     const data = await apiRequest('devices');
     if (data) {
+        // NEW: Log the raw data received from the backend
+        console.log('Raw data from /api/devices:', JSON.parse(JSON.stringify(data)));
+
         if (connectionState.value !== 'connected') {
             connectionState.value = 'connected';
         }
 
         if(data.devices) {
-            // This is the only place we mutate our source of truth
             allDevices.value = data.devices;
         }
 
@@ -339,6 +356,8 @@ async function pollStatus() {
                 }
             });
         }
+    } else {
+        console.error("Polling failed or returned no data.");
     }
 }
 

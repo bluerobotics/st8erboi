@@ -123,11 +123,18 @@ class UdpComms:
                 msg = data.decode('utf-8', errors='replace').strip()
                 source_ip = addr[0]
                 
-                # Queue a single, unified event for any message from a device.
-                if "INJECTOR DISCOVERED" in msg or msg.startswith("INJ_TELEM_GUI:"):
-                    self.event_queue.put(("DEVICE_HEARTBEAT", "injector", {"ip": source_ip, "msg": msg}))
-                elif "FILLHEAD DISCOVERED" in msg or msg.startswith("FH_TELEM_GUI:"):
-                    self.event_queue.put(("DEVICE_HEARTBEAT", "fillhead", {"ip": source_ip, "msg": msg}))
+                device_name = None
+                if "INJECTOR" in msg or "INJ_" in msg:
+                    device_name = "injector"
+                elif "FILLHEAD" in msg or "FH_" in msg:
+                    device_name = "fillhead"
+
+                if device_name:
+                    # NEW LOG: Confirming we are about to queue an event
+                    logging.info(f"UDP_LOOP: Queuing HEARTBEAT for {device_name} from {source_ip}")
+                    self.event_queue.put(("DEVICE_HEARTBEAT", device_name, {"ip": source_ip, "msg": msg}))
+                else:
+                    logging.warning(f"UDP_LOOP: Received unknown message from {source_ip}: {msg}")
 
             except socket.timeout:
                 continue
@@ -144,36 +151,31 @@ def state_manager(event_queue, comms):
     while True:
         try:
             event_type, name, data = event_queue.get()
+            # NEW LOG: See every event as it's pulled from the queue
+            logging.info(f"STATE_MANAGER: Dequeued event '{event_type}' for '{name}'")
             
             with STATE_LOCK:
-                # Removed the general log here to reduce noise. Specific logs below are more useful.
                 device = DEVICES_STATE[name]
 
                 if event_type == "DEVICE_HEARTBEAT":
                     ip = data["ip"]
                     msg = data["msg"]
 
-                    # This is the main keep-alive. Any message resets the timer.
                     device["last_seen"] = time.time()
 
-                    # If the device is appearing for the first time or its IP changed
                     if not device["isConnected"]:
                         logging.info(f"✅ CONNECTION ESTABLISHED for {name.upper()} at {ip}")
                         log_queue.append(f"CONNECT: {name.capitalize()} at {ip}")
                         device.update({"isConnected": True, "ip": ip})
                         check_for_peer_connection_unlocked(comms)
                     
-                    # Also check if the IP has changed for a known device
                     elif device["ip"] != ip:
                         logging.info(f"🔄 IP ADDRESS UPDATED for {name.upper()} from {device['ip']} to {ip}")
                         log_queue.append(f"IP CHANGE: {name.capitalize()} now at {ip}")
                         device["ip"] = ip
                         check_for_peer_connection_unlocked(comms)
 
-
-                    # If the message is telemetry, parse it
                     if "TELEM_GUI" in msg:
-                        # Added a specific log to confirm telemetry processing
                         logging.info(f"STATE_MANAGER: Parsing telemetry for '{name}'")
                         try:
                             telem_data = parse_telemetry(name, msg)
@@ -185,13 +187,11 @@ def state_manager(event_queue, comms):
                         except Exception as e:
                             log_queue.append(f"Error parsing {name} telemetry: {e} | MSG: {msg}")
                     
-                    # Log discovery messages to the UI terminal
                     elif "DISCOVERED" in msg:
                          log_queue.append(f"RECV <- {ip}: {msg}")
 
-
                 elif event_type == "DEVICE_TIMEOUT":
-                    if device["isConnected"]: # Only act if it was previously connected
+                    if device["isConnected"]:
                         logging.warning(f"TIMEOUT: {name.capitalize()} at {device['ip']} disconnected.")
                         log_queue.append(f"TIMEOUT: {name.capitalize()} disconnected.")
                         device.update({"isConnected": False, "isPeerConnected": False, "telemetry": {}})
@@ -216,7 +216,6 @@ def check_for_peer_connection_unlocked(comms):
 def parse_telemetry(name, msg):
     """General purpose telemetry parser."""
     def _parse_key_value_payload(payload_str):
-        # Handles potential empty strings from splitting
         return dict(item.split(':', 1) for item in payload_str.split(',') if ':' in item and len(item.split(':', 1)) == 2)
     def _safe_float(s, default=0.0):
         try: return float(s)
