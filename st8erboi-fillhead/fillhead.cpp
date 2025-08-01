@@ -2,19 +2,23 @@
 #include <math.h>
 
 Fillhead::Fillhead() :
-// CORRECTED: Pass positive steps/mm. Direction is handled in the Axis class.
 // X-Axis: Single motor, single homing sensor, no limit switch
 xAxis(this, "X", &MotorX, nullptr, STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS, &SENSOR_X, nullptr, nullptr),
-
 // Y-Axis: Dual motor gantry, two homing sensors, one rear limit switch
 yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS, &SENSOR_Y1, &SENSOR_Y2, &LIMIT_Y_BACK),
-
 // Z-Axis: Single motor, single homing sensor, no limit switch
 zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR_Z, nullptr, nullptr)
 {
 	m_guiDiscovered = false;
 	m_guiPort = 0;
 	m_peerDiscovered = false;
+	m_lastTelemetryTime = 0;
+	
+	// Initialize queue pointers
+	m_rxQueueHead = 0;
+	m_rxQueueTail = 0;
+	m_txQueueHead = 0;
+	m_txQueueTail = 0;
 }
 
 void Fillhead::setup() {
@@ -38,32 +42,145 @@ void Fillhead::setup() {
 }
 
 void Fillhead::update() {
+	// 1. Read incoming UDP packets and place them in the Rx queue
 	processUdp();
+	
+	// 2. Process ONE message from the Rx queue
+	processRxQueue();
+	
+	// 3. Send ONE message from the Tx queue to keep the loop fast
+	processTxQueue();
+	
+	// 4. Update state machines for each axis
 	xAxis.updateState();
 	yAxis.updateState();
 	zAxis.updateState();
+	
+	// 5. Enqueue telemetry data at regular intervals
+	uint32_t now = Milliseconds();
+	if (m_guiDiscovered && (now - m_lastTelemetryTime >= TELEMETRY_INTERVAL_MS)) {
+		m_lastTelemetryTime = now;
+		sendGuiTelemetry();
+	}
 }
 
-void Fillhead::abortAll() {
-	xAxis.abort();
-	yAxis.abort();
-	zAxis.abort();
-	sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
+// -----------------------------------------------------------------------------
+// Queue Management
+// -----------------------------------------------------------------------------
+
+bool Fillhead::enqueueRx(const char* msg, const IpAddress& ip, uint16_t port) {
+	int next_head = (m_rxQueueHead + 1) % RX_QUEUE_SIZE;
+	if (next_head == m_rxQueueTail) {
+		// Rx Queue is full. Send an immediate error back to the GUI.
+		if(m_guiDiscovered) {
+			char errorMsg[] = "ERROR: RX QUEUE OVERFLOW - COMMAND DROPPED";
+			m_udp.Connect(m_guiIp, m_guiPort);
+			m_udp.PacketWrite(errorMsg);
+			m_udp.PacketSend();
+		}
+		return false;
+	}
+	strncpy(m_rxQueue[m_rxQueueHead].buffer, msg, MAX_MESSAGE_LENGTH);
+	m_rxQueue[m_rxQueueHead].buffer[MAX_MESSAGE_LENGTH - 1] = '\0'; // Ensure null termination
+	m_rxQueue[m_rxQueueHead].remoteIp = ip;
+	m_rxQueue[m_rxQueueHead].remotePort = port;
+	m_rxQueueHead = next_head;
+	return true;
+}
+
+bool Fillhead::dequeueRx(Message& msg) {
+	if (m_rxQueueHead == m_rxQueueTail) {
+		// Queue is empty
+		return false;
+	}
+	msg = m_rxQueue[m_rxQueueTail];
+	m_rxQueueTail = (m_rxQueueTail + 1) % RX_QUEUE_SIZE;
+	return true;
+}
+
+bool Fillhead::enqueueTx(const char* msg, const IpAddress& ip, uint16_t port) {
+	int next_head = (m_txQueueHead + 1) % TX_QUEUE_SIZE;
+	if (next_head == m_txQueueTail) {
+		// Tx Queue is full. Send an immediate error message, bypassing the queue.
+        // This is a critical error, as status messages are being dropped.
+		if(m_guiDiscovered) {
+			char errorMsg[] = "ERROR: TX QUEUE OVERFLOW - MESSAGE DROPPED";
+			m_udp.Connect(m_guiIp, m_guiPort);
+			m_udp.PacketWrite(errorMsg);
+			m_udp.PacketSend();
+		}
+		return false;
+	}
+	strncpy(m_txQueue[m_txQueueHead].buffer, msg, MAX_MESSAGE_LENGTH);
+	m_txQueue[m_txQueueHead].buffer[MAX_MESSAGE_LENGTH - 1] = '\0'; // Ensure null termination
+	m_txQueue[m_txQueueHead].remoteIp = ip;
+	m_txQueue[m_txQueueHead].remotePort = port;
+	m_txQueueHead = next_head;
+	return true;
+}
+
+bool Fillhead::dequeueTx(Message& msg) {
+	if (m_txQueueHead == m_txQueueTail) {
+		// Queue is empty
+		return false;
+	}
+	msg = m_txQueue[m_txQueueTail];
+	m_txQueueTail = (m_txQueueTail + 1) % TX_QUEUE_SIZE;
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Network and Message Processing
+// -----------------------------------------------------------------------------
+
+void Fillhead::processUdp() {
+	// Process all available packets in the UDP hardware buffer to avoid dropping any during a burst.
+	while (m_udp.PacketParse()) {
+		IpAddress remoteIp = m_udp.RemoteIp();
+		uint16_t remotePort = m_udp.RemotePort();
+		int32_t bytesRead = m_udp.PacketRead(m_packetBuffer, MAX_PACKET_LENGTH - 1);
+		if (bytesRead > 0) {
+			m_packetBuffer[bytesRead] = '\0';
+			// Enqueue the received message. If the queue is full, enqueueRx will return false.
+			if (!enqueueRx((char*)m_packetBuffer, remoteIp, remotePort)) {
+				// The Rx queue is full, which is now handled inside enqueueRx.
+			}
+		}
+	}
+}
+
+void Fillhead::processRxQueue() {
+	// Process only ONE message per loop. This keeps the main loop consistently fast,
+	// ensuring the processUdp() function is called frequently enough to prevent the
+	// low-level hardware network buffer from overflowing during a command burst.
+	Message msg;
+	if (dequeueRx(msg)) {
+		handleMessage(msg);
+	}
+}
+
+void Fillhead::processTxQueue() {
+	Message msg;
+	// Send only one message per update loop to keep the loop fast and non-blocking.
+	// This prevents stalling, which could cause incoming UDP packets to be dropped.
+	if (dequeueTx(msg)) {
+		m_udp.Connect(msg.remoteIp, msg.remotePort);
+		m_udp.PacketWrite(msg.buffer);
+		m_udp.PacketSend();
+	}
 }
 
 void Fillhead::sendStatus(const char* statusType, const char* message) {
-	char msg[128];
-	snprintf(msg, sizeof(msg), "%s%s", statusType, message);
+	char fullMsg[MAX_MESSAGE_LENGTH];
+	snprintf(fullMsg, sizeof(fullMsg), "%s%s", statusType, message);
 	
+	// Enqueue the message for the GUI
 	if (m_guiDiscovered) {
-		m_udp.Connect(m_guiIp, m_guiPort);
-		m_udp.PacketWrite(msg);
-		m_udp.PacketSend();
+		enqueueTx(fullMsg, m_guiIp, m_guiPort);
 	}
+	// Enqueue the message for the peer
 	if (m_peerDiscovered) {
-		m_udp.Connect(m_peerIp, LOCAL_PORT);
-		m_udp.PacketWrite(msg);
-		m_udp.PacketSend();
+		enqueueTx(fullMsg, m_peerIp, LOCAL_PORT);
 	}
 }
 
@@ -82,71 +199,17 @@ void Fillhead::sendGuiTelemetry() {
 	zAxis.getStateString(), zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(),
 	(int)m_peerDiscovered, m_peerIp.StringValue());
 
-	m_udp.Connect(m_guiIp, m_guiPort);
-	m_udp.PacketWrite(m_telemetryBuffer);
-	m_udp.PacketSend();
+	// Enqueue the telemetry message instead of sending directly
+	enqueueTx(m_telemetryBuffer, m_guiIp, m_guiPort);
 }
 
-void Fillhead::processUdp() {
-	if (m_udp.PacketParse()) {
-		int32_t bytesRead = m_udp.PacketRead(m_packetBuffer, MAX_PACKET_LENGTH - 1);
-		if (bytesRead > 0) {
-			m_packetBuffer[bytesRead] = '\0';
-			handleMessage((char*)m_packetBuffer);
-		}
-	}
-}
-
-void Fillhead::handleSetPeerIp(const char* msg) {
-	const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
-	IpAddress newPeerIp(ipStr);
-	if (strcmp(newPeerIp.StringValue(), "0.0.0.0") == 0) {
-		m_peerDiscovered = false;
-		sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
-		} else {
-		m_peerIp = newPeerIp;
-		m_peerDiscovered = true;
-		char response[100];
-		snprintf(response, sizeof(response), "Peer IP set to %s", ipStr);
-		sendStatus(STATUS_PREFIX_INFO, response);
-	}
-}
-
-void Fillhead::handleClearPeerIp() {
-	m_peerDiscovered = false;
-	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
-}
-
-void Fillhead::setupUsbSerial(void) {
-	ConnectorUsb.Mode(Connector::USB_CDC);
-	ConnectorUsb.Speed(9600);
-	ConnectorUsb.PortOpen();
-	uint32_t timeout = 5000;
-	uint32_t start = Milliseconds();
-	while (!ConnectorUsb && Milliseconds() - start < timeout);
-}
-
-void Fillhead::setupEthernet() {
-	EthernetMgr.Setup();
-
-	if (!EthernetMgr.DhcpBegin()) {
-		while (1);
-	}
-	
-	while (!EthernetMgr.PhyLinkActive()) {
-		Delay_ms(100);
-	}
-
-	m_udp.Begin(LOCAL_PORT);
-}
-
-void Fillhead::handleMessage(const char* msg) {
-	FillheadCommand cmd = parseCommand(msg);
-	const char* args = strchr(msg, ' ');
+void Fillhead::handleMessage(const Message& msg) {
+	FillheadCommand cmd = parseCommand(msg.buffer);
+	const char* args = strchr(msg.buffer, ' ');
 	if(args) args++;
 
 	switch(cmd) {
-		case CMD_SET_PEER_IP: handleSetPeerIp(msg); break;
+		case CMD_SET_PEER_IP: handleSetPeerIp(msg.buffer); break;
 		case CMD_CLEAR_PEER_IP: handleClearPeerIp(); break;
 		case CMD_ABORT: abortAll(); break;
 		
@@ -185,9 +248,9 @@ void Fillhead::handleMessage(const char* msg) {
 
 		case CMD_REQUEST_TELEM: sendGuiTelemetry(); break;
 		case CMD_DISCOVER: {
-			char* portStr = strstr(msg, "PORT=");
+			char* portStr = strstr(msg.buffer, "PORT=");
 			if (portStr) {
-				m_guiIp = m_udp.RemoteIp();
+				m_guiIp = msg.remoteIp; // Use the IP from the message
 				m_guiPort = atoi(portStr + 5);
 				m_guiDiscovered = true;
 				sendStatus(STATUS_PREFIX_DISCOVERY, "FILLHEAD DISCOVERED");
@@ -196,8 +259,65 @@ void Fillhead::handleMessage(const char* msg) {
 		}
 		case CMD_UNKNOWN:
 		default:
+		// Optionally send an error for unknown commands
+		// sendStatus(STATUS_PREFIX_ERROR, "Unknown command received.");
 		break;
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Unchanged Helper Functions
+// -----------------------------------------------------------------------------
+
+void Fillhead::abortAll() {
+	xAxis.abort();
+	yAxis.abort();
+	zAxis.abort();
+	sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
+}
+
+void Fillhead::handleSetPeerIp(const char* msg) {
+	const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
+	IpAddress newPeerIp(ipStr);
+	if (strcmp(newPeerIp.StringValue(), "0.0.0.0") == 0) {
+		m_peerDiscovered = false;
+		sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
+		} else {
+		m_peerIp = newPeerIp;
+		m_peerDiscovered = true;
+		char response[100];
+		snprintf(response, sizeof(response), "Peer IP set to %s", ipStr);
+		sendStatus(STATUS_PREFIX_INFO, response);
+	}
+}
+
+void Fillhead::handleClearPeerIp() {
+	m_peerDiscovered = false;
+	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
+}
+
+void Fillhead::setupUsbSerial(void) {
+	ConnectorUsb.Mode(Connector::USB_CDC);
+	ConnectorUsb.Speed(9600);
+	ConnectorUsb.PortOpen();
+	uint32_t timeout = 5000;
+	uint32_t start = Milliseconds();
+	while (!ConnectorUsb && Milliseconds() - start < timeout);
+}
+
+void Fillhead::setupEthernet() {
+	EthernetMgr.Setup();
+
+	if (!EthernetMgr.DhcpBegin()) {
+		// This will hang if DHCP fails. Consider a timeout or fallback.
+		while (1);
+	}
+	
+	while (!EthernetMgr.PhyLinkActive()) {
+		Delay_ms(100);
+	}
+
+	m_udp.Begin(LOCAL_PORT);
 }
 
 FillheadCommand Fillhead::parseCommand(const char* msg) {
@@ -219,4 +339,22 @@ FillheadCommand Fillhead::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_ENABLE_Z) == 0) return CMD_ENABLE_Z;
 	if (strcmp(msg, CMD_STR_DISABLE_Z) == 0) return CMD_DISABLE_Z;
 	return CMD_UNKNOWN;
+}
+
+// Global instance of our Fillhead controller class
+Fillhead fillhead;
+
+
+/*
+    Main application entry point.
+*/
+int main(void) {
+    // Perform one-time setup
+    fillhead.setup();
+
+    // Main non-blocking application loop
+    while (true) {
+        // This single call now processes communications and updates all axis state machines.
+        fillhead.update();
+    }
 }

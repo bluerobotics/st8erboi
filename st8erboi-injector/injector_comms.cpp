@@ -1,42 +1,22 @@
 // ============================================================================
-// injector_comms.cpp
+// injector_comms.cpp (TCP Version with UDP Discovery)
 //
-// UDP communication and telemetry interface for the Injector class.
-//
-// Handles discovery, message reception, parsing, routing, and response logic
-// for communication with the remote terminal. Encodes system state into
-// structured telemetry messages and manages connection state.
-//
-// Also defines command string constants and maps them to `UserCommand` enums
-// for interpretation within the handler layer.
-//
-// Corresponds to declarations in `injector.h`.
-//
-// Copyright 2025 Blue Robotics Inc.
-// Author: Eldin Miller-Stead <eldin@bluerobotics.com>
+// Handles TCP communication for commands/telemetry and UDP for discovery.
 // ============================================================================
 
 #include "injector.h"
 
+// Sends a status message to the currently connected TCP client.
 void Injector::sendStatus(const char* statusType, const char* message) {
-	char msg[512];
-	snprintf(msg, sizeof(msg), "%s%s", statusType, message);
-	
-	if (guiDiscovered) {
-		udp.Connect(guiIp, guiPort);
-		udp.PacketWrite(msg);
-		udp.PacketSend();
-	}
-
-	if (peerDiscovered) {
-		udp.Connect(peerIp, LOCAL_PORT);
-		udp.PacketWrite(msg);
-		udp.PacketSend();
+	if (client.Connected()) {
+		char msg[512];
+		snprintf(msg, sizeof(msg), "%s%s\n", statusType, message);
+		client.Send(msg);
 	}
 }
 
-void Injector::setupSerial(void)
-{
+// Sets up USB serial for debugging.
+void Injector::setupSerial(void) {
 	ConnectorUsb.Mode(Connector::USB_CDC);
 	ConnectorUsb.Speed(9600);
 	ConnectorUsb.PortOpen();
@@ -45,8 +25,8 @@ void Injector::setupSerial(void)
 	while (!ConnectorUsb && Milliseconds() - start < timeout);
 }
 
-void Injector::setupEthernet(void)
-{
+// Initializes Ethernet, starts the TCP server, and begins listening for UDP discovery packets.
+void Injector::setupEthernet(void) {
 	ConnectorUsb.SendLine("SetupEthernet: Starting...");
 	EthernetMgr.Setup();
 	ConnectorUsb.SendLine("SetupEthernet: EthernetMgr.Setup() done.");
@@ -57,41 +37,99 @@ void Injector::setupEthernet(void)
 	}
 	
 	char ipAddrStr[100];
-	// CORRECTED LINE: Using StringValue() which returns char*
-	snprintf(ipAddrStr, sizeof(ipAddrStr), "SetupEthernet: DhcpBegin() successful. IP: %s", EthernetMgr.LocalIp().StringValue());
+	snprintf(ipAddrStr, sizeof(ipAddrStr), "SetupEthernet: IP: %s", EthernetMgr.LocalIp().StringValue());
 	ConnectorUsb.SendLine(ipAddrStr);
 
 	ConnectorUsb.SendLine("SetupEthernet: Waiting for PhyLinkActive...");
 	while (!EthernetMgr.PhyLinkActive()) {
 		Delay_ms(1000);
-		ConnectorUsb.SendLine("SetupEthernet: Still waiting for PhyLinkActive...");
 	}
 	ConnectorUsb.SendLine("SetupEthernet: PhyLinkActive is active.");
 
-	udp.Begin(LOCAL_PORT);
-	ConnectorUsb.SendLine("SetupEthernet: udp.Begin() called for port 8888. Setup Complete.");
+	// Start the TCP server for main communication
+	server.Begin();
+	char serverMsg[100];
+	snprintf(serverMsg, sizeof(serverMsg), "SetupEthernet: TCP server started on port %d.", LOCAL_PORT);
+	ConnectorUsb.SendLine(serverMsg);
+
+	// Begin listening on the discovery port for UDP broadcasts
+	discoveryUdp.Begin(DISCOVERY_PORT);
+	char discoveryMsg[100];
+	snprintf(discoveryMsg, sizeof(discoveryMsg), "SetupEthernet: UDP Discovery listening on port %d.", DISCOVERY_PORT);
+	ConnectorUsb.SendLine(discoveryMsg);
 }
 
-void Injector::processUdp() {
-	if (udp.PacketParse()) {
-		int32_t bytesRead = udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
+// New function to listen for and respond to discovery broadcasts.
+void Injector::processDiscovery() {
+	if (discoveryUdp.PacketParse()) {
+		char packetBuffer[64];
+		int32_t bytesRead = discoveryUdp.PacketRead(packetBuffer, 63);
 		if (bytesRead > 0) {
 			packetBuffer[bytesRead] = '\0';
-			handleMessage((char*)packetBuffer);
+
+			if (strcmp(packetBuffer, "DISCOVER_DEVICES_V2") == 0) {
+				IpAddress remoteIp = discoveryUdp.RemoteIp();
+				uint16_t remotePort = discoveryUdp.RemotePort();
+				
+				char response[64];
+				snprintf(response, sizeof(response), "INJECTOR_IP_IS %s", EthernetMgr.LocalIp().StringValue());
+				
+				discoveryUdp.Connect(remoteIp, remotePort);
+				discoveryUdp.PacketWrite(response);
+				discoveryUdp.PacketSend();
+			}
 		}
 	}
 }
 
+// Processes incoming TCP traffic from a connected client.
+void Injector::processTcp() {
+	if (!client.Connected()) {
+		client = server.Available();
+		if (client.Connected()) {
+			ConnectorUsb.SendLine("TCP: Client connected.");
+			command_buffer_index = 0;
+			memset(command_buffer, 0, MAX_PACKET_LENGTH);
+		}
+	}
+	else {
+		if (!client.Connected()) {
+			ConnectorUsb.SendLine("TCP: Client disconnected.");
+			client.Stop();
+			return;
+		}
+
+		while (client.Available()) {
+			char c = client.Read();
+			if (c == '\n' || c == '\r') {
+				if (command_buffer_index > 0) {
+					command_buffer[command_buffer_index] = '\0';
+					handleMessage(command_buffer);
+					command_buffer_index = 0;
+					memset(command_buffer, 0, MAX_PACKET_LENGTH);
+				}
+			}
+			else {
+				if (command_buffer_index < MAX_PACKET_LENGTH - 1) {
+					command_buffer[command_buffer_index++] = c;
+					} else {
+					sendStatus(STATUS_PREFIX_ERROR, "Command too long.");
+					command_buffer_index = 0;
+					memset(command_buffer, 0, MAX_PACKET_LENGTH);
+				}
+			}
+		}
+	}
+}
+
+// Sends the main telemetry string to the connected client.
 void Injector::sendGuiTelemetry(void){
-	
+	if (!client.Connected()) return;
+
 	float displayTorque0 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue0, &firstTorqueReading0);
 	float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue1, &firstTorqueReading1);
 	float displayTorque2 = getSmoothedTorqueEWMA(&ConnectorM2, &smoothedTorqueValue2, &firstTorqueReading2);
 	
-	int hlfb0_val = (int)ConnectorM0.HlfbState();
-	int hlfb1_val = (int)ConnectorM1.HlfbState();
-	int hlfb2_val = (int)ConnectorM2.HlfbState();
-
 	long current_pos_steps_m0 = ConnectorM0.PositionRefCommanded();
 	long current_pos_steps_m1 = ConnectorM1.PositionRefCommanded();
 	long current_pos_steps_m2 = ConnectorM2.PositionRefCommanded();
@@ -125,17 +163,12 @@ void Injector::sendGuiTelemetry(void){
 		current_target_for_telemetry = 0.0f;
 	}
 
-	// **MODIFIED CODE BLOCK**
-	// Changed "---" to "0.0" for invalid torque to prevent GUI parsing errors.
 	char torque0Str[16], torque1Str[16], torque2Str[16];
 	if (displayTorque0 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque0Str, "0.0"); } else { snprintf(torque0Str, sizeof(torque0Str), "%.2f", displayTorque0); }
 	if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "0.0"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
 	if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "0.0"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
-	// **END MODIFIED CODE BLOCK**
 
-	// --- FIX: Assemble telemetry with simplified heater status ---
-	char msg[512];
-	snprintf(msg, sizeof(msg),
+	snprintf(telemetryBuffer, sizeof(telemetryBuffer),
 	"MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
 	"torque0:%s,hlfb0:%d,enabled0:%d,pos_mm0:%.2f,homed0:%d,"
 	"torque1:%s,hlfb1:%d,enabled1:%d,pos_mm1:%.2f,homed1:%d,"
@@ -146,21 +179,20 @@ void Injector::sendGuiTelemetry(void){
 	"temp_c:%.1f,vacuum:%d,vacuum_psig:%.2f,heater_mode:%s,"
 	"pid_setpoint:%.1f,pid_kp:%.2f,pid_ki:%.2f,pid_kd:%.2f,pid_output:%.1f",
 	mainStateStr(), homingStateStr(), homingPhaseStr(), feedStateStr(), errorStateStr(),
-	torque0Str, hlfb0_val, (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
-	torque1Str, hlfb1_val, (int)ConnectorM1.StatusReg().bit.Enabled, pos_mm_m1, is_homed1,
-	torque2Str, hlfb2_val, (int)ConnectorM2.StatusReg().bit.Enabled, pos_mm_m2, is_homed2,
+	torque0Str, (int)ConnectorM0.HlfbState(), (int)ConnectorM0.StatusReg().bit.Enabled, pos_mm_m0, is_homed0,
+	torque1Str, (int)ConnectorM1.HlfbState(), (int)ConnectorM1.StatusReg().bit.Enabled, pos_mm_m1, is_homed1,
+	torque2Str, (int)ConnectorM2.HlfbState(), (int)ConnectorM2.StatusReg().bit.Enabled, pos_mm_m2, is_homed2,
 	machine_pos_mm, cartridge_pos_mm,
 	current_dispensed_for_telemetry, current_target_for_telemetry,
 	(int)peerDiscovered, peerIp.StringValue(),
-	temperatureCelsius, (int)vacuumOn, vacuumPressurePsig, heaterStateStr(), // <-- Pass new variable
+	temperatureCelsius, (int)vacuumOn, vacuumPressurePsig, heaterStateStr(),
 	pid_setpoint, pid_kp, pid_ki, pid_kd, pid_output);
 
-	sendStatus(TELEM_PREFIX_GUI, msg);
+	sendStatus(TELEM_PREFIX_GUI, telemetryBuffer);
 }
 
+// Parses a command string into a UserCommand enum.
 UserCommand Injector::parseCommand(const char *msg) {
-	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
-	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
@@ -190,26 +222,14 @@ UserCommand Injector::parseCommand(const char *msg) {
 	if (strncmp(msg, CMD_STR_SET_HEATER_SETPOINT, strlen(CMD_STR_SET_HEATER_SETPOINT)) == 0) return CMD_SET_HEATER_SETPOINT;
 	if (strcmp(msg, CMD_STR_HEATER_PID_ON) == 0) return CMD_HEATER_PID_ON;
 	if (strcmp(msg, CMD_STR_HEATER_PID_OFF) == 0) return CMD_HEATER_PID_OFF;
-
 	return CMD_UNKNOWN;
 }
 
-
+// Routes a received message to the appropriate handler function.
 void Injector::handleMessage(const char *msg) {
 	UserCommand command = parseCommand(msg);
 
 	switch (command) {
-		case CMD_REQUEST_TELEM:             sendGuiTelemetry(); break;
-		case CMD_DISCOVER: {
-			char* portStr = strstr(msg, "PORT=");
-			if (portStr) {
-				guiIp = udp.RemoteIp();
-				guiPort = atoi(portStr + 5);
-				guiDiscovered = true;
-				sendStatus(STATUS_PREFIX_DISCOVERY, "INJECTOR DISCOVERED");
-			}
-			break;
-		}
 		case CMD_ENABLE:                    handleEnable(); break;
 		case CMD_DISABLE:                   handleDisable(); break;
 		case CMD_ABORT:                     handleAbort(); break;
@@ -239,7 +259,6 @@ void Injector::handleMessage(const char *msg) {
 		case CMD_SET_HEATER_SETPOINT:       handleSetHeaterSetpoint(msg); break;
 		case CMD_HEATER_PID_ON:             handleHeaterPidOn(); break;
 		case CMD_HEATER_PID_OFF:            handleHeaterPidOff(); break;
-
 		case CMD_UNKNOWN:
 		default:
 		break;

@@ -18,6 +18,12 @@ typedef enum {
 	CMD_ENABLE_Z, CMD_DISABLE_Z
 } FillheadCommand;
 
+// Structure to hold a single message for the queues
+struct Message {
+	char buffer[MAX_MESSAGE_LENGTH];
+	IpAddress remoteIp;
+	uint16_t remotePort;
+};
 
 class Fillhead {
 	public:
@@ -29,17 +35,28 @@ class Fillhead {
 	private:
 	void setupEthernet();
 	void setupUsbSerial();
+	
+	// UDP and Message Handling
 	void processUdp();
-	void handleMessage(const char* msg);
+	void handleMessage(const Message& msg);
 	void sendGuiTelemetry();
+	FillheadCommand parseCommand(const char* msg);
+
+	// Queue Processing
+	void processRxQueue();
+	void processTxQueue();
+
+	// Queue Management
+	bool enqueueRx(const char* msg, const IpAddress& ip, uint16_t port);
+	bool dequeueRx(Message& msg);
+	bool enqueueTx(const char* msg, const IpAddress& ip, uint16_t port);
+	bool dequeueTx(Message& msg);
 
 	// Command Handlers
 	void handleSetPeerIp(const char* msg);
 	void handleClearPeerIp();
 	void abortAll();
 	
-	FillheadCommand parseCommand(const char* msg);
-
 	// Member Variables
 	EthernetUdp m_udp;
 	IpAddress m_guiIp;
@@ -54,4 +71,17 @@ class Fillhead {
 
 	char m_telemetryBuffer[300];
 	unsigned char m_packetBuffer[MAX_PACKET_LENGTH];
+	
+	uint32_t m_lastTelemetryTime;
+	
+	// --- Message Queues ---
+	// Receive (Rx) Queue
+	Message m_rxQueue[RX_QUEUE_SIZE];
+	volatile int m_rxQueueHead;
+	volatile int m_rxQueueTail;
+
+	// Transmit (Tx) Queue
+	Message m_txQueue[TX_QUEUE_SIZE];
+	volatile int m_txQueueHead;
+	volatile int m_txQueueTail;
 };

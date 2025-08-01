@@ -2,6 +2,11 @@
 
 #include <cstdint>
 #include "ClearCore.h"
+// Corrected TCP/IP and UDP Library Includes. These assume your IDE has the
+// path to the library's 'inc' directory set up.
+#include "EthernetTcp.h"
+#include "EthernetTcpServer.h"
+#include "EthernetTcpClient.h"
 #include "EthernetUdp.h"
 #include "IpAddress.h"
 #include <string.h>
@@ -17,33 +22,36 @@
 #define STEPS_PER_MM_PINCH (PULSES_PER_REV / PINCH_PITCH_MM_PER_REV)     // 400.0f
 #define MAX_HOMING_DURATION_MS 30000 // 30 seconds
 
-// --- Hardware Pin Definitions (Corrected from user table) ---
-#define PIN_THERMOCOUPLE ConnectorA12  // Analog input for thermocouple
-#define PIN_HEATER_RELAY ConnectorIO1  // CORRECTED: Digital output for heater relay
-#define PIN_VACUUM_RELAY ConnectorIO0  // CORRECTED: Digital output for vacuum relay
+// --- Hardware Pin Definitions ---
+#define PIN_THERMOCOUPLE ConnectorA12
+#define PIN_HEATER_RELAY ConnectorIO1
+#define PIN_VACUUM_RELAY ConnectorIO0
 #define PIN_VACUUM_TRANSDUCER ConnectorA11
 #define PIN_VACUUM_VALVE_RELAY ConnectorIO5
 
-// --- Thermocouple Conversion Coefficients (Corrected for 0-10V Range) ---
-#define TC_V_REF 10.0f          // ADC reference voltage is 10V for ClearCore analog inputs.
-#define TC_V_OFFSET 1.25f       // The sensor's voltage at 0 degrees C (from user spec).
-#define TC_GAIN 200.0f          // Gain (e.g., degrees C per Volt).
+// --- Thermocouple Conversion Coefficients ---
+#define TC_V_REF 10.0f
+#define TC_V_OFFSET 1.25f
+#define TC_GAIN 200.0f
 
-// --- NEW: PID Control Parameters ---
-#define PID_UPDATE_INTERVAL_MS 100 // How often to run the PID calculation
-#define PID_PWM_PERIOD_MS 1000     // Time window for time-proportioned relay control
-#define SENSOR_SAMPLE_INTERVAL_MS 100 // 10Hz sampling for temp/vacuum
+// --- Control & Timing Parameters ---
+#define PID_UPDATE_INTERVAL_MS 100
+#define PID_PWM_PERIOD_MS 1000
+#define SENSOR_SAMPLE_INTERVAL_MS 100
+#define TELEMETRY_INTERVAL_MS 100 // 10Hz telemetry streaming
 
-// --- NEW: Vacuum Transducer Coefficients ---
-#define VAC_V_OUT_MIN 1.0f      // Sensor voltage at min pressure
-#define VAC_V_OUT_MAX 5.0f      // Sensor voltage at max pressure
-#define VAC_PRESSURE_MIN -14.7f // Min pressure in PSIG
-#define VAC_PRESSURE_MAX 15.0f  // Max pressure in PSIG
+// --- Network Ports ---
+#define LOCAL_PORT 8888       // Main TCP port
+#define DISCOVERY_PORT 8889   // UDP port for discovery broadcasts
+
+// --- Vacuum Transducer Coefficients ---
+#define VAC_V_OUT_MIN 1.0f
+#define VAC_V_OUT_MAX 5.0f
+#define VAC_PRESSURE_MIN -14.7f
+#define VAC_PRESSURE_MAX 15.0f
 #define VACUUM_PSIG_OFFSET 0.0f
 
 // --- Command Strings & Prefixes ---
-#define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
-#define CMD_STR_DISCOVER "DISCOVER_INJECTOR"
 #define CMD_STR_SET_PEER_IP "SET_PEER_IP "
 #define CMD_STR_CLEAR_PEER_IP "CLEAR_PEER_IP"
 #define CMD_STR_ENABLE "ENABLE"
@@ -51,15 +59,12 @@
 #define CMD_STR_ABORT "ABORT"
 #define CMD_STR_CLEAR_ERRORS "CLEAR_ERRORS"
 #define CMD_STR_SET_INJECTOR_TORQUE_OFFSET "SET_INJECTOR_TORQUE_OFFSET "
-#define CMD_STR_SET_PINCH_TORQUE_OFFSET "SET_PINCH_TORQUE_OFFSET "
 #define CMD_STR_JOG_MOVE "JOG_MOVE "
 #define CMD_STR_MACHINE_HOME_MOVE "MACHINE_HOME_MOVE"
 #define CMD_STR_CARTRIDGE_HOME_MOVE "CARTRIDGE_HOME_MOVE"
 #define CMD_STR_PINCH_HOME_MOVE "PINCH_HOME_MOVE"
 #define CMD_STR_INJECT_MOVE "INJECT_MOVE "
 #define CMD_STR_PURGE_MOVE "PURGE_MOVE "
-#define CMD_STR_PINCH_OPEN "PINCH_OPEN"
-#define CMD_STR_PINCH_CLOSE "PINCH_CLOSE"
 #define CMD_STR_PINCH_JOG_MOVE "PINCH_JOG_MOVE "
 #define CMD_STR_ENABLE_PINCH "ENABLE_PINCH"
 #define CMD_STR_DISABLE_PINCH "DISABLE_PINCH"
@@ -68,12 +73,8 @@
 #define CMD_STR_PAUSE_INJECTION "PAUSE_INJECTION"
 #define CMD_STR_RESUME_INJECTION "RESUME_INJECTION"
 #define CMD_STR_CANCEL_INJECTION "CANCEL_INJECTION"
-
-// --- Vacuum controls ---
 #define CMD_STR_VACUUM_ON "VACUUM_ON"
 #define CMD_STR_VACUUM_OFF "VACUUM_OFF"
-
-// --- Environmental controls ---
 #define CMD_STR_HEATER_ON "HEATER_ON"
 #define CMD_STR_HEATER_OFF "HEATER_OFF"
 #define CMD_STR_SET_HEATER_GAINS "SET_HEATER_GAINS "
@@ -86,14 +87,12 @@
 #define STATUS_PREFIX_START "INJ_START: "
 #define STATUS_PREFIX_DONE "INJ_DONE: "
 #define STATUS_PREFIX_ERROR "INJ_ERROR: "
-#define STATUS_PREFIX_DISCOVERY "DISCOVERY: "
 
-#define EWMA_ALPHA_SENSORS 0.5f // For heavily smoothed temp/vacuum
-#define EWMA_ALPHA_TORQUE 0.2f   // For responsive torque readings
+#define EWMA_ALPHA_SENSORS 0.5f
+#define EWMA_ALPHA_TORQUE 0.2f
 
 #define TORQUE_SENTINEL_INVALID_VALUE -9999.0f
 #define MAX_PACKET_LENGTH 512
-#define LOCAL_PORT 8888
 
 // --- State Enums ---
 enum MainState : uint8_t { STANDBY_MODE, DISABLED_MODE, MAIN_STATE_COUNT };
@@ -104,60 +103,34 @@ enum ErrorState : uint8_t { ERROR_NONE, ERROR_MANUAL_ABORT, ERROR_TORQUE_ABORT, 
 enum HeaterState: uint8_t { HEATER_OFF, HEATER_MANUAL_ON, HEATER_PID_ACTIVE, HEATER_STATE_COUNT };
 
 typedef enum {
-	CMD_UNKNOWN,
-	CMD_ENABLE,
-	CMD_DISABLE,
-	CMD_ENABLE_PINCH,
-	CMD_DISABLE_PINCH,
-	CMD_JOG_MOVE,
-	CMD_PINCH_JOG_MOVE,
-	CMD_MACHINE_HOME_MOVE,
-	CMD_CARTRIDGE_HOME_MOVE,
-	CMD_PINCH_HOME_MOVE,
-	CMD_MOVE_TO_CARTRIDGE_HOME,
-	CMD_MOVE_TO_CARTRIDGE_RETRACT,
-	CMD_INJECT_MOVE,
-	CMD_PURGE_MOVE,
-	CMD_PINCH_OPEN,
-	CMD_PINCH_CLOSE,
-	CMD_PAUSE_INJECTION,
-	CMD_RESUME_INJECTION,
-	CMD_CANCEL_INJECTION,
-	CMD_SET_TORQUE_OFFSET,
-	CMD_DISCOVER,
-	CMD_REQUEST_TELEM,
-	CMD_ABORT,
-	CMD_CLEAR_ERRORS,
-	CMD_SET_PEER_IP,
-	CMD_CLEAR_PEER_IP,
-	// --- Vacuum ---
-	CMD_VACUUM_ON,
-	CMD_VACUUM_OFF,
-	// --- Heater ---
-	CMD_HEATER_ON,
-	CMD_HEATER_OFF,
-	CMD_SET_HEATER_GAINS,
-	CMD_SET_HEATER_SETPOINT,
-	CMD_HEATER_PID_ON,
+	CMD_UNKNOWN, CMD_ENABLE, CMD_DISABLE, CMD_ENABLE_PINCH, CMD_DISABLE_PINCH,
+	CMD_JOG_MOVE, CMD_PINCH_JOG_MOVE, CMD_MACHINE_HOME_MOVE, CMD_CARTRIDGE_HOME_MOVE,
+	CMD_PINCH_HOME_MOVE, CMD_MOVE_TO_CARTRIDGE_HOME, CMD_MOVE_TO_CARTRIDGE_RETRACT,
+	CMD_INJECT_MOVE, CMD_PURGE_MOVE, CMD_PAUSE_INJECTION, CMD_RESUME_INJECTION,
+	CMD_CANCEL_INJECTION, CMD_SET_TORQUE_OFFSET, CMD_ABORT, CMD_CLEAR_ERRORS,
+	CMD_SET_PEER_IP, CMD_CLEAR_PEER_IP, CMD_VACUUM_ON, CMD_VACUUM_OFF, CMD_HEATER_ON,
+	CMD_HEATER_OFF, CMD_SET_HEATER_GAINS, CMD_SET_HEATER_SETPOINT, CMD_HEATER_PID_ON,
 	CMD_HEATER_PID_OFF
 } UserCommand;
 
 class Injector {
 	public:
+	// State Enums
 	MainState mainState;
 	HomingState homingState;
 	HomingPhase currentHomingPhase;
 	FeedState feedState;
 	ErrorState errorState;
-	HeaterState heaterState; // NEW
+	HeaterState heaterState;
 
-	EthernetUdp udp;
-	IpAddress guiIp;
-	uint16_t guiPort;
-	bool guiDiscovered;
+	// TCP and UDP Communication Objects
+	EthernetTcpServer server = EthernetTcpServer(LOCAL_PORT);
+	EthernetTcpClient client; // CORRECTED CLASS NAME
+	EthernetUdp discoveryUdp;
 	IpAddress peerIp;
 	bool peerDiscovered;
 
+	// State variables
 	bool homingMachineDone;
 	bool homingCartridgeDone;
 	bool homingPinchDone;
@@ -165,20 +138,18 @@ class Injector {
 	bool jogDone;
 	uint32_t homingStartTime;
 	bool motorsAreEnabled;
-	
-	// --- NEW: State variables for new components ---
 	bool heaterOn;
 	bool vacuumOn;
 	float temperatureCelsius;
-	float vacuumPressurePsig; // <-- NEW
+	float vacuumPressurePsig;
 	float smoothedVacuumPsig;
 	bool firstVacuumReading;
-	float smoothedTemperatureCelsius; // <-- NEW
-	bool firstTempReading;            // <-- NEW
+	float smoothedTemperatureCelsius;
+	bool firstTempReading;
 	uint32_t lastSensorSampleTime;
 	bool vacuumValveOn;
 	
-	// --- NEW: PID state variables ---
+	// PID state variables
 	float pid_setpoint;
 	float pid_kp, pid_ki, pid_kd;
 	float pid_integral;
@@ -186,7 +157,7 @@ class Injector {
 	uint32_t pid_last_time;
 	float pid_output;
 
-    // Homing parameters are now calculated at runtime from hardcoded values
+	// Homing parameters
 	float homing_torque_percent_param;
 	long homing_actual_stroke_steps;
 	long homing_actual_retract_steps;
@@ -195,6 +166,7 @@ class Injector {
 	int homing_actual_accel_sps2;
 	long homingDefaultBackoffSteps;
 	
+	// Feed parameters
 	int feedDefaultTorquePercent;
 	long feedDefaultVelocitySPS;
 	long feedDefaultAccelSPS2;
@@ -207,25 +179,25 @@ class Injector {
 	void loop();
 	void updateState();
 	
-	// Heater
-	void updatePid(); // NEW
-	void resetPid();  // NEW
-	
-	// Vacuum
+	// Peripherals
+	void updatePid();
+	void resetPid();
 	void updateVacuum();
+	void updateTemperature();
 
 	// Communication
 	void sendGuiTelemetry(void);
 	void setupSerial();
 	void setupEthernet();
-	void processUdp();
+	void processTcp();
+	void processDiscovery();
 	void parseUserCommand(const char *msg);
 	void sendStatus(const char* statusType, const char* message);
 	UserCommand parseCommand(const char* msg);
 	
-	//--- Hardware & Peripheral Functions ---//
+	// Motor Functions
 	void setupMotors(void);
-	void setupPeripherals(void); // NEW
+	void setupPeripherals(void);
 	void enableInjectorMotors(const char* reason_message);
 	void disableInjectorMotors(const char* reason_message);
 	void moveInjectorMotors(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel);
@@ -234,7 +206,6 @@ class Injector {
 	float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);
 	bool checkInjectorTorqueLimit(void);
 	void abortInjectorMove(void);
-	void updateTemperature(void); // NEW
 
 	// Command Handlers
 	void handleMessage(const char* msg);
@@ -260,56 +231,55 @@ class Injector {
 	void handleCancelOperation();
 	void handleSetPeerIp(const char* msg);
 	void handleClearPeerIp();
-	void handlePinchOpen();
-	void handlePinchClose();
-	
-	// --- Vacuum Handlers ---
 	void handleVacuumOn();
 	void handleVacuumOff();
-	
-	// --- Heater Handlers ---
 	void handleHeaterOn();
 	void handleHeaterOff();
 	void handleSetHeaterGains(const char* msg);
 	void handleSetHeaterSetpoint(const char* msg);
 	void handleHeaterPidOn();
 	void handleHeaterPidOff();
+	// ADDED MISSING DECLARATIONS
+	void handlePinchOpen();
+	void handlePinchClose();
 
-	//--- State Trigger Functions ---//
+	// State Trigger Functions
 	void onHomingMachineDone(void);
 	void onHomingCartridgeDone(void);
 	void onHomingPinchDone(void);
 	void onFeedingDone(void);
 	void onJogDone(void);
 	
-	//--- Reset Functions ---//
+	// Reset Functions
 	void resetMotors(void);
 	void finalizeAndResetActiveDispenseOperation(bool operationCompletedSuccessfully);
 	void fullyResetActiveDispenseOperation(void);
 	void resetActiveDispenseOp(void);
 
 	private:
+	// String converters for enums
 	const char* mainStateStr() const;
 	const char* homingStateStr() const;
 	const char* homingPhaseStr() const;
 	const char* feedStateStr() const;
 	const char* errorStateStr() const;
-    const char* heaterStateStr() const; //NEW
+	const char* heaterStateStr() const;
 
+	// Timers and buffers
 	uint32_t lastGuiTelemetryTime;
-	uint32_t lastPidUpdateTime; // NEW
-
+	uint32_t lastPidUpdateTime;
 	char telemetryBuffer[512];
-	unsigned char packetBuffer[MAX_PACKET_LENGTH];
+	char command_buffer[MAX_PACKET_LENGTH];
+	int command_buffer_index;
 
-	// Other private member variables...
+	// Motor-specific variables
 	float injectorMotorsTorqueLimit;
 	float injectorMotorsTorqueOffset;
 	float smoothedTorqueValue0, smoothedTorqueValue1, smoothedTorqueValue2;
 	bool firstTorqueReading0, firstTorqueReading1, firstTorqueReading2;
 	int32_t machineHomeReferenceSteps, cartridgeHomeReferenceSteps, pinchHomeReferenceSteps;
 	
-	// --- NEW: Track active command for DONE messages ---
+	// Active command tracking
 	const char* activeFeedCommand;
 	const char* activeJogCommand;
 
@@ -319,10 +289,11 @@ class Injector {
 	bool active_dispense_INJECTION_ongoing;
 	int active_op_velocity_sps, active_op_accel_sps2, active_op_torque_percent;
 
+	// Static arrays for enum to string conversion
 	static const char *MainStateNames[MAIN_STATE_COUNT];
 	static const char *HomingStateNames[HOMING_STATE_COUNT];
 	static const char *HomingPhaseNames[HOMING_PHASE_COUNT];
 	static const char *FeedStateNames[FEED_STATE_COUNT];
 	static const char *ErrorStateNames[ERROR_STATE_COUNT];
-	static const char *HeaterStateNames[HEATER_STATE_COUNT]; // NEW
+	static const char *HeaterStateNames[HEATER_STATE_COUNT];
 };

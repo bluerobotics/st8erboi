@@ -139,8 +139,7 @@ def main():
     # --- Start Communication Threads ---
     threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()
     threading.Thread(target=comms.monitor_connections, args=(shared_gui_refs,), daemon=True).start()
-    threading.Thread(target=comms.telemetry_requester_loop, args=(shared_gui_refs, GUI_UPDATE_INTERVAL_MS),
-                     daemon=True).start()
+    # threading.Thread(target=comms.telemetry_requester_loop, args=(shared_gui_refs, GUI_UPDATE_INTERVAL_MS), daemon=True).start()
 
     root.mainloop()
 

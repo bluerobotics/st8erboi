@@ -64,28 +64,30 @@ void Axis::moveSteps(long steps, int velSps, int accelSps2, int torque) {
 	m_torqueLimit = (float)torque;
 	
     long final_steps = steps;
-    // CORRECTED: Only the X-axis motor direction needs to be inverted.
-    // Z-axis positive steps should move the motor in its positive direction (up).
+    // Invert motor direction for X axis to match coordinate system
     if (strcmp(m_name, "X") == 0) {
         final_steps = -steps;
     }
 
 	m_motor1->VelMax(velSps);
 	m_motor1->AccelMax(accelSps2);
-	m_motor1->Move(final_steps);
 
 	if (m_motor2) { // This will only be the Y axis
+		// Y-axis direction is flipped, so we invert the step commands for both motors
+		m_motor1->Move(-steps);
 		m_motor2->VelMax(velSps);
 		m_motor2->AccelMax(accelSps2);
-		m_motor2->Move(-steps);
+		m_motor2->Move(steps);
+	} else {
+		// This handles X and Z axes
+		m_motor1->Move(final_steps);
 	}
 }
 
 float Axis::getPositionMm() const {
     long current_steps = m_motor1->PositionRefCommanded();
-    // CORRECTED: Only the X-axis position reading needs to be inverted.
-    // For Z, a positive motor step count should correspond to a positive coordinate.
-    if (strcmp(m_name, "X") == 0) {
+    // Invert position reading for X and Y axes to match coordinate system
+    if (strcmp(m_name, "X") == 0 || strcmp(m_name, "Y") == 0) {
         current_steps = -current_steps;
     }
 	return (float)current_steps / m_stepsPerMm;
@@ -198,7 +200,7 @@ void Axis::handleHome(const char* args) {
 	m_state = STATE_HOMING;
 	homingPhase = RAPID_SEARCH_START;
 	
-	float backoff_mm = 5.0;
+	float backoff_mm = HOMING_BACKOFF_MM;
 	
 	m_homingDistanceSteps = (long)(fabs(max_dist_mm) * m_stepsPerMm);
 	m_homingBackoffSteps = (long)(backoff_mm * m_stepsPerMm);

@@ -2,7 +2,12 @@
 
 // --- Network Configuration ---
 #define LOCAL_PORT 8888
-#define MAX_PACKET_LENGTH 128
+#define MAX_PACKET_LENGTH 256 // Increased to prevent telemetry truncation
+
+// --- Queue Configuration ---
+#define RX_QUEUE_SIZE 16
+#define TX_QUEUE_SIZE 32
+#define MAX_MESSAGE_LENGTH MAX_PACKET_LENGTH
 
 // --- Motor & Motion Constants ---
 #define MotorX  ConnectorM0
@@ -15,11 +20,12 @@
 #define MAX_TRQ 90 // %
 
 // --- Homing Parameters ---
-#define HOMING_RAPID_VEL_MMS 50.0f
-#define HOMING_BACKOFF_VEL_MMS 15.0f  // Slower speed for backing off the sensor
-#define HOMING_TOUCH_VEL_MMS 5.0f   // Slowest speed for the final precise touch
+#define HOMING_RAPID_VEL_MMS 20.0f
+#define HOMING_BACKOFF_VEL_MMS 5.0f  // Slower speed for backing off the sensor
+#define HOMING_TOUCH_VEL_MMS 1.0f   // Slowest speed for the final precise touch
 #define HOMING_ACCEL_MMSS 100.0f
 #define HOMING_TORQUE 25
+#define HOMING_BACKOFF_MM 10
 
 // --- Homing Sensor Pin Configuration ---
 #define SENSOR_X      ConnectorIO0
@@ -35,6 +41,8 @@
 #define Y_MAX_POS 410.0f
 #define Z_MIN_POS -160.0f // Z=0 is top, Z=-160 is bottom
 #define Z_MAX_POS 0.0f
+
+#define TELEMETRY_INTERVAL_MS 100
 
 // --- Command Definitions ---
 #define CMD_STR_REQUEST_TELEM     "REQUEST_TELEM"

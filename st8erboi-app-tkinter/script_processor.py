@@ -277,6 +277,8 @@ class ScriptRunner:
                         send_func(final_command_str)
                         if "MOVE" in command_word or "HOME" in command_word:
                             commands_to_wait_for.append(command_word)
+                time.sleep(0.05)
+
 
             if not self.is_running: break
             if commands_to_wait_for:
