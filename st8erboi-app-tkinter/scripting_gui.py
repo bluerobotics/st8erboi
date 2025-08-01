@@ -483,6 +483,27 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
         else:
             status_var.set("All motion stopped.")
 
+    def handle_reset():
+        nonlocal script_runner, feed_hold_line
+        # Stop any active script runner thread
+        if script_runner and script_runner.is_running:
+            script_runner.stop()
+
+        # Abort any physical motion on the hardware
+        command_funcs['abort']()
+
+        # Reset script state variables
+        feed_hold_line = None
+
+        # Use the existing callback to reset button states and status
+        on_run_finished()
+
+        # Move the selection highlight back to the first line
+        update_selection_highlight(1)
+
+        # Update the status bar message
+        status_var.set("Script reset. Ready to start from line 1.")
+
     def handle_cycle_start():
         nonlocal feed_hold_line
         start_line_num = 1
@@ -555,6 +576,9 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
 
     feed_hold_button = ttk.Button(btn_container, text="Feed Hold", command=handle_feed_hold, style="Red.TButton")
     feed_hold_button.pack(side=tk.LEFT, padx=5)
+
+    reset_button = ttk.Button(btn_container, text="Reset", command=handle_reset, style="Small.TButton")
+    reset_button.pack(side=tk.LEFT, padx=5)
 
     # Use a Checkbutton with a custom toggle-button style
     single_block_switch = ttk.Checkbutton(btn_container, text="Single Block", variable=single_block_var,

@@ -80,7 +80,7 @@ COMMANDS = {
 
     # --- Fillhead Commands ---
     "MOVE_X": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -2000, "max": 2000},
-                                                {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 200,
+                                                {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
                                                  "optional": True, "default": 50},
                                                 {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
                                                  "optional": True, "default": 200},
@@ -88,7 +88,7 @@ COMMANDS = {
                                                  "optional": True, "default": 25}],
                "help": "Moves the Fillhead X-axis by a relative distance."},
     "MOVE_Y": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
-                                                {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 200,
+                                                {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
                                                  "optional": True, "default": 50},
                                                 {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
                                                  "optional": True, "default": 200},
