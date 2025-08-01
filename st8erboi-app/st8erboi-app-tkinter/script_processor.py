@@ -145,7 +145,7 @@ class ScriptRunner:
         if 'vacuum_check_status_var' in self.gui_refs:
             self.gui_refs['vacuum_check_status_var'].set("N/A")
 
-        time.sleep(0.2)  # Wait for vacuum reading to stabilize after command
+        time.sleep(0.2)
 
         try:
             initial_psig_str = self.gui_refs['vacuum_psig_var'].get().split()[0]
@@ -162,7 +162,7 @@ class ScriptRunner:
 
         while time.time() - start_time < duration_s:
             if not self.is_running: return False
-            time.sleep(0.2)  # Non-blocking wait
+            time.sleep(0.2)
 
         try:
             final_psig_str = self.gui_refs['vacuum_psig_var'].get().split()[0]
@@ -243,15 +243,22 @@ class ScriptRunner:
                 else:
                     params_def = command_info['params']
                     full_args = list(args)
+
+                    # CORRECTED LOGIC: Properly handle optional parameters without defaults.
                     if len(args) < len(params_def):
                         for j in range(len(args), len(params_def)):
+                            param_def = params_def[j]
                             default_val = self._get_default(command_word, j)
+
                             if default_val is not None:
                                 full_args.append(str(default_val))
-                            else:
+                            # Only raise an error if the parameter is NOT optional.
+                            # If it's optional and has no default, we send nothing for it.
+                            elif not param_def.get("optional"):
                                 self.status_callback(f"Error: Missing required parameter for {command_word}", line_num)
-                                self.is_running = False;
+                                self.is_running = False
                                 break
+
                     if not self.is_running: continue
 
                     if command_word == "HOME_X":

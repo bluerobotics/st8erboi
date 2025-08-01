@@ -180,7 +180,7 @@ def create_injector_jog_section(parent, send_cmd_func, variables, ui_elements):
     jog_buttons_area.pack(fill=tk.X, pady=2)
     for i in range(3):
         jog_buttons_area.grid_columnconfigure(i, weight=1)
-    jog_cmd_str = lambda d1, d2: f"JOG_MOVE {d1} {d2} {variables['jog_velocity_var'].get()} {variables['jog_acceleration_var'].get()} {variables['jog_torque_percent_var'].get()}"
+    jog_cmd_str = lambda d1,d2: f"JOG_MOVE {d1} {d2} {variables['jog_velocity_var'].get()} {variables['jog_acceleration_var'].get()} {variables['jog_torque_percent_var'].get()}"
     ui_elements['jog_m0_up_btn'] = ttk.Button(jog_buttons_area, text="▲ Up (M0)", style="Jog.TButton",
                                               state=tk.DISABLED, command=lambda: send_cmd_func(
             jog_cmd_str(variables['jog_dist_mm_var'].get(), 0)))
@@ -230,7 +230,8 @@ def create_pinch_jog_section(parent, send_cmd_func, variables):
                                                                                                                sticky="e",
                                                                                                                pady=1,
                                                                                                                padx=(
-                                                                                                               0, 5))
+                                                                                                                   0,
+                                                                                                                   5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_pinch_dist_mm_var'], width=field_width,
               font=font_small).grid(
         row=0, column=1, sticky="ew", padx=(0, 5))
@@ -240,7 +241,8 @@ def create_pinch_jog_section(parent, send_cmd_func, variables):
                                                                                                                 sticky="e",
                                                                                                                 pady=1,
                                                                                                                 padx=(
-                                                                                                                5, 5))
+                                                                                                                    5,
+                                                                                                                    5))
     ttk.Entry(jog_params_frame, textvariable=variables['jog_pinch_velocity_mms_var'], width=field_width,
               font=font_small).grid(row=0, column=3, sticky="ew")
 
@@ -255,7 +257,8 @@ def create_pinch_jog_section(parent, send_cmd_func, variables):
                                                                                                                 sticky="e",
                                                                                                                 pady=1,
                                                                                                                 padx=(
-                                                                                                                5, 5))
+                                                                                                                    5,
+                                                                                                                    5))
     ttk.Entry(jog_params_frame, textvariable=variables['pinch_jog_torque_percent_var'], width=field_width,
               font=font_small).grid(row=1, column=3, sticky="ew")
 
@@ -271,7 +274,6 @@ def create_pinch_jog_section(parent, send_cmd_func, variables):
         f"{variables['pinch_jog_torque_percent_var'].get()}"
     )
 
-    # FIX: Swapped open/close logic. Open is now negative, Close is positive.
     ttk.Button(jog_buttons_area, text="Pinch Open", style="Jog.TButton",
                command=lambda: send_cmd_func(pinch_jog_cmd_str(f"-{variables['jog_pinch_dist_mm_var'].get()}"))).grid(
         row=0, column=0, sticky="ew", padx=(0, 1))
@@ -281,7 +283,8 @@ def create_pinch_jog_section(parent, send_cmd_func, variables):
                                                                                                                 column=1,
                                                                                                                 sticky="ew",
                                                                                                                 padx=(
-                                                                                                                1, 0))
+                                                                                                                    1,
+                                                                                                                    0))
 
 
 def create_fillhead_jog_section(parent, send_fillhead_cmd, variables):
@@ -309,7 +312,7 @@ def create_fillhead_jog_section(parent, send_fillhead_cmd, variables):
                                                                                   sticky='e')
     ttk.Entry(jog_params_frame, textvariable=variables['fh_jog_torque_var'], width=8).grid(row=1, column=3, sticky='ew')
     jog_cmd_str = lambda \
-            dist: f"{dist} {variables['fh_jog_vel_mms_var'].get()} {variables['fh_jog_accel_mms2_var'].get()} {variables['fh_jog_torque_var'].get()}"
+            dist: f"INC {dist} {variables['fh_jog_vel_mms_var'].get()} {variables['fh_jog_accel_mms2_var'].get()} {variables['fh_jog_torque_var'].get()}"
     jog_btn_frame = tk.Frame(fh_jog_frame, bg="#2a2d3b")
     jog_btn_frame.pack(fill=tk.X, pady=5)
     jog_btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
@@ -317,19 +320,22 @@ def create_fillhead_jog_section(parent, send_fillhead_cmd, variables):
                command=lambda: send_fillhead_cmd(f"MOVE_X {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
         row=0, column=0, sticky='ew', padx=(0, 1), pady=(0, 1))
     ttk.Button(jog_btn_frame, text="X-", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(f"MOVE_X -{jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
+               command=lambda: send_fillhead_cmd(
+                   f"MOVE_X {jog_cmd_str(f'-{variables['fh_jog_dist_mm_var'].get()}')}")).grid(
         row=1, column=0, sticky='ew', padx=(0, 1))
     ttk.Button(jog_btn_frame, text="Y+", style="Jog.TButton",
                command=lambda: send_fillhead_cmd(f"MOVE_Y {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
         row=0, column=1, sticky='ew', padx=1, pady=(0, 1))
     ttk.Button(jog_btn_frame, text="Y-", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(f"MOVE_Y -{jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
+               command=lambda: send_fillhead_cmd(
+                   f"MOVE_Y {jog_cmd_str(f'-{variables['fh_jog_dist_mm_var'].get()}')}")).grid(
         row=1, column=1, sticky='ew', padx=1)
     ttk.Button(jog_btn_frame, text="Z+", style="Jog.TButton",
                command=lambda: send_fillhead_cmd(f"MOVE_Z {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
         row=0, column=2, sticky='ew', padx=(1, 0), pady=(0, 1))
     ttk.Button(jog_btn_frame, text="Z-", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(f"MOVE_Z -{jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
+               command=lambda: send_fillhead_cmd(
+                   f"MOVE_Z {jog_cmd_str(f'-{variables['fh_jog_dist_mm_var'].get()}')}")).grid(
         row=1, column=2, sticky='ew', padx=(1, 0))
 
 
@@ -397,25 +403,23 @@ def create_homing_controls(parent, command_funcs, variables):
 
     ttk.Separator(homing_controls_frame, orient='horizontal').pack(fill='x', pady=10)
 
+    # UPDATED: Fillhead Homing UI
     fh_home_params_frame = tk.Frame(homing_controls_frame, bg="#2a2d3b")
     fh_home_params_frame.pack(fill=tk.X)
     fh_home_params_frame.grid_columnconfigure(1, weight=1)
-    fh_home_params_frame.grid_columnconfigure(3, weight=1)
-    tk.Label(fh_home_params_frame, text="FH Torque (%):", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="e",
-                                                                                         pady=1, padx=(0, 5))
-    ttk.Entry(fh_home_params_frame, textvariable=variables['fh_home_torque_var'], width=10).grid(row=0, column=1,
-                                                                                                 sticky="ew",
-                                                                                                 padx=(0, 5))
-    tk.Label(fh_home_params_frame, text="FH Max Dist (mm):", bg="#2a2d3b", fg="white").grid(row=0, column=2, sticky="e",
-                                                                                            pady=1, padx=(5, 5))
-    ttk.Entry(fh_home_params_frame, textvariable=variables['fh_home_distance_mm_var'], width=10).grid(row=0, column=3,
+
+    tk.Label(fh_home_params_frame, text="FH Max Dist (mm):", bg="#2a2d3b", fg="white").grid(row=0, column=0, sticky="e",
+                                                                                            pady=1, padx=(0, 5))
+    ttk.Entry(fh_home_params_frame, textvariable=variables['fh_home_distance_mm_var'], width=10).grid(row=0, column=1,
                                                                                                       sticky="ew")
 
     fh_home_btn_frame = tk.Frame(homing_controls_frame, bg="#2a2d3b")
     fh_home_btn_frame.pack(pady=(5, 0), fill=tk.X)
     fh_home_btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
-    home_cmd_str = lambda \
-            axis: f"HOME_{axis} {variables['fh_home_torque_var'].get()} {variables['fh_home_distance_mm_var'].get()}"
+
+    # UPDATED: Homing command string
+    home_cmd_str = lambda axis: f"HOME_{axis} {variables['fh_home_distance_mm_var'].get()}"
+
     ttk.Button(fh_home_btn_frame, text="Home X", style='Home.TButton',
                command=lambda: send_fillhead_cmd(home_cmd_str("X"))).grid(row=0, column=0, sticky='ew', padx=(0, 2))
     ttk.Button(fh_home_btn_frame, text="Home Y", style='Home.TButton',
@@ -561,7 +565,6 @@ def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
     if 'jog_torque_percent_var' not in shared_gui_refs: shared_gui_refs['jog_torque_percent_var'] = tk.StringVar(
         value="20.0")
 
-    # Corrected variable names and default values for pinch jog to use mm-based units
     if 'jog_pinch_dist_mm_var' not in shared_gui_refs: shared_gui_refs['jog_pinch_dist_mm_var'] = tk.StringVar(
         value="1.0")
     if 'jog_pinch_velocity_mms_var' not in shared_gui_refs: shared_gui_refs[
@@ -588,9 +591,9 @@ def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
         value='1.0')
     if 'homing_torque_percent_var' not in shared_gui_refs: shared_gui_refs['homing_torque_percent_var'] = tk.StringVar(
         value='25')
-    if 'fh_home_torque_var' not in shared_gui_refs: shared_gui_refs['fh_home_torque_var'] = tk.StringVar(value="20")
+    # UPDATED: Removed fh_home_torque_var
     if 'fh_home_distance_mm_var' not in shared_gui_refs: shared_gui_refs['fh_home_distance_mm_var'] = tk.StringVar(
-        value="420.0")
+        value="1250.0")  # Default to a safe large value
     if 'feed_cyl1_dia_var' not in shared_gui_refs: shared_gui_refs['feed_cyl1_dia_var'] = tk.StringVar(value='10.0')
     if 'feed_cyl2_dia_var' not in shared_gui_refs: shared_gui_refs['feed_cyl2_dia_var'] = tk.StringVar(value='10.0')
     if 'feed_ballscrew_pitch_var' not in shared_gui_refs: shared_gui_refs['feed_ballscrew_pitch_var'] = tk.StringVar(
@@ -656,6 +659,5 @@ def create_manual_controls_display(parent, command_funcs, shared_gui_refs):
     trigger_canvas.bind("<Button-1>", lambda e: toggle_panel())
     trigger_canvas.bind("<Enter>", lambda e: trigger_canvas.config(bg="#5a6268"))
     trigger_canvas.bind("<Leave>", lambda e: trigger_canvas.config(bg="#4a5568"))
-
 
     return {'main_container': main_container}

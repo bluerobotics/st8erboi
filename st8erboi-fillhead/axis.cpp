@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm) {
+Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm, Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor) {
 	m_controller = controller;
 	m_name = name;
 	m_motor1 = motor1;
@@ -13,6 +13,9 @@ Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDri
 	m_stepsPerMm = stepsPerMm;
 	m_minPosMm = minPosMm;
 	m_maxPosMm = maxPosMm;
+	m_homingSensor1 = homingSensor1;
+	m_homingSensor2 = homingSensor2;
+	m_limitSensor = limitSensor;
 	
 	m_state = STATE_STANDBY;
 	homingPhase = HOMING_NONE;
@@ -23,7 +26,7 @@ Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDri
 	m_firstTorqueReadM1 = true;
 	m_firstTorqueReadM2 = true;
 	m_torqueLimit = 0.0f;
-	m_activeCommand = nullptr; // FIX: Initialize active command tracker
+	m_activeCommand = nullptr;
 }
 
 void Axis::enable() {
@@ -37,6 +40,10 @@ void Axis::disable() {
 }
 
 void Axis::setupMotors() {
+    if (m_homingSensor1) m_homingSensor1->Mode(Connector::INPUT_DIGITAL);
+    if (m_homingSensor2) m_homingSensor2->Mode(Connector::INPUT_DIGITAL);
+    if (m_limitSensor) m_limitSensor->Mode(Connector::INPUT_DIGITAL);
+    
 	m_motor1->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	m_motor1->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
 	m_motor1->VelMax(MAX_VEL);
@@ -55,16 +62,33 @@ void Axis::moveSteps(long steps, int velSps, int accelSps2, int torque) {
 	m_firstTorqueReadM1 = true;
 	m_firstTorqueReadM2 = true;
 	m_torqueLimit = (float)torque;
-	if (velSps > MAX_VEL) velSps = MAX_VEL;
-	if (accelSps2 > MAX_ACC) accelSps2 = MAX_ACC;
+	
+    long final_steps = steps;
+    // CORRECTED: Only the X-axis motor direction needs to be inverted.
+    // Z-axis positive steps should move the motor in its positive direction (up).
+    if (strcmp(m_name, "X") == 0) {
+        final_steps = -steps;
+    }
+
 	m_motor1->VelMax(velSps);
 	m_motor1->AccelMax(accelSps2);
-	m_motor1->Move(steps);
-	if (m_motor2) {
+	m_motor1->Move(final_steps);
+
+	if (m_motor2) { // This will only be the Y axis
 		m_motor2->VelMax(velSps);
 		m_motor2->AccelMax(accelSps2);
-		m_motor2->Move(steps);
+		m_motor2->Move(-steps);
 	}
+}
+
+float Axis::getPositionMm() const {
+    long current_steps = m_motor1->PositionRefCommanded();
+    // CORRECTED: Only the X-axis position reading needs to be inverted.
+    // For Z, a positive motor step count should correspond to a positive coordinate.
+    if (strcmp(m_name, "X") == 0) {
+        current_steps = -current_steps;
+    }
+	return (float)current_steps / m_stepsPerMm;
 }
 
 void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torque, MoveType moveType) {
@@ -88,18 +112,19 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 	if (moveType == ABSOLUTE) {
 		finalTargetPosMm = target_mm;
 		distanceToMoveMm = target_mm - currentPosMm;
-		} else { // INCREMENTAL
+	} else { // INCREMENTAL
 		finalTargetPosMm = currentPosMm + target_mm;
 		distanceToMoveMm = target_mm;
 	}
+
 
 	if (finalTargetPosMm < m_minPosMm || finalTargetPosMm > m_maxPosMm) {
 		char errorMsg[128];
 		snprintf(errorMsg, sizeof(errorMsg), "Move command to %.2fmm exceeds limits [%.2f, %.2f].",
 		finalTargetPosMm, m_minPosMm, m_maxPosMm);
 		sendStatus(STATUS_PREFIX_ERROR, errorMsg);
-		return;
-	}
+		return; 
+	} 
 
 	long steps = (long)(distanceToMoveMm * m_stepsPerMm);
 	int velocity_sps = (int)fabs(vel_mms * m_stepsPerMm);
@@ -131,7 +156,6 @@ void Axis::handleMove(const char* args) {
 		return;
 	}
 
-	// FIX: Track the active command for the DONE message
 	if (strcmp(m_name, "X") == 0) m_activeCommand = "MOVE_X";
 	else if (strcmp(m_name, "Y") == 0) m_activeCommand = "MOVE_Y";
 	else if (strcmp(m_name, "Z") == 0) m_activeCommand = "MOVE_Z";
@@ -143,42 +167,48 @@ void Axis::handleMove(const char* args) {
 }
 
 void Axis::handleHome(const char* args) {
+	if (!m_homingSensor1) {
+		sendStatus(STATUS_PREFIX_ERROR, "Homing not configured for this axis.");
+		return;
+	}
 	if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
-		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start homing: Motor in fault");
 		return;
 	}
 	if (isMoving()) {
-		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Axis already moving");
+		sendStatus(STATUS_PREFIX_ERROR, "Cannot start homing: Axis already moving");
 		return;
 	}
 	
 	float max_dist_mm;
-	if (!args || sscanf(args, "%d %f", &m_homingTorque, &max_dist_mm) != 2) {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid HOME format.");
-		return;
+	if (args && sscanf(args, "%f", &max_dist_mm) == 1) {
+	} else {
+		max_dist_mm = m_maxPosMm - m_minPosMm;
 	}
 	
-	// FIX: Track the active command for the DONE message
 	if (strcmp(m_name, "X") == 0) m_activeCommand = "HOME_X";
 	else if (strcmp(m_name, "Y") == 0) m_activeCommand = "HOME_Y";
 	else if (strcmp(m_name, "Z") == 0) m_activeCommand = "HOME_Z";
 
-	char infoMsg[64];
-	snprintf(infoMsg, sizeof(infoMsg), "%s initiated", m_activeCommand);
+	char infoMsg[128];
+	snprintf(infoMsg, sizeof(infoMsg), "%s initiated with max travel of %.2f mm", m_activeCommand, max_dist_mm);
 	sendStatus(STATUS_PREFIX_INFO, infoMsg);
 
 	m_homed = false;
 	m_state = STATE_HOMING;
-	homingPhase = DEBIND_START;
+	homingPhase = RAPID_SEARCH_START;
 	
-	float rapid_vel_mms = 15;
-	float touch_vel_mms = 5.0;
 	float backoff_mm = 5.0;
 	
-	m_homingDistanceSteps = (long)(max_dist_mm * m_stepsPerMm);
+	m_homingDistanceSteps = (long)(fabs(max_dist_mm) * m_stepsPerMm);
 	m_homingBackoffSteps = (long)(backoff_mm * m_stepsPerMm);
-	m_homingRapidSps = (int)fabs(rapid_vel_mms * m_stepsPerMm);
-	m_homingTouchSps = (int)fabs(touch_vel_mms * m_stepsPerMm);
+	m_homingRapidSps = (int)fabs(HOMING_RAPID_VEL_MMS * m_stepsPerMm);
+	m_homingBackoffSps = (int)fabs(HOMING_BACKOFF_VEL_MMS * m_stepsPerMm);
+	m_homingTouchSps = (int)fabs(HOMING_TOUCH_VEL_MMS * m_stepsPerMm);
+    m_homingAccelSps2 = (int)fabs(HOMING_ACCEL_MMSS * m_stepsPerMm * m_stepsPerMm);
+    
+    m_motor1_homed = false;
+    m_motor2_homed = false;
 }
 
 void Axis::updateState() {
@@ -189,233 +219,209 @@ void Axis::updateState() {
 		case STATE_STARTING_MOVE:
 		if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
 			sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
+			m_state = STATE_STANDBY;
 			return;
 		}
 		if (isMoving()){
 			m_state = STATE_MOVING;
-			break;
 		}
 		break;
 		
 		case STATE_MOVING:
+		if (m_limitSensor && m_limitSensor->State()) {
+			abort();
+			sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to limit switch trigger.");
+			m_state = STATE_STANDBY;
+			m_activeCommand = nullptr;
+			break;
+		}
 		if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
 			abort();
-			sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit, entering STANDBY.");
+			sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit.");
 			m_state = STATE_STANDBY;
-			m_activeCommand = nullptr; // Clear active command on abort
+			m_activeCommand = nullptr;
 		}
 		else if (!isMoving()) {
-			// FIX: Send specific DONE message on move completion
 			if (m_activeCommand) {
 				char doneMsg[64];
 				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeCommand);
 				sendStatus(STATUS_PREFIX_DONE, doneMsg);
-				m_activeCommand = nullptr; // Reset after sending
+				m_activeCommand = nullptr;
 			}
 			m_state = STATE_STANDBY;
 		}
 		break;
 		
-		case STATE_HOMING:
-		switch (homingPhase) {
-			case DEBIND_START:
-			moveSteps(400, 200, MAX_ACC, MAX_TRQ);
-			homingPhase = DEBIND_WAIT_TO_START;
-			break;
-			
-			case DEBIND_WAIT_TO_START:
-			if (isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "DEBIND STARTED, entering DEBIND_MOVING");
-				homingPhase = DEBIND_MOVING;
-				break;
-			}
-			break;
-			
-			case DEBIND_MOVING:
-			if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
+		case STATE_HOMING: {
+			if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
 				abort();
-				sendStatus(STATUS_PREFIX_ERROR, "Debind aborted due to torque limit, entering STANDBY.");
+				sendStatus(STATUS_PREFIX_ERROR, "Homing failed: Motor in fault.");
 				m_state = STATE_STANDBY;
 				homingPhase = HOMING_NONE;
-			}
-			else if (!isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "Backoff done, entering TOUCH_START");
-				homingPhase = RAPID_START;
-			}
-			break;
-			
-			case RAPID_START:
-			moveSteps(-m_homingDistanceSteps, m_homingRapidSps, MAX_ACC, m_homingTorque);
-			homingPhase = RAPID_WAIT_TO_START;
-			break;
-			
-			case RAPID_WAIT_TO_START:
-			if (isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "HOMING STARTED, entering RAPID_MOVING");
-				homingPhase = RAPID_MOVING;
+				m_activeCommand = nullptr;
 				break;
 			}
-			break;
 
-			case RAPID_MOVING: {
-				bool motor1_at_limit = (m_motor1 && checkTorqueLimit(m_motor1));
-				bool motor2_at_limit = (m_motor2 && checkTorqueLimit(m_motor2));
-
-				if (motor1_at_limit) m_motor1->MoveStopAbrupt();
-				if (motor2_at_limit) m_motor2->MoveStopAbrupt();
-
-				if ((motor1_at_limit || !m_motor1) && (motor2_at_limit || !m_motor2)) {
-					sendStatus(STATUS_PREFIX_INFO, "Endstops hit on rapid, entering BACKOFF_START");
-					homingPhase = BACKOFF_START;
+			switch (homingPhase) {
+				case RAPID_SEARCH_START: {
+					sendStatus(STATUS_PREFIX_INFO, "Homing: Starting rapid search.");
+					long rapid_search_steps = -m_homingDistanceSteps;
+					if (strcmp(m_name, "Z") == 0) {
+						rapid_search_steps = m_homingDistanceSteps;
+					}
+					moveSteps(rapid_search_steps, m_homingRapidSps, m_homingAccelSps2, HOMING_TORQUE);
+					homingPhase = RAPID_SEARCH_WAIT_TO_START;
+					break;
 				}
-				break;
-			}
-			
-			case BACKOFF_START:
-			moveSteps(m_homingBackoffSteps, m_homingRapidSps, MAX_ACC, MAX_TRQ);
-			homingPhase = BACKOFF_WAIT_TO_START;
-			break;
-			
-			case BACKOFF_WAIT_TO_START:
-			if (isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "BACKOFF STARTED, entering BACKOFF_MOVING");
-				homingPhase = BACKOFF_MOVING;
-				break;
-			}
-			break;
-			
-			case BACKOFF_MOVING:
-			if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
-				abort();
-				sendStatus(STATUS_PREFIX_ERROR, "Backoff aborted due to torque limit, entering STANDBY.");
-				m_state = STATE_STANDBY;
-				homingPhase = HOMING_NONE;
-			}
-			else if (!isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "Backoff done, entering TOUCH_START");
-				homingPhase = TOUCH_START;
-			}
-			break;
+				case RAPID_SEARCH_WAIT_TO_START:
+					if(isMoving()) {
+						homingPhase = RAPID_SEARCH_MOVING;
+					}
+					break;
+				case RAPID_SEARCH_MOVING: {
+					bool sensor1_triggered = m_homingSensor1 && m_homingSensor1->State();
+					bool sensor2_triggered = m_homingSensor2 && m_homingSensor2->State();
 
-			case TOUCH_START:
-			moveSteps(-m_homingBackoffSteps*2, m_homingTouchSps, MAX_ACC, m_homingTorque);
-			homingPhase = TOUCH_WAIT_TO_START;
-			break;
-			
-			case TOUCH_WAIT_TO_START:
-			if (isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "TOUCH STARTED, entering TOUCH_MOVING");
-				homingPhase = TOUCH_MOVING;
-				break;
-			}
-			break;
-			
-			case TOUCH_MOVING: {
-				bool motor1_at_limit = (m_motor1 && checkTorqueLimit(m_motor1));
-				bool motor2_at_limit = (m_motor2 && checkTorqueLimit(m_motor2));
+					if (sensor1_triggered && !m_motor1_homed) {
+						m_motor1->MoveStopAbrupt();
+						m_motor1_homed = true;
+						sendStatus(STATUS_PREFIX_INFO, "Homing: Motor 1 sensor hit.");
+					}
+					if (m_motor2 && sensor2_triggered && !m_motor2_homed) {
+						m_motor2->MoveStopAbrupt();
+						m_motor2_homed = true;
+						sendStatus(STATUS_PREFIX_INFO, "Homing: Motor 2 sensor hit.");
+					}
 
-				if (motor1_at_limit) m_motor1->MoveStopAbrupt();
-				if (motor2_at_limit) m_motor2->MoveStopAbrupt();
-
-				if ((motor1_at_limit || !m_motor1) && (motor2_at_limit || !m_motor2)) {
-					sendStatus(STATUS_PREFIX_INFO, "Endstops hit on touch, entering DESTRESS_DISABLE");
-					homingPhase = DESTRESS_DISABLE;
+					if (m_motor1_homed && (m_motor2 == nullptr || m_motor2_homed)) {
+						sendStatus(STATUS_PREFIX_INFO, "Homing: Rapid search complete.");
+						homingPhase = BACKOFF_START;
+					} else if (!isMoving()) {
+						abort();
+						sendStatus(STATUS_PREFIX_ERROR, "Homing failed: Axis stopped before sensor was triggered.");
+						m_state = STATE_STANDBY;
+						homingPhase = HOMING_NONE;
+					}
+					break;
 				}
-				break;
-			}
-			
-			case DESTRESS_DISABLE:
-			disable();
-			m_delay_target_ms = Milliseconds() + 250;
-			homingPhase = AWAIT_DESTRESS_TIMER;
-			break;
-			
-			case AWAIT_DESTRESS_TIMER:
-			if(Milliseconds() >= m_delay_target_ms) {
-				homingPhase = DESTRESS_ENABLE;
-			}
-			break;
-			
-			case DESTRESS_ENABLE:
-			enable();
-			m_delay_target_ms = Milliseconds() + 250;
-			homingPhase = AWAIT_ENABLE_TIMER;
-			break;
-			
-			case AWAIT_ENABLE_TIMER:
-			if(Milliseconds() >= m_delay_target_ms) {
-				homingPhase = RETRACT_START;
-			}
-			break;
-			
-			case RETRACT_START: {
-				long retractSteps;
-				if (strcmp(m_name, "Z") == 0) {
-					retractSteps = (long)(35.0f * m_stepsPerMm);
-					} else {
-					retractSteps = m_homingBackoffSteps;
+				
+				case BACKOFF_START: {
+					sendStatus(STATUS_PREFIX_INFO, "Homing: Starting backoff.");
+					long backoff_steps = m_homingBackoffSteps;
+					if (strcmp(m_name, "Z") == 0) {
+						backoff_steps = -m_homingBackoffSteps;
+					}
+					moveSteps(backoff_steps, m_homingBackoffSps, m_homingAccelSps2, HOMING_TORQUE);
+					homingPhase = BACKOFF_WAIT_TO_START;
+					break;
 				}
-				moveSteps(retractSteps, m_homingRapidSps, MAX_ACC, MAX_TRQ);
-				homingPhase = RETRACT_WAIT_TO_START;
-				break;
+				case BACKOFF_WAIT_TO_START:
+					if(isMoving()) {
+						homingPhase = BACKOFF_MOVING;
+					}
+					break;
+				case BACKOFF_MOVING:
+					if (!isMoving()) {
+						sendStatus(STATUS_PREFIX_INFO, "Homing: Backoff complete.");
+						homingPhase = SLOW_SEARCH_START;
+					}
+					break;
+					
+				case SLOW_SEARCH_START: {
+					sendStatus(STATUS_PREFIX_INFO, "Homing: Starting slow search.");
+					m_motor1_homed = false;
+					m_motor2_homed = false;
+					long slow_search_steps = -m_homingBackoffSteps * 2;
+					if (strcmp(m_name, "Z") == 0) {
+						slow_search_steps = m_homingBackoffSteps * 2;
+					}
+					moveSteps(slow_search_steps, m_homingTouchSps, m_homingAccelSps2, HOMING_TORQUE);
+					homingPhase = SLOW_SEARCH_WAIT_TO_START;
+					break;
+				}
+				case SLOW_SEARCH_WAIT_TO_START:
+					if(isMoving()) {
+						homingPhase = SLOW_SEARCH_MOVING;
+					}
+					break;
+				case SLOW_SEARCH_MOVING: {
+					bool sensor1_triggered = m_homingSensor1 && m_homingSensor1->State();
+					bool sensor2_triggered = m_homingSensor2 && m_homingSensor2->State();
+
+					if (sensor1_triggered && !m_motor1_homed) {
+						m_motor1->MoveStopAbrupt();
+						m_motor1_homed = true;
+					}
+					if (m_motor2 && sensor2_triggered && !m_motor2_homed) {
+						m_motor2->MoveStopAbrupt();
+						m_motor2_homed = true;
+					}
+
+					if (m_motor1_homed && (m_motor2 == nullptr || m_motor2_homed)) {
+						sendStatus(STATUS_PREFIX_INFO, "Homing: Precise position found. Moving to offset.");
+						homingPhase = SET_OFFSET_START;
+					} else if (!isMoving()) {
+						abort();
+						sendStatus(STATUS_PREFIX_ERROR, "Homing failed during slow search.");
+						m_state = STATE_STANDBY;
+						homingPhase = HOMING_NONE;
+					}
+					break;
+				}
+				
+				case SET_OFFSET_START: {
+					long offset_steps = m_homingBackoffSteps;
+					if (strcmp(m_name, "Z") == 0) {
+						offset_steps = -m_homingBackoffSteps;
+					}
+					moveSteps(offset_steps, m_homingBackoffSps, m_homingAccelSps2, HOMING_TORQUE);
+					homingPhase = SET_OFFSET_WAIT_TO_START;
+					break;
+				}
+				case SET_OFFSET_WAIT_TO_START:
+					if(isMoving()) {
+						homingPhase = SET_OFFSET_MOVING;
+					}
+					break;
+				case SET_OFFSET_MOVING:
+					if (!isMoving()) {
+						sendStatus(STATUS_PREFIX_INFO, "Homing: Offset position reached.");
+						homingPhase = SET_ZERO;
+					}
+					break;
+
+				case SET_ZERO:
+					m_motor1->PositionRefSet(0);
+					if (m_motor2) m_motor2->PositionRefSet(0);
+					m_homed = true;
+
+					if (m_activeCommand) {
+						char doneMsg[64];
+						snprintf(doneMsg, sizeof(doneMsg), "%s complete. Current position: %.2f", m_activeCommand, getPositionMm());
+						sendStatus(STATUS_PREFIX_DONE, doneMsg);
+						m_activeCommand = nullptr;
+					}
+					m_state = STATE_STANDBY;
+					homingPhase = HOMING_NONE;
+					break;
+
+				default:
+					abort();
+					sendStatus(STATUS_PREFIX_ERROR, "Unknown homing phase, aborting.");
+					m_state = STATE_STANDBY;
+					homingPhase = HOMING_NONE;
+					break;
 			}
-			
-			case RETRACT_WAIT_TO_START:
-			if (isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "RETRACT STARTED, entering RETRACT_MOVING");
-				homingPhase = RETRACT_MOVING;
-				break;
-			}
-			break;
-			
-			case RETRACT_MOVING:
-			if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
-				abort();
-				sendStatus(STATUS_PREFIX_ERROR, "RETRACT aborted due to torque limit, entering STANDBY.");
-				m_state = STATE_STANDBY;
-				homingPhase = HOMING_NONE;
-			}
-			else if (!isMoving()) {
-				sendStatus(STATUS_PREFIX_INFO, "Retract done, entering SET_ZERO");
-				homingPhase = SET_ZERO;
-			}
-			break;
-			
-			case SET_ZERO:
-			m_motor1->PositionRefSet(0);
-			if(m_motor2) m_motor2->PositionRefSet(0);
-			
-			// FIX: Send specific DONE message on homing completion
-			if (m_activeCommand) {
-				char doneMsg[64];
-				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeCommand);
-				sendStatus(STATUS_PREFIX_DONE, doneMsg);
-				m_activeCommand = nullptr; // Reset after sending
-				} else {
-				// Fallback for safety
-				sendStatus(STATUS_PREFIX_DONE, "Zero set, homing complete, entering STANDBY");
-			}
-			m_homed = true;
-			homingPhase = HOMING_NONE;
-			m_state = STATE_STANDBY;
-			
-			break;
-			
-			default:
-			abort();
-			sendStatus(STATUS_PREFIX_ERROR, "Unknown homing phase, entering STANDBY");
-			m_state = STATE_STANDBY;
-			homingPhase = HOMING_NONE;
 			break;
 		}
-		break;
 	}
 }
+
 
 void Axis::abort() {
 	m_motor1->MoveStopAbrupt();
 	if (m_motor2) m_motor2->MoveStopAbrupt();
-	m_activeCommand = nullptr; // Clear active command on abort
+	m_activeCommand = nullptr;
 }
 
 bool Axis::isMoving() {
@@ -450,7 +456,7 @@ float Axis::getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRe
 	if (*firstRead) {
 		*smoothedValue = currentRawTorque;
 		*firstRead = false;
-		} else {
+	} else {
 		*smoothedValue = (EWMA_ALPHA * currentRawTorque) + (1.0f - EWMA_ALPHA) * (*smoothedValue);
 	}
 	return *smoothedValue;
@@ -464,9 +470,9 @@ bool Axis::checkTorqueLimit(MotorDriver* motor) {
 	float torque;
 	if (motor == m_motor1) {
 		torque = getRawTorque(motor, &m_smoothedTorqueM1, &m_firstTorqueReadM1);
-		} else if (motor == m_motor2) {
+	} else if (motor == m_motor2) {
 		torque = getRawTorque(motor, &m_smoothedTorqueM2, &m_firstTorqueReadM2);
-		} else {
+	} else {
 		return false;
 	}
 

@@ -1,10 +1,16 @@
 #include "fillhead.h"
-#include <math.h> // Needed for sin() and cos()
+#include <math.h>
 
 Fillhead::Fillhead() :
-xAxis(this, "X", &MotorX, nullptr, -STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS),
-yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS),
-zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS)
+// CORRECTED: Pass positive steps/mm. Direction is handled in the Axis class.
+// X-Axis: Single motor, single homing sensor, no limit switch
+xAxis(this, "X", &MotorX, nullptr, STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS, &SENSOR_X, nullptr, nullptr),
+
+// Y-Axis: Dual motor gantry, two homing sensors, one rear limit switch
+yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS, &SENSOR_Y1, &SENSOR_Y2, &LIMIT_Y_BACK),
+
+// Z-Axis: Single motor, single homing sensor, no limit switch
+zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR_Z, nullptr, nullptr)
 {
 	m_guiDiscovered = false;
 	m_guiPort = 0;
@@ -42,7 +48,6 @@ void Fillhead::abortAll() {
 	xAxis.abort();
 	yAxis.abort();
 	zAxis.abort();
-	// FIX: Send a DONE message for ABORT
 	sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
@@ -153,7 +158,6 @@ void Fillhead::handleMessage(const char* msg) {
 		case CMD_HOME_Y: yAxis.handleHome(args); break;
 		case CMD_HOME_Z: zAxis.handleHome(args); break;
 		
-		// FIX: Add DONE messages for instantaneous commands
 		case CMD_ENABLE_X:
 		xAxis.enable();
 		sendStatus(STATUS_PREFIX_DONE, "ENABLE_X complete.");

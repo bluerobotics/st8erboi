@@ -7,13 +7,15 @@ class Fillhead;
 
 class Axis {
 	public:
-	// Enum to specify the type of move: absolute or incremental
 	typedef enum {
 		ABSOLUTE,
 		INCREMENTAL
 	} MoveType;
 
-	Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm);
+	Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2,
+	float stepsPerMm, float minPosMm, float maxPosMm,
+	Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor);
+
 	void setupMotors();
 	void updateState();
 	void handleMove(const char* args);
@@ -24,8 +26,7 @@ class Axis {
 	bool isMoving();
 	bool isHomed() { return m_homed; }
 	const char* getStateString();
-	long getPositionSteps() { return m_motor1->PositionRefCommanded(); }
-	float getPositionMm() const { return (float)m_motor1->PositionRefCommanded() / m_stepsPerMm; }
+	float getPositionMm() const;
 	float getSmoothedTorque();
 	bool isEnabled();
 	
@@ -41,7 +42,10 @@ class Axis {
 	const char* m_name;
 	MotorDriver* m_motor1;
 	MotorDriver* m_motor2;
-	const char* m_activeCommand; // FIX: To track the current command for DONE messages
+	Connector* m_homingSensor1;
+	Connector* m_homingSensor2;
+	Connector* m_limitSensor;
+	const char* m_activeCommand;
 
 	typedef enum {
 		STATE_STANDBY,
@@ -51,30 +55,21 @@ class Axis {
 	} AxisState;
 	AxisState m_state;
 
-	uint32_t m_delay_target_ms;
-
 	typedef enum {
-		DEBIND_START,
-		DEBIND_WAIT_TO_START,
-		DEBIND_MOVING,
-		RAPID_START,
-		RAPID_WAIT_TO_START,
-		RAPID_MOVING,
+		HOMING_NONE,
+		RAPID_SEARCH_START,
+		RAPID_SEARCH_WAIT_TO_START,
+		RAPID_SEARCH_MOVING,
 		BACKOFF_START,
 		BACKOFF_WAIT_TO_START,
 		BACKOFF_MOVING,
-		TOUCH_START,
-		TOUCH_WAIT_TO_START,
-		TOUCH_MOVING,
-		DESTRESS_DISABLE,
-		AWAIT_DESTRESS_TIMER,
-		DESTRESS_ENABLE,
-		AWAIT_ENABLE_TIMER,
-		SET_ZERO,
-		RETRACT_START,
-		RETRACT_WAIT_TO_START,
-		RETRACT_MOVING,
-		HOMING_NONE
+		SLOW_SEARCH_START,
+		SLOW_SEARCH_WAIT_TO_START,
+		SLOW_SEARCH_MOVING,
+		SET_OFFSET_START, // Renamed from RETRACT
+		SET_OFFSET_WAIT_TO_START,
+		SET_OFFSET_MOVING,
+		SET_ZERO
 	} HomingPhase;
 	
 	HomingPhase homingPhase;
@@ -88,12 +83,13 @@ class Axis {
 
 	long m_homingDistanceSteps;
 	long m_homingBackoffSteps;
-	long m_finalRetractSteps;
 	int m_homingRapidSps;
 	int m_homingTouchSps;
-	int m_homingTorque;
-	bool m_motor1_hit_rapid;
-	bool m_motor2_hit_rapid;
+	int m_homingBackoffSps;
+	int m_homingAccelSps2;
+
+	bool m_motor1_homed;
+	bool m_motor2_homed;
 
 	float m_smoothedTorqueM1;
 	float m_smoothedTorqueM2;

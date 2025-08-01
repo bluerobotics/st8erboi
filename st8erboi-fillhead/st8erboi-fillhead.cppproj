@@ -59,10 +59,9 @@
     <custom>
       <ToolOptions>
         <InterfaceProperties>
-          <SwdClock>2000001</SwdClock>
+          <SwdClock>0</SwdClock>
         </InterfaceProperties>
-        <InterfaceName>
-        </InterfaceName>
+        <InterfaceName>SWD</InterfaceName>
       </ToolOptions>
       <ToolType>custom</ToolType>
       <ToolNumber>

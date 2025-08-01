@@ -79,7 +79,7 @@ COMMANDS = {
     },
 
     # --- Fillhead Commands ---
-    "MOVE_X": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
+    "MOVE_X": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -2000, "max": 2000},
                                                 {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 200,
                                                  "optional": True, "default": 50},
                                                 {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
@@ -103,18 +103,22 @@ COMMANDS = {
                                                 {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
                                                  "optional": True, "default": 25}],
                "help": "Moves the Fillhead Z-axis by a relative distance."},
-    "HOME_X": {"device": "fillhead",
-               "params": [{"name": "Torque(%)", "type": float, "min": 1, "max": 100, "optional": True, "default": 20},
-                          {"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True,
-                           "default": 500}], "help": "Homes the Fillhead X-axis."},
-    "HOME_Y": {"device": "fillhead",
-               "params": [{"name": "Torque(%)", "type": float, "min": 1, "max": 100, "optional": True, "default": 20},
-                          {"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True,
-                           "default": 500}], "help": "Homes the Fillhead Y-axis."},
-    "HOME_Z": {"device": "fillhead",
-               "params": [{"name": "Torque(%)", "type": float, "min": 1, "max": 100, "optional": True, "default": 20},
-                          {"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True,
-                           "default": 500}], "help": "Homes the Fillhead Z-axis."},
+    # UPDATED: Homing commands now only take an optional max distance.
+    "HOME_X": {
+        "device": "fillhead",
+        "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 2000, "optional": True}],
+        "help": "Homes the Fillhead X-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
+    },
+    "HOME_Y": {
+        "device": "fillhead",
+        "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True}],
+        "help": "Homes the Fillhead Y-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
+    },
+    "HOME_Z": {
+        "device": "fillhead",
+        "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True}],
+        "help": "Homes the Fillhead Z-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
+    },
 
     # --- Simple Commands (No Params) ---
     "PINCH_HOME_MOVE": {"device": "injector", "params": [], "help": "Homes the pinch valve motor."},
