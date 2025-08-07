@@ -18,22 +18,122 @@
 
 #include "injector.h"
 
-void Injector::sendStatus(const char* statusType, const char* message) {
-    char msg[512];
-    snprintf(msg, sizeof(msg), "%s%s", statusType, message);
-    
-    if (guiDiscovered) {
-        udp.Connect(guiIp, guiPort);
-        udp.PacketWrite(msg);
+// -----------------------------------------------------------------------------
+// Queue Management
+// -----------------------------------------------------------------------------
+
+bool Injector::enqueueRx(const char* msg, const IpAddress& ip, uint16_t port) {
+    int next_head = (m_rxQueueHead + 1) % RX_QUEUE_SIZE;
+    if (next_head == m_rxQueueTail) {
+        // Rx Queue is full. Send an immediate error back to the GUI.
+        if(guiDiscovered) {
+            char errorMsg[] = "INJ_ERROR: RX QUEUE OVERFLOW - COMMAND DROPPED";
+            udp.Connect(guiIp, guiPort);
+            udp.PacketWrite(errorMsg);
+            udp.PacketSend();
+        }
+        return false;
+    }
+    strncpy(m_rxQueue[m_rxQueueHead].buffer, msg, MAX_MESSAGE_LENGTH);
+    m_rxQueue[m_rxQueueHead].buffer[MAX_MESSAGE_LENGTH - 1] = '\0'; // Ensure null termination
+    m_rxQueue[m_rxQueueHead].remoteIp = ip;
+    m_rxQueue[m_rxQueueHead].remotePort = port;
+    m_rxQueueHead = next_head;
+    return true;
+}
+
+bool Injector::dequeueRx(Message& msg) {
+    if (m_rxQueueHead == m_rxQueueTail) {
+        // Queue is empty
+        return false;
+    }
+    msg = m_rxQueue[m_rxQueueTail];
+    m_rxQueueTail = (m_rxQueueTail + 1) % RX_QUEUE_SIZE;
+    return true;
+}
+
+bool Injector::enqueueTx(const char* msg, const IpAddress& ip, uint16_t port) {
+    int next_head = (m_txQueueHead + 1) % TX_QUEUE_SIZE;
+    if (next_head == m_txQueueTail) {
+        // Tx Queue is full. Send an immediate error message, bypassing the queue.
+        // This is a critical error, as status messages are being dropped.
+        if(guiDiscovered) {
+            char errorMsg[] = "INJ_ERROR: TX QUEUE OVERFLOW - MESSAGE DROPPED";
+            udp.Connect(guiIp, guiPort);
+            udp.PacketWrite(errorMsg);
+            udp.PacketSend();
+        }
+        return false;
+    }
+    strncpy(m_txQueue[m_txQueueHead].buffer, msg, MAX_MESSAGE_LENGTH);
+    m_txQueue[m_txQueueHead].buffer[MAX_MESSAGE_LENGTH - 1] = '\0'; // Ensure null termination
+    m_txQueue[m_txQueueHead].remoteIp = ip;
+    m_txQueue[m_txQueueHead].remotePort = port;
+    m_txQueueHead = next_head;
+    return true;
+}
+
+bool Injector::dequeueTx(Message& msg) {
+    if (m_txQueueHead == m_txQueueTail) {
+        // Queue is empty
+        return false;
+    }
+    msg = m_txQueue[m_txQueueTail];
+    m_txQueueTail = (m_txQueueTail + 1) % TX_QUEUE_SIZE;
+    return true;
+}
+
+
+// -----------------------------------------------------------------------------
+// Network and Message Processing
+// -----------------------------------------------------------------------------
+
+void Injector::processUdp() {
+    // Process all available packets in the UDP hardware buffer to avoid dropping any during a burst.
+    while (udp.PacketParse()) {
+        IpAddress remoteIp = udp.RemoteIp();
+        uint16_t remotePort = udp.RemotePort();
+        int32_t bytesRead = udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
+        if (bytesRead > 0) {
+            packetBuffer[bytesRead] = '\0';
+            // Enqueue the received message. If the queue is full, enqueueRx will handle the error.
+            enqueueRx((char*)packetBuffer, remoteIp, remotePort);
+        }
+    }
+}
+
+void Injector::processRxQueue() {
+    // Process only ONE message per loop. This keeps the main loop consistently fast.
+    Message msg;
+    if (dequeueRx(msg)) {
+        handleMessage(msg);
+    }
+}
+
+void Injector::processTxQueue() {
+    Message msg;
+    // Send only one message per update loop to keep the loop fast and non-blocking.
+    if (dequeueTx(msg)) {
+        udp.Connect(msg.remoteIp, msg.remotePort);
+        udp.PacketWrite(msg.buffer);
         udp.PacketSend();
     }
-    /*
-    if (peerDiscovered) {
-        udp.Connect(peerIp, LOCAL_PORT);
-        udp.PacketWrite(msg);
-        udp.PacketSend();
-    } */
 }
+
+void Injector::sendStatus(const char* statusType, const char* message) {
+    char fullMsg[MAX_MESSAGE_LENGTH];
+    snprintf(fullMsg, sizeof(fullMsg), "%s%s", statusType, message);
+    
+    // Enqueue the message for the GUI
+    if (guiDiscovered) {
+        enqueueTx(fullMsg, guiIp, guiPort);
+    }
+    // Enqueue the message for the peer if needed
+    if (peerDiscovered) {
+        // Example: enqueueTx(fullMsg, peerIp, LOCAL_PORT);
+    }
+}
+
 
 void Injector::setupSerial(void)
 {
@@ -57,7 +157,6 @@ void Injector::setupEthernet(void)
     }
     
     char ipAddrStr[100];
-    // CORRECTED LINE: Using StringValue() which returns char*
     snprintf(ipAddrStr, sizeof(ipAddrStr), "SetupEthernet: DhcpBegin() successful. IP: %s", EthernetMgr.LocalIp().StringValue());
     ConnectorUsb.SendLine(ipAddrStr);
 
@@ -72,17 +171,8 @@ void Injector::setupEthernet(void)
     ConnectorUsb.SendLine("SetupEthernet: udp.Begin() called for port 8888. Setup Complete.");
 }
 
-void Injector::processUdp() {
-    if (udp.PacketParse()) {
-        int32_t bytesRead = udp.PacketRead(packetBuffer, MAX_PACKET_LENGTH - 1);
-        if (bytesRead > 0) {
-            packetBuffer[bytesRead] = '\0';
-            handleMessage((char*)packetBuffer);
-        }
-    }
-}
-
 void Injector::sendGuiTelemetry(void){
+    if (!guiDiscovered) return;
     
     float displayTorque0 = getSmoothedTorqueEWMA(&ConnectorM0, &smoothedTorqueValue0, &firstTorqueReading0);
     float displayTorque1 = getSmoothedTorqueEWMA(&ConnectorM1, &smoothedTorqueValue1, &firstTorqueReading1);
@@ -130,16 +220,15 @@ void Injector::sendGuiTelemetry(void){
         current_target_for_telemetry = 0.0f;
     }
 
-    // Changed "---" to "0.0" for invalid torque to prevent GUI parsing errors.
     char torque0Str[16], torque1Str[16], torque2Str[16], torque3Str[16];
     if (displayTorque0 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque0Str, "0.0"); } else { snprintf(torque0Str, sizeof(torque0Str), "%.2f", displayTorque0); }
     if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque1Str, "0.0"); } else { snprintf(torque1Str, sizeof(torque1Str), "%.2f", displayTorque1); }
     if (displayTorque2 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque2Str, "0.0"); } else { snprintf(torque2Str, sizeof(torque2Str), "%.2f", displayTorque2); }
     if (displayTorque3 == TORQUE_SENTINEL_INVALID_VALUE) { strcpy(torque3Str, "0.0"); } else { snprintf(torque3Str, sizeof(torque3Str), "%.2f", displayTorque3); }
 
-    // --- FIX: Assemble telemetry with M3 data ---
-    char msg[1024]; // Increased buffer size for new fields
-    snprintf(msg, sizeof(msg),
+    // Assemble telemetry message into buffer, now with the required prefix
+    snprintf(telemetryBuffer, sizeof(telemetryBuffer),
+    TELEM_PREFIX_GUI
     "MAIN_STATE:%s,HOMING_STATE:%s,HOMING_PHASE:%s,FEED_STATE:%s,ERROR_STATE:%s,"
     "torque0:%s,hlfb0:%d,enabled0:%d,pos_mm0:%.2f,homed0:%d,"
     "torque1:%s,hlfb1:%d,enabled1:%d,pos_mm1:%.2f,homed1:%d,"
@@ -161,7 +250,8 @@ void Injector::sendGuiTelemetry(void){
     temperatureCelsius, (int)vacuumOn, vacuumPressurePsig, heaterStateStr(),
     pid_setpoint, pid_kp, pid_ki, pid_kd, pid_output);
 
-    sendStatus(TELEM_PREFIX_GUI, msg);
+    // Enqueue the telemetry message instead of sending directly
+    enqueueTx(telemetryBuffer, guiIp, guiPort);
 }
 
 UserCommand Injector::parseCommand(const char *msg) {
@@ -201,15 +291,15 @@ UserCommand Injector::parseCommand(const char *msg) {
 }
 
 
-void Injector::handleMessage(const char *msg) {
-    UserCommand command = parseCommand(msg);
+void Injector::handleMessage(const Message& msg) {
+    UserCommand command = parseCommand(msg.buffer);
 
     switch (command) {
         case CMD_REQUEST_TELEM:             sendGuiTelemetry(); break;
         case CMD_DISCOVER: {
-            char* portStr = strstr(msg, "PORT=");
+            char* portStr = strstr(msg.buffer, "PORT=");
             if (portStr) {
-                guiIp = udp.RemoteIp();
+                guiIp = msg.remoteIp;
                 guiPort = atoi(portStr + 5);
                 guiDiscovered = true;
                 sendStatus(STATUS_PREFIX_DISCOVERY, "INJECTOR DISCOVERED");
@@ -220,30 +310,29 @@ void Injector::handleMessage(const char *msg) {
         case CMD_DISABLE:                   handleDisable(); break;
         case CMD_ABORT:                     handleAbort(); break;
         case CMD_CLEAR_ERRORS:              handleClearErrors(); break;
-        case CMD_SET_TORQUE_OFFSET:         handleSetinjectorMotorsTorqueOffset(msg); break;
-        case CMD_JOG_MOVE:                  handleJogMove(msg); break;
+        case CMD_SET_TORQUE_OFFSET:         handleSetinjectorMotorsTorqueOffset(msg.buffer); break;
+        case CMD_JOG_MOVE:                  handleJogMove(msg.buffer); break;
         case CMD_MACHINE_HOME_MOVE:         handleMachineHomeMove(); break;
         case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHomeMove(); break;
-        case CMD_INJECT_MOVE:               handleInjectMove(msg); break;
-        case CMD_PURGE_MOVE:                handlePurgeMove(msg); break;
+        case CMD_INJECT_MOVE:               handleInjectMove(msg.buffer); break;
+        case CMD_PURGE_MOVE:                handlePurgeMove(msg.buffer); break;
         case CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(); break;
-        case CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(msg); break;
+        case CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(msg.buffer); break;
         case CMD_PAUSE_INJECTION:           handlePauseOperation(); break;
         case CMD_RESUME_INJECTION:          handleResumeOperation(); break;
-        // CORRECTED: Typo in CMD_CANCEL_INJECTION
         case CMD_CANCEL_INJECTION:          handleCancelOperation(); break;
         case CMD_PINCH_HOME_MOVE:           handlePinchHomeMove(); break;
-        case CMD_PINCH_JOG_MOVE:            handlePinchJogMove(msg); break;
+        case CMD_PINCH_JOG_MOVE:            handlePinchJogMove(msg.buffer); break;
         case CMD_ENABLE_PINCH:              handleEnablePinch(); break;
         case CMD_DISABLE_PINCH:             handleDisablePinch(); break;
-        case CMD_SET_PEER_IP:               handleSetPeerIp(msg); break;
+        case CMD_SET_PEER_IP:               handleSetPeerIp(msg.buffer); break;
         case CMD_CLEAR_PEER_IP:             handleClearPeerIp(); break;
         case CMD_HEATER_ON:                 handleHeaterOn(); break;
         case CMD_HEATER_OFF:                handleHeaterOff(); break;
         case CMD_VACUUM_ON:                 handleVacuumOn(); break;
         case CMD_VACUUM_OFF:                handleVacuumOff(); break;
-        case CMD_SET_HEATER_GAINS:          handleSetHeaterGains(msg); break;
-        case CMD_SET_HEATER_SETPOINT:       handleSetHeaterSetpoint(msg); break;
+        case CMD_SET_HEATER_GAINS:          handleSetHeaterGains(msg.buffer); break;
+        case CMD_SET_HEATER_SETPOINT:       handleSetHeaterSetpoint(msg.buffer); break;
         case CMD_HEATER_PID_ON:             handleHeaterPidOn(); break;
         case CMD_HEATER_PID_OFF:            handleHeaterPidOff(); break;
 
