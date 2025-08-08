@@ -7,7 +7,7 @@
 //==================================================================================================
 #define LOCAL_PORT                      8888      // The UDP port this device listens on for incoming commands.
 #define MAX_PACKET_LENGTH               1024      // Maximum size in bytes for a single UDP packet. Should be large enough for telemetry.
-#define RX_QUEUE_SIZE                   16        // Number of incoming messages that can be buffered before processing.
+#define RX_QUEUE_SIZE                   32        // Number of incoming messages that can be buffered before processing.
 #define TX_QUEUE_SIZE                   32        // Number of outgoing messages that can be buffered before sending.
 #define MAX_MESSAGE_LENGTH              MAX_PACKET_LENGTH // Maximum size of a single message in the Rx/Tx queues.
 
@@ -48,25 +48,35 @@
 //==================================================================================================
 // Sensor & Control Parameters
 //==================================================================================================
+
+#define SENSOR_SAMPLE_INTERVAL_MS       100       // How often (in ms) to sample temperature and vacuum sensors.
+#define EWMA_ALPHA_SENSORS              0.5f      // Smoothing factor for the Exponentially Weighted Moving Average on sensor readings.
+#define EWMA_ALPHA_TORQUE               0.2f      // Smoothing factor for the EWMA on motor torque readings.
+
+
+// --- Heater Setup Defaults --
 #define TC_V_REF                        10.0f     // ADC reference voltage (10V for ClearCore analog inputs).
 #define TC_V_OFFSET                     1.25f     // Thermocouple sensor's output voltage at 0 degrees Celsius.
 #define TC_GAIN                         200.0f    // Conversion factor from volts to degrees Celsius for the thermocouple.
 #define PID_UPDATE_INTERVAL_MS          100       // How often (in ms) the PID calculation for the heater is performed.
 #define PID_PWM_PERIOD_MS               1000      // Time window (in ms) for the time-proportioned heater relay control.
-#define SENSOR_SAMPLE_INTERVAL_MS       100       // How often (in ms) to sample temperature and vacuum sensors.
+
+// --- Vacuum Setup Defaults ---
 #define VAC_V_OUT_MIN                   1.0f      // Sensor voltage at minimum pressure (-14.7 PSIG).
 #define VAC_V_OUT_MAX                   5.0f      // Sensor voltage at maximum pressure (15.0 PSIG).
 #define VAC_PRESSURE_MIN                -14.7f    // Minimum pressure in PSIG that the sensor can read.
 #define VAC_PRESSURE_MAX                15.0f     // Maximum pressure in PSIG that the sensor can read.
 #define VACUUM_PSIG_OFFSET              0.0f      // A calibration offset for the vacuum sensor reading.
-#define EWMA_ALPHA_SENSORS              0.5f      // Smoothing factor for the Exponentially Weighted Moving Average on sensor readings.
-#define EWMA_ALPHA_TORQUE               0.2f      // Smoothing factor for the EWMA on motor torque readings.
-#define TORQUE_SENTINEL_INVALID_VALUE   -9999.0f  // A value indicating that the torque reading is invalid.
+#define DEFAULT_VACUUM_TARGET_PSIG      -12.0f    // Default target pressure in PSIG.
+#define DEFAULT_VACUUM_RAMP_TIMEOUT_MS  15000     // Default time (15s) to reach target pressure.
+#define DEFAULT_LEAK_TEST_DELTA_PSIG    0.1f      // Default max allowed pressure drop during a leak test.
+#define DEFAULT_LEAK_TEST_DURATION_MS   10000     // Default duration (10s) for a leak test.
 
 //==================================================================================================
 // Motion & Operation Defaults
 //==================================================================================================
 // --- Motor Setup Defaults ---
+#define TORQUE_SENTINEL_INVALID_VALUE		-9999.0f  // A value indicating that the torque reading is invalid.
 #define MOTOR_DEFAULT_VEL_MAX_MMS           156.25f   // Default maximum velocity for motors in mm/s.
 #define MOTOR_DEFAULT_ACCEL_MAX_MMSS        625.0f    // Default maximum acceleration for motors in mm/s^2.
 #define MOTOR_DEFAULT_VEL_MAX_SPS           (int)(MOTOR_DEFAULT_VEL_MAX_MMS * STEPS_PER_MM_INJECTOR)
@@ -141,15 +151,20 @@
 #define CMD_STR_VACUUM_VALVE_CLOSE          "VACUUM_VALVE_CLOSE"
 #define CMD_STR_VACUUM_VALVE_JOG            "VACUUM_VALVE_JOG "
 
-// --- Peripheral Commands ---
-#define CMD_STR_VACUUM_ON                   "VACUUM_ON"
-#define CMD_STR_VACUUM_OFF                  "VACUUM_OFF"
+// --- Heater Commands ---
 #define CMD_STR_HEATER_ON                   "HEATER_ON"
 #define CMD_STR_HEATER_OFF                  "HEATER_OFF"
 #define CMD_STR_SET_HEATER_GAINS            "SET_HEATER_GAINS "
 #define CMD_STR_SET_HEATER_SETPOINT         "SET_HEATER_SETPOINT "
-#define CMD_STR_HEATER_PID_ON               "HEATER_PID_ON"
-#define CMD_STR_HEATER_PID_OFF              "HEATER_PID_OFF"
+
+// --- Vacuum Commands ---
+#define CMD_STR_VACUUM_ON                       "VACUUM_ON"
+#define CMD_STR_VACUUM_OFF                      "VACUUM_OFF"
+#define CMD_STR_VACUUM_LEAK_TEST                "VACUUM_LEAK_TEST"
+#define CMD_STR_SET_VACUUM_TARGET               "SET_VACUUM_TARGET "
+#define CMD_STR_SET_VACUUM_TIMEOUT_S            "SET_VACUUM_TIMEOUT_S "
+#define CMD_STR_SET_LEAK_TEST_DELTA             "SET_LEAK_TEST_DELTA "
+#define CMD_STR_SET_LEAK_TEST_DURATION_S        "SET_LEAK_TEST_DURATION_S "
 
 // --- Telemetry & Status Prefixes ---
 #define TELEM_PREFIX_GUI                    "INJ_TELEM_GUI:"
@@ -221,8 +236,16 @@ enum ErrorState : uint8_t {
 // Defines the operational state of the heater.
 enum HeaterState: uint8_t {
 	HEATER_OFF,         // Heater is off.
-	HEATER_MANUAL_ON,   // Heater is forced on, bypassing PID control.
 	HEATER_PID_ACTIVE   // Heater is being controlled by the PID loop.
+};
+
+// Defines the operational state of the vacuum system.
+enum VacuumState : uint8_t {
+	VACUUM_OFF,         // The vacuum pump is off.
+	VACUUM_RAMPING_UP,  // The pump is on and pulling down to the target pressure.
+	VACUUM_ACTIVE,      // The target pressure has been reached and is being held.
+	VACUUM_LEAK_TESTING,// The system is holding pressure and monitoring for a leak.
+	VACUUM_ERROR        // The system failed to reach target pressure or failed a leak test.
 };
 
 // Maps all command strings to a single enum for easier parsing.
@@ -248,12 +271,15 @@ typedef enum {
 	CMD_CLEAR_PEER_IP,
 	CMD_VACUUM_ON,
 	CMD_VACUUM_OFF,
+	CMD_VACUUM_LEAK_TEST,
+	CMD_SET_VACUUM_TARGET,
+	CMD_SET_VACUUM_TIMEOUT_S,
+	CMD_SET_LEAK_TEST_DELTA,
+	CMD_SET_LEAK_TEST_DURATION_S,
 	CMD_HEATER_ON,
 	CMD_HEATER_OFF,
 	CMD_SET_HEATER_GAINS,
 	CMD_SET_HEATER_SETPOINT,
-	CMD_HEATER_PID_ON,
-	CMD_HEATER_PID_OFF,
 	CMD_INJECTION_VALVE_HOME,
 	CMD_INJECTION_VALVE_OPEN,
 	CMD_INJECTION_VALVE_CLOSE,

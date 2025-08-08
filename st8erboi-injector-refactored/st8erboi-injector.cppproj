@@ -244,31 +244,25 @@
     <PostBuildEvent>"$(SolutionDir)\..\Tools\uf2-builder\Release\uf2-builder.exe" "$(OutputDirectory)\$(OutputFileName).bin" "$(OutputDirectory)\$(OutputFileName).uf2"</PostBuildEvent>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="pinch_valve.cpp">
+    <Compile Include="inc\fillhead.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="heater_controller.cpp">
+    <Compile Include="inc\heater.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="heater_controller.h">
+    <Compile Include="inc\comms.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="pinch_valve.h">
+    <Compile Include="inc\config.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="injector_comms.h">
+    <Compile Include="inc\injector.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="injector_config.h">
+    <Compile Include="inc\pinch_valve.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="injector_controller.cpp">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="injector_controller.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="injector_comms.cpp">
+    <Compile Include="inc\vacuum.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="Device_Startup\flash_with_bootloader.ld">
@@ -277,16 +271,22 @@
     <Compile Include="Device_Startup\startup_same53.c">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="motor_controller.cpp">
+    <Compile Include="src\fillhead.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="motor_controller.h">
+    <Compile Include="src\heater.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="vacuum_controller.cpp">
+    <Compile Include="src\comms.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="vacuum_controller.h">
+    <Compile Include="src\injector.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\pinch_valve.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\vacuum.cpp">
       <SubType>compile</SubType>
     </Compile>
     <None Include="Device_Startup\flash_without_bootloader.ld">
@@ -295,6 +295,8 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Device_Startup\" />
+    <Folder Include="inc" />
+    <Folder Include="src" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\libClearCore\ClearCore.cppproj">

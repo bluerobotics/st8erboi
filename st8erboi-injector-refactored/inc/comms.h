@@ -3,7 +3,7 @@
 #include "ClearCore.h"
 #include "EthernetUdp.h"
 #include "IpAddress.h"
-#include "injector_config.h"
+#include "config.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>

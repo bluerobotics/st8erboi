@@ -1,7 +1,7 @@
 #pragma once
 
-#include "injector_config.h"
-#include "injector_comms.h"
+#include "config.h"
+#include "injector_comms.h" // Assumes this is your comms class file
 
 class HeaterController {
 	public:
@@ -14,21 +14,23 @@ class HeaterController {
 
 	private:
 	InjectorComms* m_comms;
-
 	HeaterState m_heaterState;
+
+	// Sensor readings
 	float m_temperatureCelsius;
 	float m_smoothedTemperatureCelsius;
 	bool m_firstTempReading;
-	
+
 	// PID variables
 	float m_pid_setpoint;
-	float m_pid_kp, m_pid_ki, m_pid_kd;
+	float m_pid_kp;
+	float m_pid_ki;
+	float m_pid_kd;
 	float m_pid_integral;
 	float m_pid_last_error;
 	uint32_t m_pid_last_time;
 	float m_pid_output;
-
-	char m_telemetryBuffer[128];
+	char m_telemetryBuffer[256];
 
 	void resetPid();
 
@@ -37,6 +39,4 @@ class HeaterController {
 	void handleHeaterOff();
 	void handleSetGains(const char* args);
 	void handleSetSetpoint(const char* args);
-	void handlePidOn();
-	void handlePidOff();
 };
