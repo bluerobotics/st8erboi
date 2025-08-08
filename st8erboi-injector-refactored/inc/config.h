@@ -60,6 +60,11 @@
 #define TC_GAIN                         200.0f    // Conversion factor from volts to degrees Celsius for the thermocouple.
 #define PID_UPDATE_INTERVAL_MS          100       // How often (in ms) the PID calculation for the heater is performed.
 #define PID_PWM_PERIOD_MS               1000      // Time window (in ms) for the time-proportioned heater relay control.
+#define DEFAULT_HEATER_SETPOINT_C       70.0f     // Default target temperature in Celsius.
+#define DEFAULT_HEATER_KP               60.0f     // Default Proportional gain.
+#define DEFAULT_HEATER_KI               2.5f      // Default Integral gain.
+#define DEFAULT_HEATER_KD               40.0f     // Default Derivative gain.
+
 
 // --- Vacuum Setup Defaults ---
 #define VAC_V_OUT_MIN                   1.0f      // Sensor voltage at minimum pressure (-14.7 PSIG).
@@ -71,6 +76,7 @@
 #define DEFAULT_VACUUM_RAMP_TIMEOUT_MS  15000     // Default time (15s) to reach target pressure.
 #define DEFAULT_LEAK_TEST_DELTA_PSIG    0.1f      // Default max allowed pressure drop during a leak test.
 #define DEFAULT_LEAK_TEST_DURATION_MS   10000     // Default duration (10s) for a leak test.
+#define VACUUM_SETTLE_TIME_S            2.0f      // Time (in s) to let pressure settle before a leak test.
 
 //==================================================================================================
 // Motion & Operation Defaults
@@ -241,11 +247,12 @@ enum HeaterState: uint8_t {
 
 // Defines the operational state of the vacuum system.
 enum VacuumState : uint8_t {
-	VACUUM_OFF,         // The vacuum pump is off.
-	VACUUM_RAMPING_UP,  // The pump is on and pulling down to the target pressure.
-	VACUUM_ACTIVE,      // The target pressure has been reached and is being held.
-	VACUUM_LEAK_TESTING,// The system is holding pressure and monitoring for a leak.
-	VACUUM_ERROR        // The system failed to reach target pressure or failed a leak test.
+	VACUUM_OFF,             // The vacuum pump and valve are off.
+	VACUUM_PULLDOWN,        // The pump is on, pulling down to the target pressure for a leak test.
+	VACUUM_SETTLING,        // The pump is off, allowing pressure to stabilize before a leak test.
+	VACUUM_LEAK_TESTING,    // The system is holding vacuum and monitoring for pressure changes.
+	VACUUM_ACTIVE_HOLD,     // The pump is actively maintaining the target pressure.
+	VACUUM_ERROR            // The system failed to reach target or failed a leak test.
 };
 
 // Maps all command strings to a single enum for easier parsing.

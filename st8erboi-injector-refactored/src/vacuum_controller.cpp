@@ -1,8 +1,8 @@
-#include "vacuum.h"
+#include "vacuum_controller.h"
 #include <cstdio>
 #include <cstdlib>
 
-VacuumController::VacuumController(InjectorComms* comms) {
+VacuumController::VacuumController(CommsController* comms) {
 	m_comms = comms;
 	m_state = VACUUM_OFF;
 	m_vacuumPressurePsig = 0.0f;
@@ -11,11 +11,11 @@ VacuumController::VacuumController(InjectorComms* comms) {
 	m_stateStartTimeMs = 0;
 	m_leakTestStartPressure = 0.0f;
 
-	// Initialize parameters with default values from config
+	// Initialize parameters with default values from config, converting MS to S
 	m_targetPsig = DEFAULT_VACUUM_TARGET_PSIG;
-	m_rampTimeoutSec = DEFAULT_VACUUM_RAMP_TIMEOUT_S;
+	m_rampTimeoutSec = (float)DEFAULT_VACUUM_RAMP_TIMEOUT_MS / 1000.0f;
 	m_leakTestDeltaPsig = DEFAULT_LEAK_TEST_DELTA_PSIG;
-	m_leakTestDurationSec = DEFAULT_LEAK_TEST_DURATION_S;
+	m_leakTestDurationSec = (float)DEFAULT_LEAK_TEST_DURATION_MS / 1000.0f;
 }
 
 void VacuumController::setup() {
@@ -28,6 +28,7 @@ void VacuumController::setup() {
 }
 
 void VacuumController::handleCommand(UserCommand cmd, const char* args) {
+	// Prevent starting a new operation if one is already in progress (except for turning off)
 	if (m_state != VACUUM_OFF && m_state != VACUUM_ACTIVE_HOLD) {
 		if (cmd == CMD_VACUUM_ON || cmd == CMD_VACUUM_LEAK_TEST) {
 			m_comms->sendStatus(STATUS_PREFIX_ERROR, "Vacuum command ignored: An operation is already in progress.");
@@ -44,6 +45,7 @@ void VacuumController::handleCommand(UserCommand cmd, const char* args) {
 		case CMD_SET_LEAK_TEST_DELTA:       handleSetLeakDelta(args); break;
 		case CMD_SET_LEAK_TEST_DURATION_S:  handleSetLeakDuration(args); break;
 		default:
+		// Not a vacuum command, ignore.
 		break;
 	}
 }
@@ -52,7 +54,7 @@ void VacuumController::handleVacuumOn() {
 	m_comms->sendStatus(STATUS_PREFIX_START, "VACUUM_ON received. Actively holding target pressure.");
 	m_state = VACUUM_ACTIVE_HOLD;
 	PIN_VACUUM_RELAY.State(true);
-	PIN_VACUUM_VALVE_RELAY.State(true);
+	PIN_VACUUM_VALVE_RELAY.State(true); // Assuming valve should be open
 }
 
 void VacuumController::handleVacuumOff() {
@@ -69,11 +71,12 @@ void VacuumController::handleLeakTest() {
 	m_state = VACUUM_PULLDOWN;
 	m_stateStartTimeMs = Milliseconds();
 	PIN_VACUUM_RELAY.State(true);
-	PIN_VACUUM_VALVE_RELAY.State(true);
+	PIN_VACUUM_VALVE_RELAY.State(true); // Open valve to pull vacuum
 }
 
 void VacuumController::updateState() {
-	if (m_state == VACUUM_OFF || m_state == VACUUM_ACTIVE_HOLD) {
+	// These states are terminal or passive, no automatic transitions needed.
+	if (m_state == VACUUM_OFF || m_state == VACUUM_ACTIVE_HOLD || m_state == VACUUM_ERROR) {
 		return;
 	}
 
@@ -81,8 +84,8 @@ void VacuumController::updateState() {
 
 	if (m_state == VACUUM_PULLDOWN) {
 		if (m_vacuumPressurePsig <= m_targetPsig) {
-			PIN_VACUUM_RELAY.State(false);
-			PIN_VACUUM_VALVE_RELAY.State(false);
+			PIN_VACUUM_RELAY.State(false);      // Pump off
+			PIN_VACUUM_VALVE_RELAY.State(false);  // Close valve to seal system
 			m_comms->sendStatus(STATUS_PREFIX_INFO, "Leak Test: Target reached. Pump off. Settling...");
 			m_state = VACUUM_SETTLING;
 			m_stateStartTimeMs = Milliseconds();

@@ -15,9 +15,9 @@ struct Message {
 	uint16_t remotePort;
 };
 
-class InjectorComms {
+class CommsController {
 	public:
-	InjectorComms();
+	CommsController();
 	void setup();
 	void update();
 

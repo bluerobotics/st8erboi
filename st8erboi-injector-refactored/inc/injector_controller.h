@@ -1,15 +1,17 @@
 #pragma once
 
 #include "config.h"
-#include "injector_comms.h"
+#include "comms_controller.h"
 
 class Injector {
 public:
     /**
      * @brief Construct a new Injector motor controller.
+     * @param motorA A pointer to the first injector motor connector (e.g., &ConnectorM0).
+     * @param motorB A pointer to the second injector motor connector (e.g., &ConnectorM1).
      * @param comms A pointer to the shared communications object for sending status messages.
      */
-    Injector(InjectorComms* comms);
+    Injector(MotorDriver* motorA, MotorDriver* motorB, CommsController* comms);
 
     /**
      * @brief Initializes the hardware configuration for the injector motors.
@@ -55,7 +57,9 @@ public:
     void resetState();
 
 private:
-    InjectorComms* m_comms;
+    CommsController* m_comms;
+    MotorDriver* m_motorA;
+    MotorDriver* m_motorB;
 
     // State Machines
     HomingState m_homingState;

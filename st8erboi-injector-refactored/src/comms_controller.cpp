@@ -1,6 +1,6 @@
-#include "injector_comms.h"
+#include "comms_controller.h"
 
-InjectorComms::InjectorComms() {
+CommsController::CommsController() {
 	m_guiDiscovered = false;
 	m_guiPort = 0;
 	m_peerDiscovered = false;
@@ -11,17 +11,17 @@ InjectorComms::InjectorComms() {
 	m_txQueueTail = 0;
 }
 
-void InjectorComms::setup() {
+void CommsController::setup() {
 	setupUsbSerial();
 	setupEthernet();
 }
 
-void InjectorComms::update() {
+void CommsController::update() {
 	processUdp();
 	processTxQueue();
 }
 
-bool InjectorComms::enqueueRx(const char* msg, const IpAddress& ip, uint16_t port) {
+bool CommsController::enqueueRx(const char* msg, const IpAddress& ip, uint16_t port) {
 	int next_head = (m_rxQueueHead + 1) % RX_QUEUE_SIZE;
 	if (next_head == m_rxQueueTail) {
 		if(m_guiDiscovered) {
@@ -40,7 +40,7 @@ bool InjectorComms::enqueueRx(const char* msg, const IpAddress& ip, uint16_t por
 	return true;
 }
 
-bool InjectorComms::dequeueRx(Message& msg) {
+bool CommsController::dequeueRx(Message& msg) {
 	if (m_rxQueueHead == m_rxQueueTail) {
 		return false;
 	}
@@ -49,7 +49,7 @@ bool InjectorComms::dequeueRx(Message& msg) {
 	return true;
 }
 
-bool InjectorComms::enqueueTx(const char* msg, const IpAddress& ip, uint16_t port) {
+bool CommsController::enqueueTx(const char* msg, const IpAddress& ip, uint16_t port) {
 	int next_head = (m_txQueueHead + 1) % TX_QUEUE_SIZE;
 	if (next_head == m_txQueueTail) {
 		if(m_guiDiscovered) {
@@ -68,7 +68,7 @@ bool InjectorComms::enqueueTx(const char* msg, const IpAddress& ip, uint16_t por
 	return true;
 }
 
-void InjectorComms::processUdp() {
+void CommsController::processUdp() {
 	while (m_udp.PacketParse()) {
 		IpAddress remoteIp = m_udp.RemoteIp();
 		uint16_t remotePort = m_udp.RemotePort();
@@ -82,7 +82,7 @@ void InjectorComms::processUdp() {
 	}
 }
 
-void InjectorComms::processTxQueue() {
+void CommsController::processTxQueue() {
 	if (m_txQueueHead != m_txQueueTail) {
 		Message msg = m_txQueue[m_txQueueTail];
 		m_txQueueTail = (m_txQueueTail + 1) % TX_QUEUE_SIZE;
@@ -92,7 +92,7 @@ void InjectorComms::processTxQueue() {
 	}
 }
 
-void InjectorComms::sendStatus(const char* statusType, const char* message) {
+void CommsController::sendStatus(const char* statusType, const char* message) {
 	char fullMsg[MAX_MESSAGE_LENGTH];
 	snprintf(fullMsg, sizeof(fullMsg), "%s%s", statusType, message);
 	
@@ -104,7 +104,7 @@ void InjectorComms::sendStatus(const char* statusType, const char* message) {
 	}
 }
 
-void InjectorComms::setupUsbSerial(void) {
+void CommsController::setupUsbSerial(void) {
 	ConnectorUsb.Mode(Connector::USB_CDC);
 	ConnectorUsb.Speed(9600);
 	ConnectorUsb.PortOpen();
@@ -113,7 +113,7 @@ void InjectorComms::setupUsbSerial(void) {
 	while (!ConnectorUsb && Milliseconds() - start < timeout);
 }
 
-void InjectorComms::setupEthernet() {
+void CommsController::setupEthernet() {
 	EthernetMgr.Setup();
 
 	if (!EthernetMgr.DhcpBegin()) {
@@ -127,55 +127,75 @@ void InjectorComms::setupEthernet() {
 	m_udp.Begin(LOCAL_PORT);
 }
 
-void InjectorComms::setPeerIp(const IpAddress& ip) {
-	if (strcmp(ip.StringValue(), "0.0.0.0") == 0) {
+void CommsController::setPeerIp(const IpAddress& ip) {
+	// Create a non-const copy to safely call StringValue(), which is not a const method.
+	IpAddress tempIp = ip;
+	if (strcmp(tempIp.StringValue(), "0.0.0.0") == 0) {
 		m_peerDiscovered = false;
 		sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
 		} else {
 		m_peerIp = ip;
 		m_peerDiscovered = true;
 		char response[100];
-		snprintf(response, sizeof(response), "Peer IP set to %s", ip.StringValue());
+		snprintf(response, sizeof(response), "Peer IP set to %s", tempIp.StringValue());
 		sendStatus(STATUS_PREFIX_INFO, response);
 	}
 }
 
-void InjectorComms::clearPeerIp() {
+void CommsController::clearPeerIp() {
 	m_peerDiscovered = false;
 	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }
 
-UserCommand InjectorComms::parseCommand(const char* msg) {
+UserCommand CommsController::parseCommand(const char* msg) {
+	// General Commands
 	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
 	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS;
+	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
+	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
+
+	// Injector Motion Commands
 	if (strncmp(msg, CMD_STR_SET_INJECTOR_TORQUE_OFFSET, strlen(CMD_STR_SET_INJECTOR_TORQUE_OFFSET)) == 0) return CMD_SET_INJECTOR_TORQUE_OFFSET;
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
 	if (strcmp(msg, CMD_STR_MACHINE_HOME_MOVE) == 0) return CMD_MACHINE_HOME_MOVE;
 	if (strcmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE) == 0) return CMD_CARTRIDGE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_INJECT_MOVE, strlen(CMD_STR_INJECT_MOVE)) == 0) return CMD_INJECT_MOVE;
-	if (strncmp(msg, CMD_STR_PURGE_MOVE, strlen(CMD_STR_PURGE_MOVE)) == 0) return CMD_PURGE_MOVE;
 	if (strcmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
 	if (strncmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
 	if (strcmp(msg, CMD_STR_PAUSE_INJECTION) == 0) return CMD_PAUSE_INJECTION;
 	if (strcmp(msg, CMD_STR_RESUME_INJECTION) == 0) return CMD_RESUME_INJECTION;
 	if (strcmp(msg, CMD_STR_CANCEL_INJECTION) == 0) return CMD_CANCEL_INJECTION;
-	if (strcmp(msg, CMD_STR_PINCH_HOME_MOVE) == 0) return CMD_PINCH_HOME_MOVE;
-	if (strncmp(msg, CMD_STR_PINCH_JOG_MOVE, strlen(CMD_STR_PINCH_JOG_MOVE)) == 0) return CMD_PINCH_JOG_MOVE;
-	if (strcmp(msg, CMD_STR_ENABLE_PINCH) == 0) return CMD_ENABLE_PINCH;
-	if (strcmp(msg, CMD_STR_DISABLE_PINCH) == 0) return CMD_DISABLE_PINCH;
-	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
-	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
+
+	// Injection Valve Commands
+	if (strcmp(msg, CMD_STR_INJECTION_VALVE_HOME) == 0) return CMD_INJECTION_VALVE_HOME;
+	if (strcmp(msg, CMD_STR_INJECTION_VALVE_OPEN) == 0) return CMD_INJECTION_VALVE_OPEN;
+	if (strcmp(msg, CMD_STR_INJECTION_VALVE_CLOSE) == 0) return CMD_INJECTION_VALVE_CLOSE;
+	if (strncmp(msg, CMD_STR_INJECTION_VALVE_JOG, strlen(CMD_STR_INJECTION_VALVE_JOG)) == 0) return CMD_INJECTION_VALVE_JOG;
+
+	// Vacuum Valve Commands
+	if (strcmp(msg, CMD_STR_VACUUM_VALVE_HOME) == 0) return CMD_VACUUM_VALVE_HOME;
+	if (strcmp(msg, CMD_STR_VACUUM_VALVE_OPEN) == 0) return CMD_VACUUM_VALVE_OPEN;
+	if (strcmp(msg, CMD_STR_VACUUM_VALVE_CLOSE) == 0) return CMD_VACUUM_VALVE_CLOSE;
+	if (strncmp(msg, CMD_STR_VACUUM_VALVE_JOG, strlen(CMD_STR_VACUUM_VALVE_JOG)) == 0) return CMD_VACUUM_VALVE_JOG;
+
+	// Heater Commands
 	if (strcmp(msg, CMD_STR_HEATER_ON) == 0) return CMD_HEATER_ON;
 	if (strcmp(msg, CMD_STR_HEATER_OFF) == 0) return CMD_HEATER_OFF;
-	if (strcmp(msg, CMD_STR_VACUUM_ON) == 0) return CMD_VACUUM_ON;
-	if (strcmp(msg, CMD_STR_VACUUM_OFF) == 0) return CMD_VACUUM_OFF;
 	if (strncmp(msg, CMD_STR_SET_HEATER_GAINS, strlen(CMD_STR_SET_HEATER_GAINS)) == 0) return CMD_SET_HEATER_GAINS;
 	if (strncmp(msg, CMD_STR_SET_HEATER_SETPOINT, strlen(CMD_STR_SET_HEATER_SETPOINT)) == 0) return CMD_SET_HEATER_SETPOINT;
-	if (strcmp(msg, CMD_STR_HEATER_PID_ON) == 0) return CMD_HEATER_PID_ON;
-	if (strcmp(msg, CMD_STR_HEATER_PID_OFF) == 0) return CMD_HEATER_PID_OFF;
+
+	// Vacuum Commands
+	if (strcmp(msg, CMD_STR_VACUUM_ON) == 0) return CMD_VACUUM_ON;
+	if (strcmp(msg, CMD_STR_VACUUM_OFF) == 0) return CMD_VACUUM_OFF;
+	if (strcmp(msg, CMD_STR_VACUUM_LEAK_TEST) == 0) return CMD_VACUUM_LEAK_TEST;
+	if (strncmp(msg, CMD_STR_SET_VACUUM_TARGET, strlen(CMD_STR_SET_VACUUM_TARGET)) == 0) return CMD_SET_VACUUM_TARGET;
+	if (strncmp(msg, CMD_STR_SET_VACUUM_TIMEOUT_S, strlen(CMD_STR_SET_VACUUM_TIMEOUT_S)) == 0) return CMD_SET_VACUUM_TIMEOUT_S;
+	if (strncmp(msg, CMD_STR_SET_LEAK_TEST_DELTA, strlen(CMD_STR_SET_LEAK_TEST_DELTA)) == 0) return CMD_SET_LEAK_TEST_DELTA;
+	if (strncmp(msg, CMD_STR_SET_LEAK_TEST_DURATION_S, strlen(CMD_STR_SET_LEAK_TEST_DURATION_S)) == 0) return CMD_SET_LEAK_TEST_DURATION_S;
+
 	return CMD_UNKNOWN;
 }

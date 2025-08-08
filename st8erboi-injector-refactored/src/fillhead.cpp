@@ -26,19 +26,19 @@
 /**
  * @brief Constructs the Fillhead master controller.
  * @details This constructor uses a member initializer list to instantiate all the
- * specialized sub-controllers. The InjectorComms object is created first,
+ * specialized sub-controllers. The CommsController object is created first,
  * as its pointer is passed to the other controllers, enabling them to
  * send status messages and telemetry.
  */
 Fillhead::Fillhead() :
-    // The InjectorComms object MUST be constructed first.
+    // The CommsController object MUST be constructed first.
     m_comms(),
     // Pass the comms pointer to all sub-controllers that need it.
-    m_injector(&m_comms),
-    m_injectionValve("inj_valve", &MOTOR_INJECTION_VALVE, &m_comms),
+    m_injector(&MOTOR_INJECTOR_A, &MOTOR_INJECTOR_B, &m_comms),
+    m_injectorValve("inj_valve", &MOTOR_INJECTION_VALVE, &m_comms),
     m_vacuumValve("vac_valve", &MOTOR_VACUUM_VALVE, &m_comms),
-    m_heaterController(&m_comms),
-    m_vacuumController(&m_comms)
+    m_heater(&m_comms),
+    m_vacuum(&m_comms)
 {
     // Initialize the main system state.
     m_mainState = STANDBY_MODE;
@@ -60,10 +60,10 @@ Fillhead::Fillhead() :
 void Fillhead::setup() {
     m_comms.setup();
     m_injector.setup();
-    m_injectionValve.setup();
+    m_injectorValve.setup();
     m_vacuumValve.setup();
-    m_heaterController.setup();
-    m_vacuumController.setup();
+    m_heater.setup();
+    m_vacuum.setup();
     m_comms.sendStatus(STATUS_PREFIX_INFO, "Fillhead system setup complete. All components initialized.");
 }
 
@@ -83,27 +83,27 @@ void Fillhead::loop() {
     // 2. Check for and handle one new command from the receive queue.
     Message msg;
     if (m_comms.dequeueRx(msg)) {
-        handleMessage(msg);
+        dispatchCommand(msg);
     }
 
     // 3. Update the internal state of all active sub-controllers.
     m_injector.updateState();
-    m_injectionValve.update();
+    m_injectorValve.update();
     m_vacuumValve.update();
-    m_heaterController.updatePid();
-    // m_vacuumController.update(); // TODO: Add if vacuum controller gets a state machine
+    m_heater.updatePid();
+    m_vacuum.updateState();
 
     // 4. Handle time-based periodic tasks.
     uint32_t now = Milliseconds();
     if (now - m_lastSensorSampleTime >= SENSOR_SAMPLE_INTERVAL_MS) {
         m_lastSensorSampleTime = now;
-        m_heaterController.updateTemperature();
-        m_vacuumController.updateVacuum();
+        m_heater.updateTemperature();
+        m_vacuum.updateVacuum();
     }
 
     if (m_comms.isGuiDiscovered() && (now - m_lastGuiTelemetryTime >= 100)) {
         m_lastGuiTelemetryTime = now;
-        sendGuiTelemetry();
+        publishTelemetry();
     }
 }
 
@@ -117,7 +117,7 @@ void Fillhead::loop() {
  * switch statement to delegate it to the appropriate sub-controller or
  * handles system-level commands itself.
  */
-void Fillhead::handleMessage(const Message& msg) {
+void Fillhead::dispatchCommand(const Message& msg) {
     UserCommand command = m_comms.parseCommand(msg.buffer);
 
     // Isolate arguments by finding the first space in the command string.
@@ -139,7 +139,7 @@ void Fillhead::handleMessage(const Message& msg) {
             }
             break;
         }
-        case CMD_REQUEST_TELEM: sendGuiTelemetry(); break;
+        case CMD_REQUEST_TELEM: publishTelemetry(); break;
         case CMD_ENABLE:        handleEnable(); break;
         case CMD_DISABLE:       handleDisable(); break;
         case CMD_ABORT:         handleAbort(); break;
@@ -166,7 +166,7 @@ void Fillhead::handleMessage(const Message& msg) {
         case CMD_INJECTION_VALVE_OPEN:
         case CMD_INJECTION_VALVE_CLOSE:
         case CMD_INJECTION_VALVE_JOG:
-            m_injectionValve.handleCommand(command, args);
+            m_injectorValve.handleCommand(command, args);
             break;
         case CMD_VACUUM_VALVE_HOME:
         case CMD_VACUUM_VALVE_OPEN:
@@ -180,13 +180,18 @@ void Fillhead::handleMessage(const Message& msg) {
         case CMD_HEATER_OFF:
         case CMD_SET_HEATER_GAINS:
         case CMD_SET_HEATER_SETPOINT:
-            m_heaterController.handleCommand(command, args);
+            m_heater.handleCommand(command, args);
             break;
 
         // --- Vacuum Commands (Delegated to VacuumController) ---
         case CMD_VACUUM_ON:
         case CMD_VACUUM_OFF:
-            m_vacuumController.handleCommand(command, args);
+        case CMD_VACUUM_LEAK_TEST:
+        case CMD_SET_VACUUM_TARGET:
+        case CMD_SET_VACUUM_TIMEOUT_S:
+        case CMD_SET_LEAK_TEST_DELTA:
+        case CMD_SET_LEAK_TEST_DURATION_S:
+            m_vacuum.handleCommand(command, args);
             break;
 
         // --- Default/Unknown ---
@@ -205,11 +210,11 @@ void Fillhead::handleEnable() {
         m_mainState = STANDBY_MODE;
         m_errorState = ERROR_NONE;
         m_injector.enable();
-        m_injectionValve.enable();
+        m_injectorValve.enable();
         m_vacuumValve.enable();
-        m_comms->sendStatus(STATUS_PREFIX_DONE, "System ENABLE complete. Now in STANDBY_MODE.");
+        m_comms.sendStatus(STATUS_PREFIX_DONE, "System ENABLE complete. Now in STANDBY_MODE.");
     } else {
-        m_comms->sendStatus(STATUS_PREFIX_INFO, "System already enabled.");
+        m_comms.sendStatus(STATUS_PREFIX_INFO, "System already enabled.");
     }
 }
 
@@ -221,30 +226,30 @@ void Fillhead::handleDisable() {
     m_mainState = DISABLED_MODE;
     m_errorState = ERROR_NONE;
     m_injector.disable();
-    m_injectionValve.disable();
+    m_injectorValve.disable();
     m_vacuumValve.disable();
-    m_comms->sendStatus(STATUS_PREFIX_DONE, "System DISABLE complete.");
+    m_comms.sendStatus(STATUS_PREFIX_DONE, "System DISABLE complete.");
 }
 
 /**
  * @brief Halts all motion and resets the system state to standby.
  */
 void Fillhead::handleAbort() {
-    m_comms->sendStatus(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
+    m_comms.sendStatus(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
     m_injector.abortMove();
-    m_injectionValve.abortMove();
-    m_vacuumValve.abortMove();
+    m_injectorValve.abort();
+    m_vacuumValve.abort();
     handleStandbyMode(); // Reset states after stopping motion.
-    m_comms->sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
+    m_comms.sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
 /**
  * @brief Resets any error states and returns the system to standby.
  */
 void Fillhead::handleClearErrors() {
-    m_comms->sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting system state...");
+    m_comms.sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting system state...");
     handleStandbyMode();
-    m_comms->sendStatus(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete.");
+    m_comms.sendStatus(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete.");
 }
 
 /**
@@ -253,15 +258,15 @@ void Fillhead::handleClearErrors() {
 void Fillhead::handleStandbyMode() {
     bool wasError = (m_errorState != ERROR_NONE);
     m_injector.resetState();
-    m_injectionValve.resetState();
-    m_vacuumValve.resetState();
+    m_injectorValve.reset();
+    m_vacuumValve.reset();
     m_mainState = STANDBY_MODE;
     m_errorState = ERROR_NONE;
 
     if (wasError) {
-        m_comms->sendStatus(STATUS_PREFIX_INFO, "Error cleared. System is in STANDBY_MODE.");
+        m_comms.sendStatus(STATUS_PREFIX_INFO, "Error cleared. System is in STANDBY_MODE.");
     } else {
-        m_comms->sendStatus(STATUS_PREFIX_INFO, "System is in STANDBY_MODE.");
+        m_comms.sendStatus(STATUS_PREFIX_INFO, "System is in STANDBY_MODE.");
     }
 }
 
@@ -287,12 +292,15 @@ void Fillhead::handleClearPeerIp() {
 /**
  * @brief Aggregates telemetry data from all sub-controllers and sends it as a single UDP packet.
  */
-void Fillhead::sendGuiTelemetry() {
+void Fillhead::publishTelemetry() {
     if (!m_comms.isGuiDiscovered()) return;
 
     char telemetryBuffer[1024];
     const char* mainStateStr = (m_mainState == STANDBY_MODE) ? "STANDBY" : "DISABLED";
     const char* errorStateStr = "NO_ERROR"; // TODO: Implement a function to convert m_errorState enum to a string.
+
+    // Create a non-const copy of the peer IP to safely call StringValue()
+    IpAddress peerIp = m_comms.getPeerIp();
 
     // Assemble the full telemetry string from all components.
     snprintf(telemetryBuffer, sizeof(telemetryBuffer),
@@ -307,11 +315,11 @@ void Fillhead::sendGuiTelemetry() {
         TELEM_PREFIX_GUI,
         mainStateStr, errorStateStr,
         m_injector.getTelemetryString(),
-        m_injectionValve.getTelemetryString(),
+        m_injectorValve.getTelemetryString(),
         m_vacuumValve.getTelemetryString(),
-        m_heaterController.getTelemetryString(),
-        m_vacuumController.getTelemetryString(),
-        (int)m_comms.isPeerDiscovered(), m_comms.getPeerIp().StringValue()
+        m_heater.getTelemetryString(),
+        m_vacuum.getTelemetryString(),
+        (int)m_comms.isPeerDiscovered(), peerIp.StringValue()
     );
 
     // Enqueue the message for sending.

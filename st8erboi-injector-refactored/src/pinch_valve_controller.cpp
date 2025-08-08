@@ -1,7 +1,9 @@
-#include "pinch_valve.h"
+#include "pinch_valve_controller.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 
-PinchValve::PinchValve(const char* name, MotorDriver* motor, InjectorComms* comms) {
+PinchValve::PinchValve(const char* name, MotorDriver* motor, CommsController* comms) {
 	m_name = name;
 	m_motor = motor;
 	m_comms = comms;
@@ -16,27 +18,27 @@ PinchValve::PinchValve(const char* name, MotorDriver* motor, InjectorComms* comm
 void PinchValve::setup() {
 	m_motor->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	m_motor->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	m_motor->VelMax(25000);
-	m_motor->AccelMax(100000);
+	m_motor->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
+	m_motor->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
 	m_motor->EnableRequest(true);
 }
 
 void PinchValve::update() {
-	if (m_state == VALVE_IDLE) {
+	if (m_state == VALVE_IDLE || m_state == VALVE_OPEN || m_state == VALVE_CLOSED || m_state == VALVE_ERROR) {
 		return;
 	}
 
 	switch (m_state) {
 		case VALVE_HOMING:
 		if (Milliseconds() - m_homingStartTime > MAX_HOMING_DURATION_MS) {
-			m_motor->MoveStopAbrupt();
-			m_state = VALVE_IDLE;
+			abort();
+			m_state = VALVE_ERROR;
 			m_comms->sendStatus(STATUS_PREFIX_ERROR, "Pinch valve homing timeout.");
 			} else if (getSmoothedTorque() > m_torqueLimit || !m_motor->StatusReg().bit.StepsActive) {
-			m_motor->MoveStopAbrupt();
+			m_motor->MoveStopDecel();
 			m_motor->PositionRefSet(0);
 			m_isHomed = true;
-			m_state = VALVE_IDLE;
+			m_state = VALVE_CLOSED;
 			char msg[64];
 			snprintf(msg, sizeof(msg), "%s homing complete.", m_name);
 			m_comms->sendStatus(STATUS_PREFIX_DONE, msg);
@@ -45,11 +47,11 @@ void PinchValve::update() {
 
 		case VALVE_MOVING:
 		if (getSmoothedTorque() > m_torqueLimit) {
-			m_motor->MoveStopAbrupt();
-			m_state = VALVE_IDLE;
+			abort();
+			m_state = VALVE_ERROR;
 			m_comms->sendStatus(STATUS_PREFIX_ERROR, "Pinch valve move stopped on torque limit.");
 			} else if (!m_motor->StatusReg().bit.StepsActive) {
-			m_state = VALVE_IDLE;
+			m_state = VALVE_IDLE; // Or could be OPEN/CLOSED depending on target
 			char msg[64];
 			snprintf(msg, sizeof(msg), "%s move complete.", m_name);
 			m_comms->sendStatus(STATUS_PREFIX_DONE, msg);
@@ -62,8 +64,36 @@ void PinchValve::update() {
 	}
 }
 
+void PinchValve::handleCommand(UserCommand cmd, const char* args) {
+	// This function acts as a router for all pinch valve related commands.
+	// It checks which specific command was sent and calls the appropriate handler.
+	switch(cmd) {
+		case CMD_INJECTION_VALVE_HOME:
+		case CMD_VACUUM_VALVE_HOME:
+		home();
+		break;
+		case CMD_INJECTION_VALVE_OPEN:
+		case CMD_VACUUM_VALVE_OPEN:
+		open();
+		break;
+		case CMD_INJECTION_VALVE_CLOSE:
+		case CMD_VACUUM_VALVE_CLOSE:
+		close();
+		break;
+		case CMD_INJECTION_VALVE_JOG:
+		case CMD_VACUUM_VALVE_JOG:
+		jog(args);
+		break;
+		default:
+		// This case should ideally not be reached if called from Fillhead,
+		// but it's good practice to have a default.
+		break;
+	}
+}
+
+
 void PinchValve::home() {
-	if (m_state != VALVE_IDLE) {
+	if (m_state != VALVE_IDLE && m_state != VALVE_OPEN && m_state != VALVE_CLOSED) {
 		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Pinch valve is busy.");
 		return;
 	}
@@ -107,15 +137,20 @@ void PinchValve::close() {
 	move(0 - current_steps, 10000, 50000, 30);
 }
 
-void PinchValve::jog(float dist_mm, float vel_mms, float accel_mms2, int torque_percent) {
-	if (m_state != VALVE_IDLE) {
+void PinchValve::jog(const char* args) {
+	if (m_state != VALVE_IDLE && m_state != VALVE_OPEN && m_state != VALVE_CLOSED) {
 		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Pinch valve is busy.");
 		return;
 	}
+	if (!args) {
+		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid jog command arguments.");
+		return;
+	}
+	float dist_mm = atof(args);
 	long steps = (long)(dist_mm * STEPS_PER_MM_PINCH);
-	int vel_sps = (int)(vel_mms * STEPS_PER_MM_PINCH);
-	int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_PINCH);
-	move(steps, vel_sps, accel_sps2_val, torque_percent);
+	int vel_sps = (int)(PINCH_JOG_DEFAULT_VEL_MMS * STEPS_PER_MM_PINCH);
+	int accel_sps2_val = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
+	move(steps, vel_sps, accel_sps2_val, JOG_DEFAULT_TORQUE_PERCENT);
 }
 
 void PinchValve::move(long steps, int velocity_sps, int accel_sps2, int torque_percent) {
@@ -136,6 +171,18 @@ void PinchValve::enable() {
 
 void PinchValve::disable() {
 	m_motor->EnableRequest(false);
+}
+
+void PinchValve::abort() {
+	m_motor->MoveStopDecel();
+	m_state = VALVE_IDLE;
+}
+
+void PinchValve::reset() {
+	if (m_motor->StatusReg().bit.StepsActive) {
+		m_motor->MoveStopDecel();
+	}
+	m_state = VALVE_IDLE;
 }
 
 float PinchValve::getSmoothedTorque() {

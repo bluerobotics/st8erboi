@@ -1,11 +1,11 @@
 #pragma once
 
 #include "config.h"
-#include "injector_comms.h" // Assumes this is your comms class file
+#include "comms_controller.h" // Assumes this is your comms class file
 
 class HeaterController {
 	public:
-	HeaterController(InjectorComms* comms);
+	HeaterController(CommsController* comms);
 	void setup();
 	void updateTemperature();
 	void updatePid();
@@ -13,7 +13,7 @@ class HeaterController {
 	const char* getTelemetryString();
 
 	private:
-	InjectorComms* m_comms;
+	CommsController* m_comms;
 	HeaterState m_heaterState;
 
 	// Sensor readings

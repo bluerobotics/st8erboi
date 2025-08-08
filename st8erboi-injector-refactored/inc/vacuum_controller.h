@@ -1,11 +1,11 @@
 #pragma once
 
-#include "fillhead_config.h"
-#include "injector_comms.h"
+#include "config.h"
+#include "comms_controller.h"
 
 class VacuumController {
 	public:
-	VacuumController(InjectorComms* comms);
+	VacuumController(CommsController* comms);
 	void setup();
 	void updateVacuum();
 	void updateState();
@@ -14,7 +14,7 @@ class VacuumController {
 	void resetState();
 
 	private:
-	InjectorComms* m_comms;
+	CommsController* m_comms;
 	VacuumState m_state;
 
 	// Sensor readings

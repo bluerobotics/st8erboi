@@ -1,10 +1,12 @@
-#include "injector.h"
+#include "injector_controller.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
 // --- Constructor ---
-Injector::Injector(InjectorComms* comms) {
+Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, CommsController* comms) {
+	m_motorA = motorA;
+	m_motorB = motorB;
 	m_comms = comms;
 	m_homingState = HOMING_NONE;
 	m_homingPhase = HOMING_PHASE_IDLE;
@@ -38,15 +40,15 @@ Injector::Injector(InjectorComms* comms) {
 
 // --- Setup ---
 void Injector::setup() {
-	MOTOR_INJECTOR_A.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
-	MOTOR_INJECTOR_A.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	MOTOR_INJECTOR_A.VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
-	MOTOR_INJECTOR_A.AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+	m_motorA->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
+	m_motorA->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
+	m_motorA->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
+	m_motorA->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
 
-	MOTOR_INJECTOR_B.HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
-	MOTOR_INJECTOR_B.HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	MOTOR_INJECTOR_B.VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
-	MOTOR_INJECTOR_B.AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+	m_motorB->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
+	m_motorB->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
+	m_motorB->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
+	m_motorB->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
 }
 
 // --- Main State Update ---
@@ -99,9 +101,9 @@ void Injector::updateState() {
 					} else { // TOUCH_OFF
 					m_comms->sendStatus(STATUS_PREFIX_INFO, "Homing: Torque (TOUCH_OFF). Zeroing & Retracting.");
 					if (m_homingState == HOMING_MACHINE) {
-						m_machineHomeReferenceSteps = MOTOR_INJECTOR_A.PositionRefCommanded();
+						m_machineHomeReferenceSteps = m_motorA->PositionRefCommanded();
 						} else {
-						m_cartridgeHomeReferenceSteps = MOTOR_INJECTOR_A.PositionRefCommanded();
+						m_cartridgeHomeReferenceSteps = m_motorA->PositionRefCommanded();
 					}
 					m_homingPhase = HOMING_PHASE_RETRACT;
 					long retract_s = -direction * (long)(HOMING_POST_TOUCH_RETRACT_MM * STEPS_PER_MM_INJECTOR);
@@ -155,14 +157,14 @@ void Injector::updateState() {
 
 		if (m_feedState == FEED_INJECT_STARTING && isMoving()) {
 			m_feedState = FEED_INJECT_ACTIVE;
-			m_active_op_segment_initial_axis_steps = MOTOR_INJECTOR_A.PositionRefCommanded();
+			m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
 			} else if (m_feedState == FEED_INJECT_RESUMING && isMoving()) {
 			m_feedState = FEED_INJECT_ACTIVE;
-			m_active_op_segment_initial_axis_steps = MOTOR_INJECTOR_A.PositionRefCommanded();
+			m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
 		}
 
 		if (m_feedState == FEED_INJECT_PAUSED && !m_feedingDone && !isMoving()) {
-			long current_pos = MOTOR_INJECTOR_A.PositionRefCommanded();
+			long current_pos = m_motorA->PositionRefCommanded();
 			long steps_moved_this_segment = current_pos - m_active_op_segment_initial_axis_steps;
 			if (m_active_op_steps_per_ml > 0.0001f) {
 				float segment_dispensed_ml = std::abs(steps_moved_this_segment) / m_active_op_steps_per_ml;
@@ -227,22 +229,22 @@ void Injector::handleCommand(UserCommand cmd, const char* args) {
 
 // --- Public Methods ---
 void Injector::enable() {
-	MOTOR_INJECTOR_A.EnableRequest(true);
-	MOTOR_INJECTOR_B.EnableRequest(true);
+	m_motorA->EnableRequest(true);
+	m_motorB->EnableRequest(true);
 	m_isEnabled = true;
 	m_comms->sendStatus(STATUS_PREFIX_INFO, "Injector motors enabled.");
 }
 
 void Injector::disable() {
-	MOTOR_INJECTOR_A.EnableRequest(false);
-	MOTOR_INJECTOR_B.EnableRequest(false);
+	m_motorA->EnableRequest(false);
+	m_motorB->EnableRequest(false);
 	m_isEnabled = false;
 	m_comms->sendStatus(STATUS_PREFIX_INFO, "Injector motors disabled.");
 }
 
 void Injector::abortMove() {
-	MOTOR_INJECTOR_A.MoveStopDecel();
-	MOTOR_INJECTOR_B.MoveStopDecel();
+	m_motorA->MoveStopDecel();
+	m_motorB->MoveStopDecel();
 	Delay_ms(POST_ABORT_DELAY_MS);
 }
 
@@ -319,7 +321,7 @@ void Injector::handleMoveToCartridgeHome() {
 	m_feedingDone = false;
 	m_activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_HOME;
 	
-	long current_pos = MOTOR_INJECTOR_A.PositionRefCommanded();
+	long current_pos = m_motorA->PositionRefCommanded();
 	long steps_to_move = m_cartridgeHomeReferenceSteps - current_pos;
 
 	move(steps_to_move, steps_to_move, m_feedDefaultTorquePercent, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
@@ -344,7 +346,7 @@ void Injector::handleMoveToCartridgeRetract(const char* args) {
 
 	long offset_steps = (long)(offset_mm * STEPS_PER_MM_INJECTOR);
 	long target_pos = m_cartridgeHomeReferenceSteps - offset_steps; // Assuming retract is moving away from cartridge
-	long current_pos = MOTOR_INJECTOR_A.PositionRefCommanded();
+	long current_pos = m_motorA->PositionRefCommanded();
 	long steps_to_move = target_pos - current_pos;
 
 	move(steps_to_move, steps_to_move, m_feedDefaultTorquePercent, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
@@ -369,7 +371,7 @@ void Injector::handleInjectMove(const char* args) {
 		m_active_op_steps_per_ml = steps_per_ml;
 		m_active_op_total_target_steps = (long)(volume_ml * steps_per_ml);
 		m_active_op_remaining_steps = m_active_op_total_target_steps;
-		m_active_op_initial_axis_steps = MOTOR_INJECTOR_A.PositionRefCommanded();
+		m_active_op_initial_axis_steps = m_motorA->PositionRefCommanded();
 		m_active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml);
 		m_active_op_accel_sps2 = (int)accel_sps2;
 		m_active_op_torque_percent = torque_percent;
@@ -403,7 +405,7 @@ void Injector::handleResumeOperation() {
 		m_feedState = FEED_STANDBY;
 		return;
 	}
-	m_active_op_segment_initial_axis_steps = MOTOR_INJECTOR_A.PositionRefCommanded();
+	m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
 	m_feedingDone = false;
 	m_feedState = FEED_INJECT_RESUMING;
 	move(m_active_op_remaining_steps, m_active_op_remaining_steps, m_active_op_torque_percent, m_active_op_velocity_sps, m_active_op_accel_sps2);
@@ -433,18 +435,19 @@ void Injector::handleSetTorqueOffset(const char* args) {
 // --- Private Helper Methods ---
 void Injector::move(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel) {
 	m_torqueLimit = (float)torque_limit;
-	MOTOR_INJECTOR_A.VelMax(velocity);
-	MOTOR_INJECTOR_B.VelMax(velocity);
-	MOTOR_INJECTOR_A.AccelMax(accel);
-	MOTOR_INJECTOR_B.AccelMax(accel);
-	if (stepsM0 != 0) MOTOR_INJECTOR_A.Move(stepsM0);
-	if (stepsM1 != 0) MOTOR_INJECTOR_B.Move(stepsM1);
+	m_motorA->VelMax(velocity);
+	m_motorB->VelMax(velocity);
+	m_motorA->AccelMax(accel);
+	m_motorB->AccelMax(accel);
+	if (stepsM0 != 0) m_motorA->Move(stepsM0);
+	if (stepsM1 != 0) m_motorB->Move(stepsM1);
 }
 
 bool Injector::isMoving() {
-	bool m0_moving = !MOTOR_INJECTOR_A.StepsComplete() && MOTOR_INJECTOR_A.StatusReg().bit.Enabled;
-	bool m1_moving = !MOTOR_INJECTOR_B.StepsComplete() && MOTOR_INJECTOR_B.StatusReg().bit.Enabled;
-	return m_isEnabled && (m0_moving || m1_moving);
+	if (!m_isEnabled) return false;
+	bool m0_moving = m_motorA->StatusReg().bit.StepsActive;
+	bool m1_moving = m_motorB->StatusReg().bit.StepsActive;
+	return (m0_moving || m1_moving);
 }
 
 float Injector::getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead) {
@@ -463,8 +466,8 @@ float Injector::getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, 
 
 bool Injector::checkTorqueLimit() {
 	if (isMoving()) {
-		float torque0 = getSmoothedTorqueEWMA(&MOTOR_INJECTOR_A, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
-		float torque1 = getSmoothedTorqueEWMA(&MOTOR_INJECTOR_B, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
+		float torque0 = getSmoothedTorqueEWMA(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
+		float torque1 = getSmoothedTorqueEWMA(m_motorB, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
 
 		bool m0_over_limit = (torque0 != TORQUE_SENTINEL_INVALID_VALUE && std::abs(torque0) > m_torqueLimit);
 		bool m1_over_limit = (torque1 != TORQUE_SENTINEL_INVALID_VALUE && std::abs(torque1) > m_torqueLimit);
@@ -483,7 +486,7 @@ bool Injector::checkTorqueLimit() {
 void Injector::finalizeAndResetActiveDispenseOperation(bool success) {
 	if (m_active_dispense_INJECTION_ongoing) {
 		if (m_active_op_steps_per_ml > 0.0001f) {
-			long steps_moved_this_segment = MOTOR_INJECTOR_A.PositionRefCommanded() - m_active_op_segment_initial_axis_steps;
+			long steps_moved_this_segment = m_motorA->PositionRefCommanded() - m_active_op_segment_initial_axis_steps;
 			float segment_dispensed_ml = (float)std::abs(steps_moved_this_segment) / m_active_op_steps_per_ml;
 			m_active_op_total_dispensed_ml += segment_dispensed_ml;
 		}
@@ -508,10 +511,10 @@ void Injector::fullyResetActiveDispenseOperation() {
 }
 
 const char* Injector::getTelemetryString() {
-	float displayTorque0 = getSmoothedTorqueEWMA(&MOTOR_INJECTOR_A, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
-	float displayTorque1 = getSmoothedTorqueEWMA(&MOTOR_INJECTOR_B, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
+	float displayTorque0 = getSmoothedTorqueEWMA(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
+	float displayTorque1 = getSmoothedTorqueEWMA(m_motorB, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
 	
-	long current_pos_steps_m0 = MOTOR_INJECTOR_A.PositionRefCommanded();
+	long current_pos_steps_m0 = m_motorA->PositionRefCommanded();
 	float machine_pos_mm = (float)(current_pos_steps_m0 - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
 	float cartridge_pos_mm = (float)(current_pos_steps_m0 - m_cartridgeHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
 

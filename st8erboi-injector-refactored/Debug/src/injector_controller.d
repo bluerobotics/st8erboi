@@ -1,6 +1,8 @@
-messages.d messages.o: .././messages.cpp .././messages.h \
- ../../libClearCore/inc/ClearCore.h ../../libClearCore/inc/AdcManager.h \
- ../../libClearCore/inc/IirFilter.h ../../libClearCore/inc/SysTiming.h \
+src/injector_controller.d src/injector_controller.o: \
+ ../src/injector_controller.cpp ../inc/injector_controller.h \
+ ../inc/config.h ../../libClearCore/inc/ClearCore.h \
+ ../../libClearCore/inc/AdcManager.h ../../libClearCore/inc/IirFilter.h \
+ ../../libClearCore/inc/SysTiming.h \
  ../../libClearCore/inc/CcioBoardManager.h \
  ../../libClearCore/inc/CcioPin.h \
  C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include/sam.h \
@@ -159,10 +161,12 @@ messages.d messages.o: .././messages.cpp .././messages.h \
  ../../libClearCore/inc/SysManager.h \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
- ../../libClearCore/inc/XBeeDriver.h ../../libClearCore/inc/EthernetUdp.h \
- ../../libClearCore/inc/IpAddress.h .././states.h .././motor.h
+ ../../libClearCore/inc/XBeeDriver.h ../inc/comms_controller.h \
+ ../../libClearCore/inc/EthernetUdp.h ../../libClearCore/inc/IpAddress.h
 
-.././messages.h:
+../inc/injector_controller.h:
+
+../inc/config.h:
 
 ../../libClearCore/inc/ClearCore.h:
 
@@ -502,10 +506,8 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 
 ../../libClearCore/inc/XBeeDriver.h:
 
+../inc/comms_controller.h:
+
 ../../libClearCore/inc/EthernetUdp.h:
 
 ../../libClearCore/inc/IpAddress.h:
-
-.././states.h:
-
-.././motor.h:

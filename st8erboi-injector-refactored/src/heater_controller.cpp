@@ -2,18 +2,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-HeaterController::HeaterController(InjectorComms* comms) {
+HeaterController::HeaterController(CommsController* comms) {
 	m_comms = comms;
 	m_heaterState = HEATER_OFF;
 	m_temperatureCelsius = 0.0f;
 	m_smoothedTemperatureCelsius = 0.0f;
 	m_firstTempReading = true;
 
-	// Default PID values
-	m_pid_setpoint = 70.0f;
-	m_pid_kp = 60.0f;
-	m_pid_ki = 2.5f;
-	m_pid_kd = 40.0f;
+	// Initialize PID values from config.h
+	m_pid_setpoint = DEFAULT_HEATER_SETPOINT_C;
+	m_pid_kp = DEFAULT_HEATER_KP;
+	m_pid_ki = DEFAULT_HEATER_KI;
+	m_pid_kd = DEFAULT_HEATER_KD;
 	resetPid();
 }
 
@@ -58,7 +58,7 @@ void HeaterController::handleHeaterOff() {
 	if (m_heaterState != HEATER_OFF) {
 		m_heaterState = HEATER_OFF;
 		PIN_HEATER_RELAY.State(false); // Ensure relay is off
-		pid_output = 0.0f;
+		m_pid_output = 0.0f;
 		m_comms->sendStatus(STATUS_PREFIX_DONE, "HEATER_OFF: PID control deactivated.");
 		} else {
 		m_comms->sendStatus(STATUS_PREFIX_INFO, "HEATER_OFF ignored: Heater was already off.");
@@ -93,9 +93,9 @@ void HeaterController::updateTemperature() {
 	float voltage_from_sensor = (float)adc_val * (TC_V_REF / 4095.0f);
 	float raw_celsius = (voltage_from_sensor - TC_V_OFFSET) * TC_GAIN;
 
-	if (firstTempReading) {
+	if (m_firstTempReading) {
 		m_smoothedTemperatureCelsius = raw_celsius;
-		firstTempReading = false;
+		m_firstTempReading = false;
 		} else {
 		m_smoothedTemperatureCelsius = (EWMA_ALPHA_SENSORS * raw_celsius) + ((1.0f - EWMA_ALPHA_SENSORS) * m_smoothedTemperatureCelsius);
 	}
@@ -105,8 +105,8 @@ void HeaterController::updateTemperature() {
 void HeaterController::updatePid() {
 	if (m_heaterState != HEATER_PID_ACTIVE) {
 		// If PID is not active, ensure the output is zero and the relay is off.
-		if (pid_output != 0.0f) {
-			pid_output = 0.0f;
+		if (m_pid_output != 0.0f) {
+			m_pid_output = 0.0f;
 			PIN_HEATER_RELAY.State(false);
 		}
 		return;
@@ -124,32 +124,34 @@ void HeaterController::updatePid() {
 	m_pid_integral += error * (time_change_ms / 1000.0f);
 	float derivative = ((error - m_pid_last_error) * 1000.0f) / time_change_ms;
 
-	pid_output = (m_pid_kp * error) + (m_pid_ki * m_pid_integral) + (m_pid_kd * derivative);
+	m_pid_output = (m_pid_kp * error) + (m_pid_ki * m_pid_integral) + (m_pid_kd * derivative);
 
 	// Clamp the output and integral to prevent windup and invalid values
-	if (pid_output > 100.0f) pid_output = 100.0f;
-	if (pid_output < 0.0f) pid_output = 0.0f;
-	if (pid_integral > 100.0f / m_pid_ki) pid_integral = 100.0f / m_pid_ki;
-	if (pid_integral < 0.0f) pid_integral = 0.0f;
+	if (m_pid_output > 100.0f) m_pid_output = 100.0f;
+	if (m_pid_output < 0.0f) m_pid_output = 0.0f;
+	if (m_pid_ki > 0) { // Avoid division by zero if Ki is zero
+		if (m_pid_integral > 100.0f / m_pid_ki) m_pid_integral = 100.0f / m_pid_ki;
+	}
+	if (m_pid_integral < 0.0f) m_pid_integral = 0.0f;
 
 	m_pid_last_error = error;
 	m_pid_last_time = now;
 
 	// Time-proportioned control for the relay
-	uint32_t on_duration_ms = (uint32_t)(PID_PWM_PERIOD_MS * (pid_output / 100.0f));
+	uint32_t on_duration_ms = (uint32_t)(PID_PWM_PERIOD_MS * (m_pid_output / 100.0f));
 	PIN_HEATER_RELAY.State((now % PID_PWM_PERIOD_MS) < on_duration_ms);
 }
 
 void HeaterController::resetPid() {
 	m_pid_integral = 0.0f;
 	m_pid_last_error = 0.0f;
-	pid_output = 0.0f;
+	m_pid_output = 0.0f;
 	m_pid_last_time = Milliseconds();
 }
 
 const char* HeaterController::getTelemetryString() {
 	snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
 	"h_st:%d,h_sp:%.1f,h_pv:%.1f,h_op:%.1f",
-	(int)m_heaterState, m_pid_setpoint, m_temperatureCelsius, pid_output);
+	(int)m_heaterState, m_pid_setpoint, m_temperatureCelsius, m_pid_output);
 	return m_telemetryBuffer;
 }

@@ -2,13 +2,17 @@
 # Automatically-generated file. Do not edit or delete the file
 ################################################################################
 
-injector_handlers.cpp
-
-injector_motors.cpp
-
-injector_comms.cpp
-
-injector.cpp
-
 Device_Startup\startup_same53.c
+
+src\fillhead.cpp
+
+src\heater_controller.cpp
+
+src\comms_controller.cpp
+
+src\injector_controller.cpp
+
+src\pinch_valve_controller.cpp
+
+src\vacuum_controller.cpp
 

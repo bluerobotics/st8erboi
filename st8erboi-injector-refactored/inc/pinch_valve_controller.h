@@ -1,28 +1,35 @@
 #pragma once
 
-#include "injector_config.h"
-#include "injector_comms.h"
+#include "config.h"
+#include "comms_controller.h"
+#include "ClearCore.h" // Include for MotorDriver type
 
 enum PinchValveState {
 	VALVE_IDLE,
 	VALVE_HOMING,
-	VALVE_MOVING
+	VALVE_MOVING,
+	VALVE_OPEN,
+	VALVE_CLOSED,
+	VALVE_ERROR
 };
 
 class PinchValve {
 	public:
-	PinchValve(const char* name, MotorDriver* motor, InjectorComms* comms);
+	PinchValve(const char* name, MotorDriver* motor, CommsController* comms);
 
 	void setup();
 	void update();
+	void handleCommand(UserCommand cmd, const char* args);
 
 	// Commands
 	void home();
 	void open();
 	void close();
-	void jog(float dist_mm, float vel_mms, float accel_mms2, int torque_percent);
+	void jog(const char* args);
 	void enable();
 	void disable();
+	void abort();
+	void reset();
 
 	// Status
 	bool isHomed() const { return m_isHomed; }
@@ -34,7 +41,7 @@ class PinchValve {
 
 	const char* m_name;
 	MotorDriver* m_motor;
-	InjectorComms* m_comms;
+	CommsController* m_comms;
 
 	PinchValveState m_state;
 	bool m_isHomed;
