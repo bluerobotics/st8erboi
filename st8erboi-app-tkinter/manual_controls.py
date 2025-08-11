@@ -4,7 +4,7 @@ import math
 
 
 # This file now consolidates all logic for creating the manual control panels
-# for both the Injector and the Fillhead devices.
+# for both the Injector and the gantry devices.
 
 # --- Motor Power Controls ---
 def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
@@ -15,7 +15,7 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
     power_frame.grid_columnconfigure((0, 1), weight=1)
 
     send_injector_cmd = command_funcs['send_injector']
-    send_fillhead_cmd = command_funcs['send_fillhead']
+    send_gantry_cmd = command_funcs['send_gantry']
 
     def make_style_tracer(button_map):
         def tracer(*args):
@@ -77,10 +77,10 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
     fh_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
     btn_enable_x = ttk.Button(fh_frame, text="Enable X", style='Small.TButton',
-                              command=lambda: send_fillhead_cmd("ENABLE_X"))
+                              command=lambda: send_gantry_cmd("ENABLE_X"))
     btn_enable_x.grid(row=0, column=0, sticky='ew', padx=(0, 2))
     btn_disable_x = ttk.Button(fh_frame, text="Disable X", style='Small.TButton',
-                               command=lambda: send_fillhead_cmd("DISABLE_X"))
+                               command=lambda: send_gantry_cmd("DISABLE_X"))
     btn_disable_x.grid(row=1, column=0, sticky='ew', padx=(0, 2), pady=2)
     x_tracer = make_style_tracer(
         [(btn_enable_x, shared_gui_refs['fh_enabled_m0_var'], 'Green.TButton', 'Small.TButton'),
@@ -89,10 +89,10 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
     x_tracer()
 
     btn_enable_y = ttk.Button(fh_frame, text="Enable Y", style='Small.TButton',
-                              command=lambda: send_fillhead_cmd("ENABLE_Y"))
+                              command=lambda: send_gantry_cmd("ENABLE_Y"))
     btn_enable_y.grid(row=0, column=1, sticky='ew', padx=2)
     btn_disable_y = ttk.Button(fh_frame, text="Disable Y", style='Small.TButton',
-                               command=lambda: send_fillhead_cmd("DISABLE_Y"))
+                               command=lambda: send_gantry_cmd("DISABLE_Y"))
     btn_disable_y.grid(row=1, column=1, sticky='ew', padx=2, pady=2)
     y_tracer = make_style_tracer(
         [(btn_enable_y, shared_gui_refs['fh_enabled_m1_var'], 'Green.TButton', 'Small.TButton'),
@@ -101,10 +101,10 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
     y_tracer()
 
     btn_enable_z = ttk.Button(fh_frame, text="Enable Z", style='Small.TButton',
-                              command=lambda: send_fillhead_cmd("ENABLE_Z"))
+                              command=lambda: send_gantry_cmd("ENABLE_Z"))
     btn_enable_z.grid(row=0, column=2, sticky='ew', padx=(2, 0))
     btn_disable_z = ttk.Button(fh_frame, text="Disable Z", style='Small.TButton',
-                               command=lambda: send_fillhead_cmd("DISABLE_Z"))
+                               command=lambda: send_gantry_cmd("DISABLE_Z"))
     btn_disable_z.grid(row=1, column=2, sticky='ew', padx=(2, 0), pady=2)
     z_tracer = make_style_tracer(
         [(btn_enable_z, shared_gui_refs['fh_enabled_m3_var'], 'Green.TButton', 'Small.TButton'),
@@ -118,7 +118,7 @@ def create_jog_controls(parent, command_funcs, shared_gui_refs, ui_elements):
     """Creates a unified jog control panel for all devices."""
 
     send_injector_cmd = command_funcs['send_injector']
-    send_fillhead_cmd = command_funcs['send_fillhead']
+    send_gantry_cmd = command_funcs['send_gantry']
     variables = shared_gui_refs
 
     # Main container for all jog controls
@@ -131,8 +131,8 @@ def create_jog_controls(parent, command_funcs, shared_gui_refs, ui_elements):
     # --- Pinch Jog (Updated) ---
     create_pinch_jog_section(jog_container_frame, send_injector_cmd, variables)
 
-    # --- Fillhead Jog (Integrated) ---
-    create_fillhead_jog_section(jog_container_frame, send_fillhead_cmd, variables)
+    # --- gantry Jog (Integrated) ---
+    create_gantry_jog_section(jog_container_frame, send_gantry_cmd, variables)
 
 
 def create_injector_jog_section(parent, send_cmd_func, variables, ui_elements):
@@ -287,8 +287,8 @@ def create_pinch_jog_section(parent, send_cmd_func, variables):
                                                                                                                     0))
 
 
-def create_fillhead_jog_section(parent, send_fillhead_cmd, variables):
-    fh_jog_frame = tk.LabelFrame(parent, text="Fillhead", bg="#2a2d3b", fg="#87CEEB", font=("Segoe UI", 9, "bold"),
+def create_gantry_jog_section(parent, send_gantry_cmd, variables):
+    fh_jog_frame = tk.LabelFrame(parent, text="gantry", bg="#2a2d3b", fg="#87CEEB", font=("Segoe UI", 9, "bold"),
                                  padx=5, pady=5)
     fh_jog_frame.pack(fill=tk.X, pady=(5, 0), padx=5, anchor='n')
 
@@ -317,24 +317,24 @@ def create_fillhead_jog_section(parent, send_fillhead_cmd, variables):
     jog_btn_frame.pack(fill=tk.X, pady=5)
     jog_btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
     ttk.Button(jog_btn_frame, text="X+", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(f"MOVE_X {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
+               command=lambda: send_gantry_cmd(f"MOVE_X {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
         row=0, column=0, sticky='ew', padx=(0, 1), pady=(0, 1))
     ttk.Button(jog_btn_frame, text="X-", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(
+               command=lambda: send_gantry_cmd(
                    f"MOVE_X {jog_cmd_str(f'-{variables['fh_jog_dist_mm_var'].get()}')}")).grid(
         row=1, column=0, sticky='ew', padx=(0, 1))
     ttk.Button(jog_btn_frame, text="Y+", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(f"MOVE_Y {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
+               command=lambda: send_gantry_cmd(f"MOVE_Y {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
         row=0, column=1, sticky='ew', padx=1, pady=(0, 1))
     ttk.Button(jog_btn_frame, text="Y-", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(
+               command=lambda: send_gantry_cmd(
                    f"MOVE_Y {jog_cmd_str(f'-{variables['fh_jog_dist_mm_var'].get()}')}")).grid(
         row=1, column=1, sticky='ew', padx=1)
     ttk.Button(jog_btn_frame, text="Z+", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(f"MOVE_Z {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
+               command=lambda: send_gantry_cmd(f"MOVE_Z {jog_cmd_str(variables['fh_jog_dist_mm_var'].get())}")).grid(
         row=0, column=2, sticky='ew', padx=(1, 0), pady=(0, 1))
     ttk.Button(jog_btn_frame, text="Z-", style="Jog.TButton",
-               command=lambda: send_fillhead_cmd(
+               command=lambda: send_gantry_cmd(
                    f"MOVE_Z {jog_cmd_str(f'-{variables['fh_jog_dist_mm_var'].get()}')}")).grid(
         row=1, column=2, sticky='ew', padx=(1, 0))
 
@@ -342,7 +342,7 @@ def create_fillhead_jog_section(parent, send_fillhead_cmd, variables):
 # --- Homing and Feed Controls ---
 def create_homing_controls(parent, command_funcs, variables):
     send_injector_cmd = command_funcs['send_injector']
-    send_fillhead_cmd = command_funcs['send_fillhead']
+    send_gantry_cmd = command_funcs['send_gantry']
     homing_controls_frame = tk.LabelFrame(parent, text="Homing Controls", bg="#2b1e34", fg="#D8BFD8",
                                           font=("Segoe UI", 10, "bold"), bd=2, relief="ridge", padx=10, pady=10)
     homing_controls_frame.pack(fill=tk.X, expand=False, padx=5, pady=5)
@@ -403,7 +403,7 @@ def create_homing_controls(parent, command_funcs, variables):
 
     ttk.Separator(homing_controls_frame, orient='horizontal').pack(fill='x', pady=10)
 
-    # UPDATED: Fillhead Homing UI
+    # UPDATED: gantry Homing UI
     fh_home_params_frame = tk.Frame(homing_controls_frame, bg="#2a2d3b")
     fh_home_params_frame.pack(fill=tk.X)
     fh_home_params_frame.grid_columnconfigure(1, weight=1)
@@ -421,11 +421,11 @@ def create_homing_controls(parent, command_funcs, variables):
     home_cmd_str = lambda axis: f"HOME_{axis} {variables['fh_home_distance_mm_var'].get()}"
 
     ttk.Button(fh_home_btn_frame, text="Home X", style='Home.TButton',
-               command=lambda: send_fillhead_cmd(home_cmd_str("X"))).grid(row=0, column=0, sticky='ew', padx=(0, 2))
+               command=lambda: send_gantry_cmd(home_cmd_str("X"))).grid(row=0, column=0, sticky='ew', padx=(0, 2))
     ttk.Button(fh_home_btn_frame, text="Home Y", style='Home.TButton',
-               command=lambda: send_fillhead_cmd(home_cmd_str("Y"))).grid(row=0, column=1, sticky='ew', padx=2)
+               command=lambda: send_gantry_cmd(home_cmd_str("Y"))).grid(row=0, column=1, sticky='ew', padx=2)
     ttk.Button(fh_home_btn_frame, text="Home Z", style='Home.TButton',
-               command=lambda: send_fillhead_cmd(home_cmd_str("Z"))).grid(row=0, column=2, sticky='ew', padx=(2, 0))
+               command=lambda: send_gantry_cmd(home_cmd_str("Z"))).grid(row=0, column=2, sticky='ew', padx=(2, 0))
 
 
 def create_feed_controls(parent, send_cmd_func, ui_elements, variables):

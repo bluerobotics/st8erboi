@@ -3,7 +3,7 @@
 #include "ClearCore.h"
 #include "config.h"
 
-class Fillhead;
+class Gantry;
 
 class Axis {
 	public:
@@ -12,9 +12,9 @@ class Axis {
 		INCREMENTAL
 	} MoveType;
 
-	Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2,
+	Axis(Gantry* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2,
 	float stepsPerMm, float minPosMm, float maxPosMm,
-	Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor);
+	Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor, Connector* zBrake);
 
 	void setupMotors();
 	void updateState();
@@ -38,13 +38,14 @@ class Axis {
 	float getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
 	void sendStatus(const char* statusType, const char* message);
 
-	Fillhead* m_controller;
+	Gantry* m_controller;
 	const char* m_name;
 	MotorDriver* m_motor1;
 	MotorDriver* m_motor2;
 	Connector* m_homingSensor1;
 	Connector* m_homingSensor2;
 	Connector* m_limitSensor;
+	Connector* m_zBrake;
 	const char* m_activeCommand;
 
 	typedef enum {

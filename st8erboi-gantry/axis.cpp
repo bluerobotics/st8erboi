@@ -1,11 +1,11 @@
 #include "axis.h"
-#include "fillhead.h"
+#include "gantry.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm, Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor) {
+Axis::Axis(Gantry* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm, Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor, Connector* zBrake) {
 	m_controller = controller;
 	m_name = name;
 	m_motor1 = motor1;
@@ -16,6 +16,7 @@ Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDri
 	m_homingSensor1 = homingSensor1;
 	m_homingSensor2 = homingSensor2;
 	m_limitSensor = limitSensor;
+	m_zBrake = zBrake;
 	
 	m_state = STATE_STANDBY;
 	homingPhase = HOMING_NONE;
@@ -25,6 +26,7 @@ Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDri
 	m_smoothedTorqueM2 = 0.0f;
 	m_firstTorqueReadM1 = true;
 	m_firstTorqueReadM2 = true;
+
 	m_torqueLimit = 0.0f;
 	m_activeCommand = nullptr;
 }
@@ -32,17 +34,23 @@ Axis::Axis(Fillhead* controller, const char* name, MotorDriver* motor1, MotorDri
 void Axis::enable() {
 	m_motor1->EnableRequest(true);
 	if (m_motor2) m_motor2->EnableRequest(true);
+	if (m_zBrake) m_zBrake->State(true); // sinking current = z axis is unlocked
 }
 
 void Axis::disable() {
 	m_motor1->EnableRequest(false);
 	if (m_motor2) m_motor2->EnableRequest(false);
+	if (m_zBrake) m_zBrake->State(false); // NOT sinking current = z axis is locked
 }
 
 void Axis::setupMotors() {
 	if (m_homingSensor1) m_homingSensor1->Mode(Connector::INPUT_DIGITAL);
 	if (m_homingSensor2) m_homingSensor2->Mode(Connector::INPUT_DIGITAL);
 	if (m_limitSensor) m_limitSensor->Mode(Connector::INPUT_DIGITAL);
+	if (m_zBrake){
+		m_zBrake->Mode(Connector::OUTPUT_DIGITAL);
+		m_zBrake->State(true); // unlock the z axis
+	}
 	
 	m_motor1->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	m_motor1->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);

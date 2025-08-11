@@ -13,7 +13,7 @@
     <OutputFileExtension>.elf</OutputFileExtension>
     <OutputDirectory>$(MSBuildProjectDirectory)\$(Configuration)</OutputDirectory>
     <AssemblyName>ProjectTemplate</AssemblyName>
-    <Name>st8erboi-fillhead</Name>
+    <Name>st8erboi-gantry</Name>
     <RootNamespace>ProjectTemplate</RootNamespace>
     <ToolchainFlavour>Native</ToolchainFlavour>
     <KeepTimersRunning>true</KeepTimersRunning>
@@ -246,7 +246,7 @@
     <Compile Include="axis.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="fillhead.cpp">
+    <Compile Include="gantry.cpp">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="Device_Startup\flash_with_bootloader.ld">
@@ -255,7 +255,7 @@
     <Compile Include="Device_Startup\startup_same53.c">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="fillhead.h">
+    <Compile Include="gantry.h">
       <SubType>compile</SubType>
     </Compile>
     <None Include="Device_Startup\flash_without_bootloader.ld">

@@ -1,13 +1,13 @@
-#include "fillhead.h"
+#include "gantry.h"
 #include <math.h>
 
-Fillhead::Fillhead() :
+Gantry::Gantry() :
 // X-Axis: Single motor, single homing sensor, no limit switch
-xAxis(this, "X", &MotorX, nullptr, STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS, &SENSOR_X, nullptr, nullptr),
+xAxis(this, "X", &MotorX, nullptr, STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS, &SENSOR_X, nullptr, nullptr, nullptr),
 // Y-Axis: Dual motor gantry, two homing sensors, one rear limit switch
-yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS, &SENSOR_Y1, &SENSOR_Y2, &LIMIT_Y_BACK),
+yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS, &SENSOR_Y1, &SENSOR_Y2, &LIMIT_Y_BACK, nullptr),
 // Z-Axis: Single motor, single homing sensor, no limit switch
-zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR_Z, nullptr, nullptr)
+zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR_Z, nullptr, nullptr, &Z_BRAKE)
 {
 	m_guiDiscovered = false;
 	m_guiPort = 0;
@@ -21,7 +21,7 @@ zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR
 	m_txQueueTail = 0;
 }
 
-void Fillhead::setup() {
+void Gantry::setup() {
 	MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
 	
 	xAxis.setupMotors();
@@ -41,7 +41,7 @@ void Fillhead::setup() {
 	setupEthernet();
 }
 
-void Fillhead::update() {
+void Gantry::update() {
 	// 1. Read incoming UDP packets and place them in the Rx queue
 	processUdp();
 	
@@ -68,7 +68,7 @@ void Fillhead::update() {
 // Queue Management
 // -----------------------------------------------------------------------------
 
-bool Fillhead::enqueueRx(const char* msg, const IpAddress& ip, uint16_t port) {
+bool Gantry::enqueueRx(const char* msg, const IpAddress& ip, uint16_t port) {
 	int next_head = (m_rxQueueHead + 1) % RX_QUEUE_SIZE;
 	if (next_head == m_rxQueueTail) {
 		// Rx Queue is full. Send an immediate error back to the GUI.
@@ -88,7 +88,7 @@ bool Fillhead::enqueueRx(const char* msg, const IpAddress& ip, uint16_t port) {
 	return true;
 }
 
-bool Fillhead::dequeueRx(Message& msg) {
+bool Gantry::dequeueRx(Message& msg) {
 	if (m_rxQueueHead == m_rxQueueTail) {
 		// Queue is empty
 		return false;
@@ -98,7 +98,7 @@ bool Fillhead::dequeueRx(Message& msg) {
 	return true;
 }
 
-bool Fillhead::enqueueTx(const char* msg, const IpAddress& ip, uint16_t port) {
+bool Gantry::enqueueTx(const char* msg, const IpAddress& ip, uint16_t port) {
 	int next_head = (m_txQueueHead + 1) % TX_QUEUE_SIZE;
 	if (next_head == m_txQueueTail) {
 		// Tx Queue is full. Send an immediate error message, bypassing the queue.
@@ -119,7 +119,7 @@ bool Fillhead::enqueueTx(const char* msg, const IpAddress& ip, uint16_t port) {
 	return true;
 }
 
-bool Fillhead::dequeueTx(Message& msg) {
+bool Gantry::dequeueTx(Message& msg) {
 	if (m_txQueueHead == m_txQueueTail) {
 		// Queue is empty
 		return false;
@@ -133,7 +133,7 @@ bool Fillhead::dequeueTx(Message& msg) {
 // Network and Message Processing
 // -----------------------------------------------------------------------------
 
-void Fillhead::processUdp() {
+void Gantry::processUdp() {
 	// Process all available packets in the UDP hardware buffer to avoid dropping any during a burst.
 	while (m_udp.PacketParse()) {
 		IpAddress remoteIp = m_udp.RemoteIp();
@@ -149,7 +149,7 @@ void Fillhead::processUdp() {
 	}
 }
 
-void Fillhead::processRxQueue() {
+void Gantry::processRxQueue() {
 	// Process only ONE message per loop. This keeps the main loop consistently fast,
 	// ensuring the processUdp() function is called frequently enough to prevent the
 	// low-level hardware network buffer from overflowing during a command burst.
@@ -159,7 +159,7 @@ void Fillhead::processRxQueue() {
 	}
 }
 
-void Fillhead::processTxQueue() {
+void Gantry::processTxQueue() {
 	Message msg;
 	// Send only one message per update loop to keep the loop fast and non-blocking.
 	// This prevents stalling, which could cause incoming UDP packets to be dropped.
@@ -170,7 +170,7 @@ void Fillhead::processTxQueue() {
 	}
 }
 
-void Fillhead::sendStatus(const char* statusType, const char* message) {
+void Gantry::sendStatus(const char* statusType, const char* message) {
 	char fullMsg[MAX_MESSAGE_LENGTH];
 	snprintf(fullMsg, sizeof(fullMsg), "%s%s", statusType, message);
 	
@@ -184,7 +184,7 @@ void Fillhead::sendStatus(const char* statusType, const char* message) {
 	}
 }
 
-void Fillhead::sendGuiTelemetry() {
+void Gantry::sendGuiTelemetry() {
 	if (!m_guiDiscovered) return;
 
 	snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
@@ -203,8 +203,8 @@ void Fillhead::sendGuiTelemetry() {
 	enqueueTx(m_telemetryBuffer, m_guiIp, m_guiPort);
 }
 
-void Fillhead::handleMessage(const Message& msg) {
-	FillheadCommand cmd = parseCommand(msg.buffer);
+void Gantry::handleMessage(const Message& msg) {
+	GantryCommand cmd = parseCommand(msg.buffer);
 	const char* args = strchr(msg.buffer, ' ');
 	if(args) args++;
 
@@ -253,7 +253,7 @@ void Fillhead::handleMessage(const Message& msg) {
 				m_guiIp = msg.remoteIp; // Use the IP from the message
 				m_guiPort = atoi(portStr + 5);
 				m_guiDiscovered = true;
-				sendStatus(STATUS_PREFIX_DISCOVERY, "FILLHEAD DISCOVERED");
+				sendStatus(STATUS_PREFIX_DISCOVERY, "GANTRY DISCOVERED");
 			}
 			break;
 		}
@@ -269,14 +269,14 @@ void Fillhead::handleMessage(const Message& msg) {
 // Unchanged Helper Functions
 // -----------------------------------------------------------------------------
 
-void Fillhead::abortAll() {
+void Gantry::abortAll() {
 	xAxis.abort();
 	yAxis.abort();
 	zAxis.abort();
 	sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
-void Fillhead::handleSetPeerIp(const char* msg) {
+void Gantry::handleSetPeerIp(const char* msg) {
 	const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
 	IpAddress newPeerIp(ipStr);
 	if (strcmp(newPeerIp.StringValue(), "0.0.0.0") == 0) {
@@ -291,12 +291,12 @@ void Fillhead::handleSetPeerIp(const char* msg) {
 	}
 }
 
-void Fillhead::handleClearPeerIp() {
+void Gantry::handleClearPeerIp() {
 	m_peerDiscovered = false;
 	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }
 
-void Fillhead::setupUsbSerial(void) {
+void Gantry::setupUsbSerial(void) {
 	ConnectorUsb.Mode(Connector::USB_CDC);
 	ConnectorUsb.Speed(9600);
 	ConnectorUsb.PortOpen();
@@ -305,7 +305,7 @@ void Fillhead::setupUsbSerial(void) {
 	while (!ConnectorUsb && Milliseconds() - start < timeout);
 }
 
-void Fillhead::setupEthernet() {
+void Gantry::setupEthernet() {
 	EthernetMgr.Setup();
 
 	if (!EthernetMgr.DhcpBegin()) {
@@ -320,7 +320,7 @@ void Fillhead::setupEthernet() {
 	m_udp.Begin(LOCAL_PORT);
 }
 
-FillheadCommand Fillhead::parseCommand(const char* msg) {
+GantryCommand Gantry::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
@@ -341,8 +341,8 @@ FillheadCommand Fillhead::parseCommand(const char* msg) {
 	return CMD_UNKNOWN;
 }
 
-// Global instance of our Fillhead controller class
-Fillhead fillhead;
+// Global instance of our Gantry controller class
+Gantry gantry;
 
 
 /*
@@ -350,11 +350,11 @@ Fillhead fillhead;
 */
 int main(void) {
     // Perform one-time setup
-    fillhead.setup();
+    gantry.setup();
 
     // Main non-blocking application loop
     while (true) {
         // This single call now processes communications and updates all axis state machines.
-        fillhead.update();
+        gantry.update();
     }
 }

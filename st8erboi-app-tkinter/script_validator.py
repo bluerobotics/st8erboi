@@ -65,46 +65,46 @@ COMMANDS = {
         "help": "Homes the injector against the cartridge using hardcoded parameters."
     },
 
-    # --- Fillhead Commands ---
-    "MOVE_X": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -2000, "max": 2000},
+    # --- Gantry Commands ---
+    "MOVE_X": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -2000, "max": 2000},
                                                 {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
                                                  "optional": True, "default": 50},
                                                 {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
                                                  "optional": True, "default": 200},
                                                 {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
                                                  "optional": True, "default": 25}],
-               "help": "Moves the Fillhead X-axis by a relative distance."},
-    "MOVE_Y": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
+               "help": "Moves the gantry X-axis by a relative distance."},
+    "MOVE_Y": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
                                                 {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
                                                  "optional": True, "default": 50},
                                                 {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
                                                  "optional": True, "default": 200},
                                                 {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
                                                  "optional": True, "default": 25}],
-               "help": "Moves the Fillhead Y-axis by a relative distance."},
-    "MOVE_Z": {"device": "fillhead", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
+               "help": "Moves the gantry Y-axis by a relative distance."},
+    "MOVE_Z": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
                                                 {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 200,
                                                  "optional": True, "default": 50},
                                                 {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
                                                  "optional": True, "default": 200},
                                                 {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
                                                  "optional": True, "default": 25}],
-               "help": "Moves the Fillhead Z-axis by a relative distance."},
+               "help": "Moves the gantry Z-axis by a relative distance."},
     # UPDATED: Homing commands now only take an optional max distance.
     "HOME_X": {
-        "device": "fillhead",
+        "device": "gantry",
         "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 2000, "optional": True}],
-        "help": "Homes the Fillhead X-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
+        "help": "Homes the gantry X-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
     },
     "HOME_Y": {
-        "device": "fillhead",
+        "device": "gantry",
         "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True}],
-        "help": "Homes the Fillhead Y-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
+        "help": "Homes the gantry Y-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
     },
     "HOME_Z": {
-        "device": "fillhead",
+        "device": "gantry",
         "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True}],
-        "help": "Homes the Fillhead Z-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
+        "help": "Homes the gantry Z-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
     },
 
     # --- Simple Commands (No Params) ---
@@ -122,7 +122,7 @@ COMMANDS = {
     "HEATER_PID_OFF": {"device": "injector", "params": [], "help": "Turns the heater PID controller off."},
     "VACUUM_ON": {"device": "injector", "params": [], "help": "Turns the vacuum pump ON and opens the valve."},
     "VACUUM_OFF": {"device": "injector", "params": [], "help": "Turns the vacuum pump OFF and closes the valve."},
-    "START_DEMO": {"device": "fillhead", "params": [], "help": "Starts the circle demo on the fillhead."},
+    "START_DEMO": {"device": "gantry", "params": [], "help": "Starts the circle demo on the gantry."},
     "ABORT": {"device": "both", "params": [], "help": "Stops all motion on the target device."},
 
     # --- Script-Control Commands ---

@@ -159,7 +159,7 @@ axis.d axis.o: .././axis.cpp .././axis.h \
  ../../libClearCore/inc/SysManager.h \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
- ../../libClearCore/inc/XBeeDriver.h .././config.h .././fillhead.h \
+ ../../libClearCore/inc/XBeeDriver.h .././config.h .././gantry.h \
  ../../libClearCore/inc/EthernetUdp.h ../../libClearCore/inc/IpAddress.h
 
 .././axis.h:
@@ -504,7 +504,7 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 
 .././config.h:
 
-.././fillhead.h:
+.././gantry.h:
 
 ../../libClearCore/inc/EthernetUdp.h:
 

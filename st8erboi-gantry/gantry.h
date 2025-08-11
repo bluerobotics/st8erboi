@@ -16,7 +16,7 @@ typedef enum {
 	CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z,
 	CMD_ENABLE_X, CMD_DISABLE_X, CMD_ENABLE_Y, CMD_DISABLE_Y,
 	CMD_ENABLE_Z, CMD_DISABLE_Z
-} FillheadCommand;
+} GantryCommand;
 
 // Structure to hold a single message for the queues
 struct Message {
@@ -25,9 +25,9 @@ struct Message {
 	uint16_t remotePort;
 };
 
-class Fillhead {
+class Gantry {
 	public:
-	Fillhead();
+	Gantry();
 	void setup();
 	void update();
 	void sendStatus(const char* statusType, const char* message);
@@ -40,7 +40,7 @@ class Fillhead {
 	void processUdp();
 	void handleMessage(const Message& msg);
 	void sendGuiTelemetry();
-	FillheadCommand parseCommand(const char* msg);
+	GantryCommand parseCommand(const char* msg);
 
 	// Queue Processing
 	void processRxQueue();

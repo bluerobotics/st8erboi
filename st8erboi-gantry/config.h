@@ -5,7 +5,7 @@
 #define MAX_PACKET_LENGTH 256 // Increased to prevent telemetry truncation
 
 // --- Queue Configuration ---
-#define RX_QUEUE_SIZE 16
+#define RX_QUEUE_SIZE 32
 #define TX_QUEUE_SIZE 32
 #define MAX_MESSAGE_LENGTH MAX_PACKET_LENGTH
 
@@ -28,11 +28,12 @@
 #define HOMING_BACKOFF_MM 10
 
 // --- Homing Sensor Pin Configuration ---
-#define SENSOR_X      ConnectorIO0
-#define SENSOR_Y1     ConnectorIO1
-#define SENSOR_Y2     ConnectorIO3
-#define SENSOR_Z      ConnectorIO4
-#define LIMIT_Y_BACK  ConnectorIO2
+#define SENSOR_X		ConnectorIO0
+#define SENSOR_Y1		ConnectorIO1
+#define SENSOR_Y2		ConnectorIO3
+#define SENSOR_Z		ConnectorIO4
+#define LIMIT_Y_BACK	ConnectorIO2
+#define Z_BRAKE			ConnectorIO5
 
 // --- Machine Travel Limits (mm) ---
 #define X_MIN_POS 0.0f
@@ -46,7 +47,7 @@
 
 // --- Command Definitions ---
 #define CMD_STR_REQUEST_TELEM     "REQUEST_TELEM"
-#define CMD_STR_DISCOVER          "DISCOVER_FILLHEAD"
+#define CMD_STR_DISCOVER          "DISCOVER_GANTRY"
 #define CMD_STR_SET_PEER_IP       "SET_PEER_IP"
 #define CMD_STR_CLEAR_PEER_IP     "CLEAR_PEER_IP"
 #define CMD_STR_ABORT             "ABORT"

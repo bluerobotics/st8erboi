@@ -40,7 +40,7 @@ def create_status_bar(parent, shared_gui_refs):
     conn_frame.pack(side=tk.TOP, fill="x", pady=(0, 10))
     tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_injector'], bg=conn_frame['bg'], fg="white",
              font=("Segoe UI", 9)).pack(anchor='w')
-    tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_fillhead'], bg=conn_frame['bg'], fg="white",
+    tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_gantry'], bg=conn_frame['bg'], fg="white",
              font=("Segoe UI", 9)).pack(anchor='w')
 
     # --- Axis Status Display ---
@@ -195,7 +195,7 @@ def create_status_bar(parent, shared_gui_refs):
         row=0, column=0, sticky='e', padx=5, pady=3)
     tk.Label(status_grid, textvariable=shared_gui_refs['main_state_var'], bg=sys_status_frame['bg'], fg="cyan",
              font=font_state_value).grid(row=0, column=1, sticky='w')
-    tk.Label(status_grid, text="Fillhead State:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
+    tk.Label(status_grid, text="Gantry State:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
         row=1, column=0, sticky='e', padx=5, pady=3)
     tk.Label(status_grid, textvariable=shared_gui_refs['fh_state_var'], bg=sys_status_frame['bg'], fg="yellow",
              font=font_state_value).grid(row=1, column=1, sticky='w')

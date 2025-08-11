@@ -27,7 +27,7 @@ except OSError as e:
 
 devices = {
     "injector": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0},
-    "fillhead": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0}
+    "gantry": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0}
 }
 
 
@@ -96,7 +96,7 @@ def monitor_connections(gui_refs):
                     gui_refs[f'status_var_{key}'].set(status_text)
 
                     # Inform the other device that its peer has dropped
-                    other_key = "fillhead" if key == "injector" else "injector"
+                    other_key = "gantry" if key == "injector" else "injector"
                     if devices[other_key]["connected"]:
                         log_to_terminal(f"INFO: {key.capitalize()} disconnected. Informing peer.", terminal_cb)
                         send_to_device(other_key, "CLEAR_PEER_IP", gui_refs)
@@ -117,8 +117,8 @@ def telemetry_requester_loop(gui_refs, interval_ms):
     while True:
         if devices["injector"]["connected"]:
             send_to_device("injector", "REQUEST_TELEM", gui_refs)
-        if devices["fillhead"]["connected"]:
-            send_to_device("fillhead", "REQUEST_TELEM", gui_refs)
+        if devices["gantry"]["connected"]:
+            send_to_device("gantry", "REQUEST_TELEM", gui_refs)
         time.sleep(interval_ms / 1000.0)
 
 
@@ -136,7 +136,7 @@ def handle_connection(device_key, source_ip, gui_refs):
 
         send_to_device(device_key, "REQUEST_TELEM", gui_refs)
 
-        other_key = "fillhead" if device_key == "injector" else "injector"
+        other_key = "gantry" if device_key == "injector" else "injector"
         if devices[other_key]["connected"]:
             log_to_terminal("INFO: Both devices now connected. Brokering IPs.", gui_refs.get('terminal_cb'))
             send_to_device(device_key, f"SET_PEER_IP {devices[other_key]['ip']}", gui_refs)
@@ -214,7 +214,7 @@ def parse_injector_telemetry(msg, gui_refs):
         log_to_terminal(f"Injector telemetry parse error: {e}\n", gui_refs.get('terminal_cb'))
 
 
-def parse_fillhead_telemetry(msg, gui_refs):
+def parse_gantry_telemetry(msg, gui_refs):
     try:
         payload = msg.split("FH_TELEM_GUI: ")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
@@ -239,17 +239,17 @@ def parse_fillhead_telemetry(msg, gui_refs):
                     enabled_val)
                 if f'fh_homed_m{motor_index}_var' in gui_refs: gui_refs[f'fh_homed_m{motor_index}_var'].set(homed_val)
 
-        if 'peer_status_fillhead_var' in gui_refs:
+        if 'peer_status_gantry_var' in gui_refs:
             is_peer_discovered = parts.get("pd", "0") == "1"
-            devices["fillhead"]["peer_connected"] = is_peer_discovered
+            devices["gantry"]["peer_connected"] = is_peer_discovered
             peer_ip = parts.get("pip", "0.0.0.0")
             if is_peer_discovered:
-                gui_refs['peer_status_fillhead_var'].set(f"Peer: {peer_ip}")
+                gui_refs['peer_status_gantry_var'].set(f"Peer: {peer_ip}")
             else:
-                gui_refs['peer_status_fillhead_var'].set("Peer: Not Connected")
+                gui_refs['peer_status_gantry_var'].set("Peer: Not Connected")
 
     except Exception as e:
-        log_to_terminal(f"Fillhead telemetry parse error: {e} -> on msg: {msg}\n", gui_refs.get('terminal_cb'))
+        log_to_terminal(f"gantry telemetry parse error: {e} -> on msg: {msg}\n", gui_refs.get('terminal_cb'))
 
 
 def recv_loop(gui_refs):
@@ -264,18 +264,18 @@ def recv_loop(gui_refs):
 
             if msg == "DISCOVERY: INJECTOR DISCOVERED":
                 handle_connection("injector", source_ip, gui_refs)
-            elif msg == "DISCOVERY: FILLHEAD DISCOVERED":
-                handle_connection("fillhead", source_ip, gui_refs)
+            elif msg == "DISCOVERY: GANTRY DISCOVERED":
+                handle_connection("gantry", source_ip, gui_refs)
             elif msg.startswith("INJ_TELEM_GUI:"):
                 handle_connection("injector", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_injector_telemetry(msg, gui_refs)
             elif msg.startswith("FH_TELEM_GUI:"):
-                handle_connection("fillhead", source_ip, gui_refs)
+                handle_connection("gantry", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
-                parse_fillhead_telemetry(msg, gui_refs)
+                parse_gantry_telemetry(msg, gui_refs)
             elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "Axis X:", "Axis Y:", "Axis Z:", "INJ_DONE:", "FH_DONE:", "INJ_INFO:", "FH_INFO:", "INJ_ERROR:", "FH_ERROR:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
                 for key, device in devices.items():

@@ -28,7 +28,7 @@ def main():
     # FIX: Added new StringVars and DoubleVars for pinch motor status and torque bars
     shared_gui_refs = {
         'status_var_injector': tk.StringVar(value='🔌 Injector Disconnected'),
-        'status_var_fillhead': tk.StringVar(value='🔌 Fillhead Disconnected'),
+        'status_var_gantry': tk.StringVar(value='🔌 Gantry Disconnected'),
 
         # Injector enabled states
         'enabled_state1_var': tk.StringVar(value='Disabled'),
@@ -50,13 +50,13 @@ def main():
         'torque1_var': tk.DoubleVar(value=0.0),
         'torque2_var': tk.DoubleVar(value=0.0),
 
-        # Fillhead enabled states
+        # Gantry enabled states
         'fh_enabled_m0_var': tk.StringVar(value='Disabled'),
         'fh_enabled_m1_var': tk.StringVar(value='Disabled'),
         'fh_enabled_m2_var': tk.StringVar(value='Disabled'),
         'fh_enabled_m3_var': tk.StringVar(value='Disabled'),
 
-        # Fillhead position and homing
+        # Gantry position and homing
         'fh_pos_m0_var': tk.StringVar(value='---'),
         'fh_pos_m1_var': tk.StringVar(value='---'),
         'fh_pos_m2_var': tk.StringVar(value='---'),
@@ -66,7 +66,7 @@ def main():
         'fh_homed_m2_var': tk.StringVar(value='Not Homed'),
         'fh_homed_m3_var': tk.StringVar(value='Not Homed'),
 
-        # Fillhead torque values
+        # Gantry torque values
         'fh_torque_m0_var': tk.DoubleVar(value=0.0),
         'fh_torque_m1_var': tk.DoubleVar(value=0.0),
         'fh_torque_m2_var': tk.DoubleVar(value=0.0),
@@ -79,19 +79,19 @@ def main():
     }
 
     send_injector_cmd = lambda msg: comms.send_to_device("injector", msg, shared_gui_refs)
-    send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
+    send_gantry_cmd = lambda msg: comms.send_to_device("gantry", msg, shared_gui_refs)
 
     def send_global_abort():
         if 'terminal_cb' in shared_gui_refs:
             comms.log_to_terminal("--- GLOBAL ABORT TRIGGERED ---", shared_gui_refs.get('terminal_cb'))
         send_injector_cmd("ABORT")
-        send_fillhead_cmd("ABORT")
+        send_gantry_cmd("ABORT")
 
     command_funcs = {
         "abort": send_global_abort,
         "clear_errors": lambda: send_injector_cmd("CLEAR_ERRORS"),
         "send_injector": send_injector_cmd,
-        "send_fillhead": send_fillhead_cmd
+        "send_gantry": send_gantry_cmd
     }
 
     # --- Main Layout Frames ---
