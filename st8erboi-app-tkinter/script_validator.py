@@ -29,16 +29,6 @@ COMMANDS = {
         ],
         "help": "Executes a purge move to expel a certain volume of material."
     },
-    "PINCH_JOG_MOVE": {
-        "device": "injector",
-        "params": [
-            {"name": "Dist(mm)", "type": float, "min": -50, "max": 50},
-            {"name": "Speed(mm/s)", "type": float, "min": 0.1, "max": 50, "optional": True, "default": 5.0},
-            {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000, "optional": True, "default": 25.0},
-            {"name": "Torque(%)", "type": float, "min": 1, "max": 100, "optional": True, "default": 20}
-        ],
-        "help": "Moves the pinch motor by a relative distance."
-    },
     "SET_HEATER_SETPOINT": {
         "device": "injector",
         "params": [{"name": "Temp(°C)", "type": float, "min": 20, "max": 150}],
@@ -53,16 +43,32 @@ COMMANDS = {
         ],
         "help": "Sets the PID gains for the heater."
     },
-    # UPDATED: Homing commands now take no parameters.
     "MACHINE_HOME_MOVE": {
         "device": "injector",
         "params": [],
-        "help": "Homes the main machine axis using hardcoded parameters."
+        "help": "Homes the main machine axis using parameters from the manual controls tab."
     },
     "CARTRIDGE_HOME_MOVE": {
         "device": "injector",
         "params": [],
-        "help": "Homes the injector against the cartridge using hardcoded parameters."
+        "help": "Homes the injector against the cartridge using parameters from the manual controls tab."
+    },
+    # --- NEW/MODIFIED: Pinch Valve Commands ---
+    "INJECTION_VALVE_HOME": {"device": "injector", "params": [], "help": "Homes the injection pinch valve."},
+    "INJECTION_VALVE_OPEN": {"device": "injector", "params": [], "help": "Opens the injection pinch valve."},
+    "INJECTION_VALVE_CLOSE": {"device": "injector", "params": [], "help": "Closes the injection pinch valve."},
+    "INJECTION_VALVE_JOG": {
+        "device": "injector",
+        "params": [{"name": "Dist(mm)", "type": float, "min": -50, "max": 50}],
+        "help": "Jogs the injection pinch valve by a relative distance."
+    },
+    "VACUUM_VALVE_HOME": {"device": "injector", "params": [], "help": "Homes the vacuum pinch valve."},
+    "VACUUM_VALVE_OPEN": {"device": "injector", "params": [], "help": "Opens the vacuum pinch valve."},
+    "VACUUM_VALVE_CLOSE": {"device": "injector", "params": [], "help": "Closes the vacuum pinch valve."},
+    "VACUUM_VALVE_JOG": {
+        "device": "injector",
+        "params": [{"name": "Dist(mm)", "type": float, "min": -50, "max": 50}],
+        "help": "Jogs the vacuum pinch valve by a relative distance."
     },
 
     # --- Gantry Commands ---
@@ -90,7 +96,6 @@ COMMANDS = {
                                                 {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
                                                  "optional": True, "default": 25}],
                "help": "Moves the gantry Z-axis by a relative distance."},
-    # UPDATED: Homing commands now only take an optional max distance.
     "HOME_X": {
         "device": "gantry",
         "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 2000, "optional": True}],
@@ -108,16 +113,13 @@ COMMANDS = {
     },
 
     # --- Simple Commands (No Params) ---
-    "PINCH_HOME_MOVE": {"device": "injector", "params": [], "help": "Homes the pinch valve motor."},
     "MOVE_TO_CARTRIDGE_HOME": {"device": "injector", "params": [],
                                "help": "Moves the injector to the zero position of the cartridge."},
     "PAUSE_INJECTION": {"device": "injector", "params": [], "help": "Pauses an ongoing injection or purge."},
     "RESUME_INJECTION": {"device": "injector", "params": [], "help": "Resumes a paused injection or purge."},
     "CANCEL_INJECTION": {"device": "injector", "params": [], "help": "Cancels an injection or purge."},
-    "ENABLE": {"device": "injector", "params": [], "help": "Enables injector motors 0 & 1."},
-    "DISABLE": {"device": "injector", "params": [], "help": "Disables injector motors 0 & 1."},
-    "ENABLE_PINCH": {"device": "injector", "params": [], "help": "Enables the pinch motor."},
-    "DISABLE_PINCH": {"device": "injector", "params": [], "help": "Disables the pinch motor."},
+    "ENABLE": {"device": "injector", "params": [], "help": "Enables all injector motors."},
+    "DISABLE": {"device": "injector", "params": [], "help": "Disables all injector motors."},
     "HEATER_PID_ON": {"device": "injector", "params": [], "help": "Turns the heater PID controller on."},
     "HEATER_PID_OFF": {"device": "injector", "params": [], "help": "Turns the heater PID controller off."},
     "VACUUM_ON": {"device": "injector", "params": [], "help": "Turns the vacuum pump ON and opens the valve."},

@@ -244,7 +244,6 @@ class ScriptRunner:
                     params_def = command_info['params']
                     full_args = list(args)
 
-                    # CORRECTED LOGIC: Properly handle optional parameters without defaults.
                     if len(args) < len(params_def):
                         for j in range(len(args), len(params_def)):
                             param_def = params_def[j]
@@ -252,8 +251,6 @@ class ScriptRunner:
 
                             if default_val is not None:
                                 full_args.append(str(default_val))
-                            # Only raise an error if the parameter is NOT optional.
-                            # If it's optional and has no default, we send nothing for it.
                             elif not param_def.get("optional"):
                                 self.status_callback(f"Error: Missing required parameter for {command_word}", line_num)
                                 self.is_running = False
@@ -261,6 +258,7 @@ class ScriptRunner:
 
                     if not self.is_running: continue
 
+                    # Before sending a move, update GUI to show "Not Homed"
                     if command_word == "HOME_X":
                         self.gui_refs['fh_homed_m0_var'].set("Not Homed")
                     elif command_word == "HOME_Y":
@@ -268,8 +266,11 @@ class ScriptRunner:
                         self.gui_refs['fh_homed_m2_var'].set("Not Homed")
                     elif command_word == "HOME_Z":
                         self.gui_refs['fh_homed_m3_var'].set("Not Homed")
-                    elif command_word == "PINCH_HOME_MOVE":
-                        self.gui_refs['pinch_homed_var'].set("Not Homed")
+                    elif command_word == "INJECTION_VALVE_HOME":
+                        self.gui_refs['inj_valve_homed_var'].set("Not Homed")
+                    elif command_word == "VACUUM_VALVE_HOME":
+                        self.gui_refs['vac_valve_homed_var'].set("Not Homed")
+
 
                     final_command_str = f"{command_word} {' '.join(full_args)}" if full_args else command_word
                     send_func = self.command_funcs.get(f"send_{device}")
