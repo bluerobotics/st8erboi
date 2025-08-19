@@ -7,6 +7,17 @@ Also contains the script validation logic.
 
 COMMANDS = {
     # --- Fillhead Commands (Formerly Injector) ---
+    "JOG_MOVE": {
+        "device": "fillhead",
+        "params": [
+            {"name": "M0_Dist(mm)", "type": float, "min": -1000, "max": 1000},
+            {"name": "M1_Dist(mm)", "type": float, "min": -1000, "max": 1000},
+            {"name": "Speed(mm/s)", "type": float, "min": 0.01, "max": 50},
+            {"name": "Accel(mm/s^2)", "type": float, "min": 1, "max": 1000},
+            {"name": "Torque(%)", "type": float, "min": 0, "max": 100}
+        ],
+        "help": "Executes a relative jog move on the fillhead motors."
+    },
     "INJECT_MOVE": {
         "device": "fillhead",
         "params": [
@@ -46,12 +57,12 @@ COMMANDS = {
     "MACHINE_HOME_MOVE": {
         "device": "fillhead",
         "params": [],
-        "help": "Homes the main machine axis using parameters from the manual controls tab."
+        "help": "Homes the main machine axis using parameters hardcoded in the firmware."
     },
     "CARTRIDGE_HOME_MOVE": {
         "device": "fillhead",
         "params": [],
-        "help": "Homes the injector against the cartridge using parameters from the manual controls tab."
+        "help": "Homes the injector against the cartridge using parameters hardcoded in the firmware."
     },
     "INJECTION_VALVE_HOME": {"device": "fillhead", "params": [], "help": "Homes the injection pinch valve."},
     "INJECTION_VALVE_OPEN": {"device": "fillhead", "params": [], "help": "Opens the injection pinch valve."},

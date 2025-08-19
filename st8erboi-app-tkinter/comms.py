@@ -109,16 +109,6 @@ def monitor_connections(gui_refs):
         time.sleep(HEARTBEAT_INTERVAL)
 
 
-def telemetry_requester_loop(gui_refs, interval_ms):
-    """Periodically requests telemetry from connected devices."""
-    while True:
-        if devices["fillhead"]["connected"]:
-            send_to_device("fillhead", "REQUEST_TELEM", gui_refs)
-        if devices["gantry"]["connected"]:
-            send_to_device("gantry", "REQUEST_TELEM", gui_refs)
-        time.sleep(interval_ms / 1000.0)
-
-
 def handle_connection(device_key, source_ip, gui_refs):
     """Handles the logic for a new or existing connection."""
     device = devices[device_key]
@@ -130,8 +120,6 @@ def handle_connection(device_key, source_ip, gui_refs):
         status_text = f"✅ {device_key.capitalize()} Connected ({source_ip})"
         log_to_terminal(status_text, gui_refs.get('terminal_cb'))
         gui_refs[f'status_var_{device_key}'].set(status_text)
-
-        send_to_device(device_key, "REQUEST_TELEM", gui_refs)
 
         other_key = "gantry" if device_key == "fillhead" else "fillhead"
         if devices[other_key]["connected"]:
@@ -156,7 +144,7 @@ def safe_float(s, default_val=0.0):
 def parse_fillhead_telemetry(msg, gui_refs):
     """Parses the telemetry string from the Fillhead controller."""
     try:
-        payload = msg.split("FILLHEAD_TELEM_GUI:")[1]
+        payload = msg.split("FILLHEAD_TELEM: ")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
         # Main Controller States
@@ -219,8 +207,11 @@ def parse_fillhead_telemetry(msg, gui_refs):
 def parse_gantry_telemetry(msg, gui_refs):
     """Parses the telemetry string from the Gantry controller."""
     try:
-        payload = msg.split("FH_TELEM_GUI: ")[1]
+        payload = msg.split("GANTRY_TELEM: ")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
+
+        # --- THIS IS THE FIX ---
+        if 'fh_state_var' in gui_refs: gui_refs['fh_state_var'].set(parts.get("gantry_state", "UNKNOWN")) # <-- ADD THIS LINE
 
         if 'fh_state_x_var' in gui_refs: gui_refs['fh_state_x_var'].set(parts.get("x_s", "UNKNOWN"))
         if 'fh_state_y_var' in gui_refs: gui_refs['fh_state_y_var'].set(parts.get("y_s", "UNKNOWN"))
@@ -268,12 +259,12 @@ def recv_loop(gui_refs):
                 handle_connection("fillhead", source_ip, gui_refs)
             elif msg == "DISCOVERY: GANTRY DISCOVERED":
                 handle_connection("gantry", source_ip, gui_refs)
-            elif msg.startswith("FILLHEAD_TELEM:"):
+            elif msg.startswith("FILLHEAD_TELEM: "):
                 handle_connection("fillhead", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_fillhead_telemetry(msg, gui_refs)
-            elif msg.startswith("GANTRY_TELEM:"):
+            elif msg.startswith("GANTRY_TELEM: "):
                 handle_connection("gantry", source_ip, gui_refs)
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)

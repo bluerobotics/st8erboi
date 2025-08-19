@@ -243,7 +243,10 @@
     <PostBuildEvent>"$(SolutionDir)\..\Tools\uf2-builder\Release\uf2-builder.exe" "$(OutputDirectory)\$(OutputFileName).bin" "$(OutputDirectory)\$(OutputFileName).uf2"</PostBuildEvent>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="axis.cpp">
+    <Compile Include="axis_controller.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="comms_controller.cpp">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="gantry.cpp">
@@ -258,10 +261,13 @@
     <Compile Include="gantry.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="comms_controller.h">
+      <SubType>compile</SubType>
+    </Compile>
     <None Include="Device_Startup\flash_without_bootloader.ld">
       <SubType>compile</SubType>
     </None>
-    <Compile Include="axis.h">
+    <Compile Include="axis_controller.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="config.h">

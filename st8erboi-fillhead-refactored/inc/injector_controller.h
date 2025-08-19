@@ -137,7 +137,6 @@ private:
     char m_telemetryBuffer[256];
 
     // --- Private Methods ---
-    // Updated function signature to match Axis::moveSteps
     void moveSteps(long steps, int velSps, int accelSps2, int torque);
     bool isMoving();
     float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);
@@ -147,8 +146,8 @@ private:
 
     // --- Command Handlers ---
     void handleJogMove(const char* args);
-    void handleMachineHome(const char* args);
-    void handleCartridgeHome(const char* args);
+    void handleMachineHome();
+    void handleCartridgeHome();
     void handleMoveToCartridgeHome();
     void handleMoveToCartridgeRetract(const char* args);
     void handleInjectMove(const char* args);

@@ -25,17 +25,20 @@ def main():
     configure_styles()
 
     # --- Shared State and Functions ---
-    # MODIFIED: Cleaned up unused/obsolete variable definitions.
     shared_gui_refs = {
+        # --- Connection and Global State ---
         'status_var_fillhead': tk.StringVar(value='🔌 Fillhead Disconnected'),
         'status_var_gantry': tk.StringVar(value='🔌 Gantry Disconnected'),
+        'main_state_var': tk.StringVar(value='---'),
+        'feed_state_var': tk.StringVar(value='---'),
+        'error_state_var': tk.StringVar(value='No Error'),
 
-        # Fillhead enabled states
+        # --- Fillhead Enabled States ---
         'enabled_state1_var': tk.StringVar(value='Disabled'),
         'enabled_state2_var': tk.StringVar(value='Disabled'),
         'enabled_state3_var': tk.StringVar(value='Disabled'),
 
-        # Fillhead position and homing
+        # --- Fillhead Position, Homing, and Dispensing ---
         'pos_mm0_var': tk.StringVar(value='---'),
         'pos_mm1_var': tk.StringVar(value='---'),
         'homed0_var': tk.StringVar(value='Not Homed'),
@@ -44,24 +47,19 @@ def main():
         'cartridge_steps_var': tk.StringVar(value='---'),
         'inject_dispensed_ml_var': tk.StringVar(value='---'),
 
-        # Fillhead torque values
+        # --- Fillhead Torque Values ---
         'torque0_var': tk.DoubleVar(value=0.0),
         'torque1_var': tk.DoubleVar(value=0.0),
         'torque2_var': tk.DoubleVar(value=0.0),
         'torque3_var': tk.DoubleVar(value=0.0),
 
-        # Fillhead system status
-        'main_state_var': tk.StringVar(value='---'),
-        'vacuum_psig_var': tk.StringVar(value='---'),
-        'temp_c_var': tk.StringVar(value='---'),
-
-        # Gantry enabled states
+        # --- Gantry Enabled States ---
         'fh_enabled_m0_var': tk.StringVar(value='Disabled'),
         'fh_enabled_m1_var': tk.StringVar(value='Disabled'),
         'fh_enabled_m2_var': tk.StringVar(value='Disabled'),
         'fh_enabled_m3_var': tk.StringVar(value='Disabled'),
 
-        # Gantry position and homing
+        # --- Gantry Position and Homing ---
         'fh_pos_m0_var': tk.StringVar(value='---'),
         'fh_pos_m1_var': tk.StringVar(value='---'),
         'fh_pos_m2_var': tk.StringVar(value='---'),
@@ -70,19 +68,29 @@ def main():
         'fh_homed_m1_var': tk.StringVar(value='Not Homed'),
         'fh_homed_m2_var': tk.StringVar(value='Not Homed'),
         'fh_homed_m3_var': tk.StringVar(value='Not Homed'),
-        'fh_state_var': tk.StringVar(value='Idle'),
 
-        # Gantry torque values
+        # --- Gantry Axis States ---
+        'fh_state_x_var': tk.StringVar(value='---'),
+        'fh_state_y_var': tk.StringVar(value='---'),
+        'fh_state_z_var': tk.StringVar(value='---'),
+        'fh_state_var': tk.StringVar(value='---'), # Used by status_panel
+
+        # --- Gantry Torque Values ---
         'fh_torque_m0_var': tk.DoubleVar(value=0.0),
         'fh_torque_m1_var': tk.DoubleVar(value=0.0),
         'fh_torque_m2_var': tk.DoubleVar(value=0.0),
         'fh_torque_m3_var': tk.DoubleVar(value=0.0),
 
-        # Fillhead pinch valve variables
+        # --- Fillhead Pinch Valve Variables ---
         'inj_valve_pos_var': tk.StringVar(value='---'),
         'inj_valve_homed_var': tk.StringVar(value='Not Homed'),
         'vac_valve_pos_var': tk.StringVar(value='---'),
         'vac_valve_homed_var': tk.StringVar(value='Not Homed'),
+
+        # --- System Status Variables (Heater, Vacuum, etc.) ---
+        'vacuum_psig_var': tk.StringVar(value='0.00 PSIG'),
+        'temp_c_var': tk.StringVar(value='0.0 °C'),
+        'pid_setpoint_var': tk.StringVar(value='25.0'), # Default setpoint
     }
 
     send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
@@ -136,7 +144,6 @@ def main():
     # --- Start Communication Threads ---
     threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()
     threading.Thread(target=comms.monitor_connections, args=(shared_gui_refs,), daemon=True).start()
-    threading.Thread(target=comms.telemetry_requester_loop, args=(shared_gui_refs, GUI_UPDATE_INTERVAL_MS), daemon=True).start()
 
     root.mainloop()
 

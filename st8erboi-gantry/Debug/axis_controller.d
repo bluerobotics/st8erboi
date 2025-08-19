@@ -1,6 +1,7 @@
-gantry.d gantry.o: .././gantry.cpp .././gantry.h \
- ../../libClearCore/inc/ClearCore.h ../../libClearCore/inc/AdcManager.h \
- ../../libClearCore/inc/IirFilter.h ../../libClearCore/inc/SysTiming.h \
+axis_controller.d axis_controller.o: .././axis_controller.cpp \
+ .././axis_controller.h ../../libClearCore/inc/ClearCore.h \
+ ../../libClearCore/inc/AdcManager.h ../../libClearCore/inc/IirFilter.h \
+ ../../libClearCore/inc/SysTiming.h \
  ../../libClearCore/inc/CcioBoardManager.h \
  ../../libClearCore/inc/CcioPin.h \
  C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include/sam.h \
@@ -159,11 +160,11 @@ gantry.d gantry.o: .././gantry.cpp .././gantry.h \
  ../../libClearCore/inc/SysManager.h \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
- ../../libClearCore/inc/XBeeDriver.h .././config.h .././axis_controller.h \
+ ../../libClearCore/inc/XBeeDriver.h .././config.h .././gantry.h \
  .././comms_controller.h ../../libClearCore/inc/EthernetUdp.h \
  ../../libClearCore/inc/IpAddress.h
 
-.././gantry.h:
+.././axis_controller.h:
 
 ../../libClearCore/inc/ClearCore.h:
 
@@ -505,7 +506,7 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 
 .././config.h:
 
-.././axis_controller.h:
+.././gantry.h:
 
 .././comms_controller.h:
 

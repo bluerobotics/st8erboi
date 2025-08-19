@@ -2,7 +2,9 @@
 # Automatically-generated file. Do not edit or delete the file
 ################################################################################
 
-axis.cpp
+axis_controller.cpp
+
+comms_controller.cpp
 
 gantry.cpp
 

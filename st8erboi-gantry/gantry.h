@@ -1,99 +1,149 @@
+/**
+ * @file gantry.h
+ * @author Your Name
+ * @date August 19, 2025
+ * @brief Master controller for the XYZ gantry system.
+ *
+ * This file defines the main Gantry class, which serves as the central controller
+ * for the physical gantry apparatus. It owns and orchestrates the individual Axis
+ * controllers (X, Y, and Z), manages the overall system state (e.g., STANDBY,
+ * HOMING), and delegates all communication tasks to a dedicated CommsController.
+ */
+
 #pragma once
 
 #include "ClearCore.h"
-#include "EthernetUdp.h"
-#include "IpAddress.h"
 #include "config.h"
-#include "axis.h"
+#include "axis_controller.h"
+#include "comms_controller.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 
-// --- Command parsing enum ---
+/**
+ * @brief Defines the primary operational states of the entire gantry system.
+ * The overall state is determined by the collective state of the individual axes.
+ */
 typedef enum {
-	CMD_UNKNOWN, CMD_REQUEST_TELEM, CMD_DISCOVER, CMD_SET_PEER_IP,
-	CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z,
-	CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z,
-	CMD_ENABLE_X, CMD_DISABLE_X, CMD_ENABLE_Y, CMD_DISABLE_Y,
-	CMD_ENABLE_Z, CMD_DISABLE_Z
-} GantryCommand;
-
-// --- Gantry State Machine Enum ---
-typedef enum {
-	GANTRY_STANDBY,
-	GANTRY_HOMING,
-	GANTRY_MOVING
+    GANTRY_STANDBY, ///< The gantry is idle and ready to accept commands.
+    GANTRY_HOMING,  ///< One or more axes are currently executing a homing routine.
+    GANTRY_MOVING   ///< One or more axes are currently executing a move command.
 } GantryState;
 
-
-// Structure to hold a single message for the queues
-struct Message {
-	char buffer[MAX_MESSAGE_LENGTH];
-	IpAddress remoteIp;
-	uint16_t remotePort;
-};
-
+/**
+ * @class Gantry
+ * @brief The main orchestrator for the gantry system.
+ *
+ * This class encapsulates the top-level logic for the gantry. It does not
+ * handle low-level communication or motor control directly, but rather delegates
+ * those responsibilities to its member objects (CommsController and Axis).
+ * Its primary role is to process incoming commands, update the state of its
+ * components, and report status and telemetry.
+ */
 class Gantry {
-	public:
-	Gantry();
-	void setup();
-	void update();
-	void sendStatus(const char* statusType, const char* message);
+public:
+    /**
+     * @brief Constructs the Gantry controller.
+     * @details Initializes all member objects, including the communications
+     * controller and each physical axis, preparing them for setup.
+     */
+    Gantry();
 
-	private:
-	void setupEthernet();
-	void setupUsbSerial();
-	
-	// UDP and Message Handling
-	void processUdp();
-	void handleMessage(const Message& msg);
-	void publishTelemetry();
-	GantryCommand parseCommand(const char* msg);
+    /**
+     * @brief Performs one-time hardware and software initialization.
+     * @details This method should be called once at startup. It configures motors,
+     * initializes network communication, and ensures all components are ready
+     * for operation.
+     */
+    void setup();
 
-	// Queue Processing
-	void processRxQueue();
-	void processTxQueue();
+    /**
+     * @brief The main, non-blocking update loop for the gantry system.
+     * @details This function is intended to be called continuously. It drives all
+     * real-time operations, including processing network messages, updating axis
+     * state machines, and publishing telemetry.
+     */
+    void loop();
 
-	// Queue Management
-	bool enqueueRx(const char* msg, const IpAddress& ip, uint16_t port);
-	bool dequeueRx(Message& msg);
-	bool enqueueTx(const char* msg, const IpAddress& ip, uint16_t port);
-	bool dequeueTx(Message& msg);
+    /**
+     * @brief Public interface to send a status message.
+     * @details This wrapper method allows owned objects (like an Axis) to send
+     * status messages (INFO, DONE, ERROR) through the Gantry's CommsController
+     * without needing a direct pointer to it.
+     * @param statusType The prefix for the message (e.g., "INFO: ").
+     * @param message The content of the message to send.
+     */
+    void sendStatus(const char* statusType, const char* message);
 
-	// Command Handlers
-	void handleSetPeerIp(const char* msg);
-	void handleClearPeerIp();
-	void abortAll();
+private:
+    //================================================================================
+    // Private Methods
+    //================================================================================
 
-	// State Management
-	void updateGantryState();
-	const char* getGantryStateString();
-	
-	// Member Variables
-	EthernetUdp m_udp;
-	IpAddress m_guiIp;
-	uint16_t m_guiPort;
-	bool m_guiDiscovered;
-	IpAddress m_peerIp;
-	bool m_peerDiscovered;
-	
-	Axis xAxis;
-	Axis yAxis;
-	Axis zAxis;
+    /**
+     * @brief Central dispatcher for all incoming commands.
+     * @details Parses a received message and routes the command and its arguments
+     * to the appropriate handler function or Axis object.
+     * @param msg The message object received from the communications queue.
+     */
+    void handleMessage(const Message& msg);
 
-	GantryState m_state;
+    /**
+     * @brief Handles the SET_PEER_IP command.
+     * @param msg The full message string containing the peer's IP address.
+     */
+    void handleSetPeerIp(const char* msg);
 
-	char m_telemetryBuffer[300];
-	unsigned char m_packetBuffer[MAX_PACKET_LENGTH];
-	
-	uint32_t m_lastTelemetryTime;
-	
-	// --- Message Queues ---
-	Message m_rxQueue[RX_QUEUE_SIZE];
-	volatile int m_rxQueueHead;
-	volatile int m_rxQueueTail;
+    /**
+     * @brief Handles the CLEAR_PEER_IP command.
+     */
+    void handleClearPeerIp();
 
-	Message m_txQueue[TX_QUEUE_SIZE];
-	volatile int m_txQueueHead;
-	volatile int m_txQueueTail;
+    /**
+     * @brief Aborts all motion on all axes immediately.
+     */
+    void abortAll();
+
+    /**
+     * @brief Assembles and queues a telemetry packet for transmission.
+     * @details Gathers state information from all axes and system components,
+     * formats it into a single string, and enqueues it for sending via the
+     * CommsController.
+     */
+    void publishTelemetry();
+
+    /**
+     * @brief Updates the overall gantry state based on individual axis states.
+     * @details Consolidates the status of all axes into a single, high-level
+     * GantryState (e.g., if any axis is moving, the whole gantry is MOVING).
+     */
+    void updateGantryState();
+
+    /**
+     * @brief Converts the current GantryState enum to a human-readable string.
+     * @return A const char* representing the current state (e.g., "STANDBY").
+     */
+    const char* getGantryStateString();
+
+    //================================================================================
+    // Member Variables
+    //================================================================================
+
+    /// @brief Handles all network communication, message queuing, and command parsing.
+    CommsController m_comms;
+
+    /// @brief Controller for the X-axis.
+    Axis xAxis;
+    /// @brief Controller for the Y-axis gantry.
+    Axis yAxis;
+    /// @brief Controller for the Z-axis.
+    Axis zAxis;
+
+    /// @brief The overall state of the gantry system.
+    GantryState m_state;
+
+    /// @brief A reusable buffer for formatting the telemetry string.
+    char m_telemetryBuffer[300];
+    /// @brief Timestamp of the last telemetry transmission to regulate send frequency.
+    uint32_t m_lastTelemetryTime;
 };
