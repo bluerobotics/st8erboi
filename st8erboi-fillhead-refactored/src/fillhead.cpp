@@ -59,6 +59,9 @@ Fillhead::Fillhead() :
  * setup() method for each component in the correct order.
  */
 void Fillhead::setup() {
+    // Configure all motors for step and direction control mode.
+    MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
+
     m_comms.setup();
     m_injector.setup();
     m_injectorValve.setup();

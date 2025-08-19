@@ -300,6 +300,15 @@ void Injector::handleCommand(UserCommand cmd, const char* args) {
         m_comms->sendStatus(STATUS_PREFIX_ERROR, "Injector command ignored: Motors are disabled.");
         return;
     }
+	
+	if (m_motorA->StatusReg().bit.MotorInFault || m_motorB->StatusReg().bit.MotorInFault) {
+        char errorMsg[200];
+        snprintf(errorMsg, sizeof(errorMsg), "Injector command ignored: Motor in fault. M0 Status=0x%04X, M1 Status=0x%04X",
+                 (unsigned int)m_motorA->StatusReg().reg, (unsigned int)m_motorB->StatusReg().reg);
+        m_comms->sendStatus(STATUS_PREFIX_ERROR, errorMsg);
+        return;
+    }
+	
     if (m_state != STATE_STANDBY &&
     (cmd == CMD_JOG_MOVE || cmd == CMD_MACHINE_HOME_MOVE || cmd == CMD_CARTRIDGE_HOME_MOVE || cmd == CMD_INJECT_MOVE)) {
         m_comms->sendStatus(STATUS_PREFIX_ERROR, "Injector command ignored: Another operation is in progress.");
@@ -308,8 +317,8 @@ void Injector::handleCommand(UserCommand cmd, const char* args) {
 
     switch(cmd) {
         case CMD_JOG_MOVE:                  handleJogMove(args); break;
-        case CMD_MACHINE_HOME_MOVE:         handleMachineHome(args); break;
-        case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHome(args); break;
+        case CMD_MACHINE_HOME_MOVE:         handleMachineHome(); break; // MODIFIED: No longer passes args
+        case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHome(); break; // MODIFIED: No longer passes args
         case CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(args); break;
         case CMD_INJECT_MOVE:               handleInjectMove(args); break;
@@ -393,9 +402,8 @@ void Injector::handleJogMove(const char* args) {
 
 /**
  * @brief Handles the MACHINE_HOME_MOVE command using hardcoded parameters.
- * @param args The command arguments string (ignored).
  */
-void Injector::handleMachineHome(const char* args) {
+void Injector::handleMachineHome() { // MODIFIED: No longer takes arguments
     // MODIFIED: Arguments are ignored. Using hardcoded values from config.h
     m_torqueLimit = HOMING_TORQUE_PERCENT;
     m_homingDistanceSteps = (long)(fabs(HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
@@ -428,9 +436,8 @@ void Injector::handleMachineHome(const char* args) {
 
 /**
  * @brief Handles the CARTRIDGE_HOME_MOVE command using hardcoded parameters.
- * @param args The command arguments string (ignored).
  */
-void Injector::handleCartridgeHome(const char* args) {
+void Injector::handleCartridgeHome() { // MODIFIED: No longer takes arguments
     // MODIFIED: Arguments are ignored. Using hardcoded values from config.h
     m_torqueLimit = HOMING_TORQUE_PERCENT;
     m_homingDistanceSteps = (long)(fabs(HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);

@@ -146,8 +146,8 @@ private:
 
     // --- Command Handlers ---
     void handleJogMove(const char* args);
-    void handleMachineHome();
-    void handleCartridgeHome();
+    void handleMachineHome(); // MODIFIED: No longer takes arguments
+    void handleCartridgeHome(); // MODIFIED: No longer takes arguments
     void handleMoveToCartridgeHome();
     void handleMoveToCartridgeRetract(const char* args);
     void handleInjectMove(const char* args);
