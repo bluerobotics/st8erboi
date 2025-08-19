@@ -106,7 +106,7 @@ void PinchValve::home() {
 	const float accel_mms2 = 100.0f;
 	const int torque_percent = 20;
 
-	move( (long)(stroke_mm * STEPS_PER_MM_PINCH),
+	moveSteps( (long)(stroke_mm * STEPS_PER_MM_PINCH),
 	(int)(vel_mms * STEPS_PER_MM_PINCH),
 	(int)(accel_mms2 * STEPS_PER_MM_PINCH),
 	torque_percent);
@@ -124,7 +124,7 @@ void PinchValve::open() {
 	// Assuming 'open' is moving to a negative position
 	long target_steps = (long)(-10 * STEPS_PER_MM_PINCH); // 10mm open
 	long current_steps = m_motor->PositionRefCommanded();
-	move(target_steps - current_steps, 10000, 50000, 30);
+	moveSteps(target_steps - current_steps, 10000, 50000, 30);
 }
 
 void PinchValve::close() {
@@ -134,7 +134,7 @@ void PinchValve::close() {
 	}
 	// Assuming 'closed' is position 0
 	long current_steps = m_motor->PositionRefCommanded();
-	move(0 - current_steps, 10000, 50000, 30);
+	moveSteps(0 - current_steps, 10000, 50000, 30);
 }
 
 void PinchValve::jog(const char* args) {
@@ -150,10 +150,10 @@ void PinchValve::jog(const char* args) {
 	long steps = (long)(dist_mm * STEPS_PER_MM_PINCH);
 	int vel_sps = (int)(PINCH_JOG_DEFAULT_VEL_MMS * STEPS_PER_MM_PINCH);
 	int accel_sps2_val = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
-	move(steps, vel_sps, accel_sps2_val, JOG_DEFAULT_TORQUE_PERCENT);
+	moveSteps(steps, vel_sps, accel_sps2_val, JOG_DEFAULT_TORQUE_PERCENT);
 }
 
-void PinchValve::move(long steps, int velocity_sps, int accel_sps2, int torque_percent) {
+void PinchValve::moveSteps(long steps, int velocity_sps, int accel_sps2, int torque_percent) {
 	if (m_motor->StatusReg().bit.Enabled) {
 		m_state = VALVE_MOVING;
 		m_torqueLimit = (float)torque_percent;

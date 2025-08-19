@@ -91,9 +91,9 @@ src/injector_controller.d \
 src/pinch_valve_controller.d \
 src/vacuum_controller.d
 
-OUTPUT_FILE_PATH +=st8erboi-injector.elf
+OUTPUT_FILE_PATH +=st8erboi-fillhead.elf
 
-OUTPUT_FILE_PATH_AS_ARGS +=st8erboi-injector.elf
+OUTPUT_FILE_PATH_AS_ARGS +=st8erboi-fillhead.elf
 
 ADDITIONAL_DEPENDENCIES:=
 
@@ -184,10 +184,10 @@ all: $(OUTPUT_FILE_PATH) $(ADDITIONAL_DEPENDENCIES)
 $(OUTPUT_FILE_PATH): $(OBJS) $(USER_OBJS) $(OUTPUT_FILE_DEP) $(LIB_DEP) $(LINKER_SCRIPT_DEP)
 	@echo Building target: $@
 	@echo Invoking: ARM/GNU Linker : 6.3.1
-	$(QUOTE)C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-g++.exe$(QUOTE) -o$(OUTPUT_FILE_PATH_AS_ARGS) $(OBJS_AS_ARGS) $(USER_OBJS) $(LIBS) -mthumb -Wl,-Map="st8erboi-injector.map" --specs=rdimon.specs -Wl,--start-group -lm -larm_cortexM4lf_math -lClearCore -lLwIP  -Wl,--end-group -L"..\\Device_Startup" -L"C:\Program Files (x86)\Atmel\Studio\7.0\Packs\arm\CMSIS\4.5.0\CMSIS\Lib\GCC" -L"C:\Users\emill\Documents\GitHub\st8erboi\libClearCore\Debug" -L"C:\Users\emill\Documents\GitHub\st8erboi\LwIP\Debug"  -Wl,--gc-sections -mcpu=cortex-m4 -Tflash_with_bootloader.ld -mfloat-abi=hard -mfpu=fpv4-sp-d16  
+	$(QUOTE)C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-g++.exe$(QUOTE) -o$(OUTPUT_FILE_PATH_AS_ARGS) $(OBJS_AS_ARGS) $(USER_OBJS) $(LIBS) -mthumb -Wl,-Map="st8erboi-fillhead.map" --specs=rdimon.specs -Wl,--start-group -lm -larm_cortexM4lf_math -lClearCore -lLwIP  -Wl,--end-group -L"..\\Device_Startup" -L"C:\Program Files (x86)\Atmel\Studio\7.0\Packs\arm\CMSIS\4.5.0\CMSIS\Lib\GCC" -L"C:\Users\emill\Documents\GitHub\st8erboi\libClearCore\Debug" -L"C:\Users\emill\Documents\GitHub\st8erboi\LwIP\Debug"  -Wl,--gc-sections -mcpu=cortex-m4 -Tflash_with_bootloader.ld -mfloat-abi=hard -mfpu=fpv4-sp-d16  
 	@echo Finished building target: $@
-	"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O binary "st8erboi-injector.elf" "st8erboi-injector.bin"
-	"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-size.exe" "st8erboi-injector.elf"
+	"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O binary "st8erboi-fillhead.elf" "st8erboi-fillhead.bin"
+	"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-size.exe" "st8erboi-fillhead.elf"
 	
 	
 
@@ -199,5 +199,5 @@ $(OUTPUT_FILE_PATH): $(OBJS) $(USER_OBJS) $(OUTPUT_FILE_DEP) $(LIB_DEP) $(LINKER
 clean:
 	-$(RM) $(OBJS_AS_ARGS) $(EXECUTABLES)  
 	-$(RM) $(C_DEPS_AS_ARGS)   
-	rm -rf "st8erboi-injector.elf" "st8erboi-injector.a" "st8erboi-injector.hex" "st8erboi-injector.bin" "st8erboi-injector.lss" "st8erboi-injector.eep" "st8erboi-injector.map" "st8erboi-injector.srec"
+	rm -rf "st8erboi-fillhead.elf" "st8erboi-fillhead.a" "st8erboi-fillhead.hex" "st8erboi-fillhead.bin" "st8erboi-fillhead.lss" "st8erboi-fillhead.eep" "st8erboi-fillhead.map" "st8erboi-fillhead.srec"
 	

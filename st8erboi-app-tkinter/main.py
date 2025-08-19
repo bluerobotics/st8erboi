@@ -25,7 +25,7 @@ def main():
     configure_styles()
 
     # --- Shared State and Functions ---
-    # MODIFIED: Renamed all 'injector' related variables to 'fillhead' for clarity.
+    # MODIFIED: Cleaned up unused/obsolete variable definitions.
     shared_gui_refs = {
         'status_var_fillhead': tk.StringVar(value='🔌 Fillhead Disconnected'),
         'status_var_gantry': tk.StringVar(value='🔌 Gantry Disconnected'),
@@ -41,6 +41,7 @@ def main():
         'homed0_var': tk.StringVar(value='Not Homed'),
         'homed1_var': tk.StringVar(value='Not Homed'),
         'machine_steps_var': tk.StringVar(value='---'),
+        'cartridge_steps_var': tk.StringVar(value='---'),
         'inject_dispensed_ml_var': tk.StringVar(value='---'),
 
         # Fillhead torque values
@@ -48,6 +49,11 @@ def main():
         'torque1_var': tk.DoubleVar(value=0.0),
         'torque2_var': tk.DoubleVar(value=0.0),
         'torque3_var': tk.DoubleVar(value=0.0),
+
+        # Fillhead system status
+        'main_state_var': tk.StringVar(value='---'),
+        'vacuum_psig_var': tk.StringVar(value='---'),
+        'temp_c_var': tk.StringVar(value='---'),
 
         # Gantry enabled states
         'fh_enabled_m0_var': tk.StringVar(value='Disabled'),
@@ -64,6 +70,7 @@ def main():
         'fh_homed_m1_var': tk.StringVar(value='Not Homed'),
         'fh_homed_m2_var': tk.StringVar(value='Not Homed'),
         'fh_homed_m3_var': tk.StringVar(value='Not Homed'),
+        'fh_state_var': tk.StringVar(value='Idle'),
 
         # Gantry torque values
         'fh_torque_m0_var': tk.DoubleVar(value=0.0),
@@ -78,7 +85,6 @@ def main():
         'vac_valve_homed_var': tk.StringVar(value='Not Homed'),
     }
 
-    # MODIFIED: Command functions now correctly reference 'fillhead'.
     send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
     send_gantry_cmd = lambda msg: comms.send_to_device("gantry", msg, shared_gui_refs)
 
@@ -130,7 +136,7 @@ def main():
     # --- Start Communication Threads ---
     threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()
     threading.Thread(target=comms.monitor_connections, args=(shared_gui_refs,), daemon=True).start()
-    # threading.Thread(target=comms.telemetry_requester_loop, args=(shared_gui_refs, GUI_UPDATE_INTERVAL_MS), daemon=True).start()
+    threading.Thread(target=comms.telemetry_requester_loop, args=(shared_gui_refs, GUI_UPDATE_INTERVAL_MS), daemon=True).start()
 
     root.mainloop()
 

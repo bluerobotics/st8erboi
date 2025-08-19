@@ -56,6 +56,10 @@ class Gantry {
 	void handleSetPeerIp(const char* msg);
 	void handleClearPeerIp();
 	void abortAll();
+
+	// State Management
+	void updateGantryState();
+	const char* getGantryStateString();
 	
 	// Member Variables
 	EthernetUdp m_udp;
@@ -69,18 +73,18 @@ class Gantry {
 	Axis yAxis;
 	Axis zAxis;
 
+	GantryState m_state;
+
 	char m_telemetryBuffer[300];
 	unsigned char m_packetBuffer[MAX_PACKET_LENGTH];
 	
 	uint32_t m_lastTelemetryTime;
 	
 	// --- Message Queues ---
-	// Receive (Rx) Queue
 	Message m_rxQueue[RX_QUEUE_SIZE];
 	volatile int m_rxQueueHead;
 	volatile int m_rxQueueTail;
 
-	// Transmit (Tx) Queue
 	Message m_txQueue[TX_QUEUE_SIZE];
 	volatile int m_txQueueHead;
 	volatile int m_txQueueTail;

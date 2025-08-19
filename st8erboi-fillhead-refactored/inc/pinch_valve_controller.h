@@ -36,7 +36,7 @@ class PinchValve {
 	const char* getTelemetryString();
 
 	private:
-	void move(long steps, int velocity_sps, int accel_sps2, int torque_percent);
+	void moveSteps(long steps, int velocity_sps, int accel_sps2, int torque_percent);
 	float getSmoothedTorque();
 
 	const char* m_name;

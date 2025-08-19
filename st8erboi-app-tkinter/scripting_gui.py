@@ -37,7 +37,7 @@ def add_to_recent_files(filepath):
     save_recent_files(filepaths[:MAX_RECENT_FILES])
 
 
-# --- Autocomplete and Text Editor Widgets (Classes remain the same) ---
+# --- Autocomplete and Text Editor Widgets ---
 class AutocompletePopup(tk.Toplevel):
     def __init__(self, parent, text_widget, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -268,6 +268,9 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     scripting_area = tk.Frame(parent, bg="#21232b")
     scripting_area.pack(fill=tk.BOTH, expand=True)
 
+    # Get a reference to the root window for thread-safe GUI updates
+    root = scripting_area.winfo_toplevel()
+
     paned_window = ttk.PanedWindow(scripting_area, orient=tk.HORIZONTAL)
     paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
     left_pane = tk.Frame(paned_window, bg="#21232b")
@@ -314,7 +317,6 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     command_ref_widget.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
 
     def update_window_title():
-        root = scripting_area.winfo_toplevel();
         filename = "Untitled"
         if current_filepath: filename = os.path.basename(current_filepath)
         modified_star = "*" if script_editor.text.edit_modified() else "";
@@ -421,32 +423,37 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     # --- Script Execution Logic ---
     def set_buttons_state(state):
         cycle_start_button.config(state=state)
-        # Feed Hold should always be active unless a script is running.
         is_running = state == tk.DISABLED
         feed_hold_button.config(state=tk.NORMAL if is_running else tk.DISABLED)
 
+    # MODIFIED: This function now safely schedules GUI updates on the main thread.
     def status_callback_handler(message, line_num):
-        nonlocal last_exec_highlight;
-        status_var.set(message)
-        if last_exec_highlight != line_num:
-            if last_exec_highlight != -1: script_editor.tag_remove("exec_highlight", f"{last_exec_highlight}.0",
-                                                                   f"{last_exec_highlight}.end")
-            if line_num != -1: script_editor.tag_add("exec_highlight", f"{line_num}.0", f"{line_num}.end")
-            last_exec_highlight = line_num
+        def update_gui():
+            nonlocal last_exec_highlight
+            status_var.set(message)
+            if last_exec_highlight != line_num:
+                if last_exec_highlight != -1:
+                    script_editor.tag_remove("exec_highlight", f"{last_exec_highlight}.0", f"{last_exec_highlight}.end")
+                if line_num != -1:
+                    script_editor.tag_add("exec_highlight", f"{line_num}.0", f"{line_num}.end")
+                last_exec_highlight = line_num
+
+        # Schedule the GUI update to run in the main event loop
+        root.after(0, update_gui)
 
     def on_run_finished():
-        set_buttons_state(tk.NORMAL);
+        root.after(0, lambda: set_buttons_state(tk.NORMAL))
         status_callback_handler("Idle", -1)
 
     def on_step_finished():
-        set_buttons_state(tk.NORMAL);
-        current_line_num = int(last_selection_highlight);
+        root.after(0, lambda: set_buttons_state(tk.NORMAL))
+        current_line_num = int(last_selection_highlight)
         status_var.set(f"Step complete. Next line: {current_line_num + 1}");
-        update_selection_highlight(current_line_num + 1)
+        root.after(0, lambda: update_selection_highlight(current_line_num + 1))
 
     def run_script_from_content(content, line_offset=0, is_step=False):
-        nonlocal script_runner;
-        set_buttons_state(tk.DISABLED);
+        nonlocal script_runner
+        set_buttons_state(tk.DISABLED)
         completion_callback = on_step_finished if is_step else on_run_finished
         script_runner = ScriptRunner(content, command_funcs, shared_gui_refs, status_callback_handler,
                                      completion_callback, message_queue, line_offset);
@@ -469,14 +476,12 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
 
     def handle_feed_hold():
         nonlocal feed_hold_line
-        # Always send the global abort command to stop all hardware motion immediately.
         command_funcs['abort']()
 
-        # Now, handle the state of the script runner thread.
         if script_runner and script_runner.is_running:
             feed_hold_line = last_exec_highlight
-            script_runner.stop()  # Stop the script thread
-            on_run_finished()  # Reset button states
+            script_runner.stop()
+            on_run_finished()
             status_var.set(f"Feed Hold. Halted at line {feed_hold_line}.")
             if feed_hold_line != -1:
                 update_selection_highlight(feed_hold_line)
@@ -485,23 +490,12 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
 
     def handle_reset():
         nonlocal script_runner, feed_hold_line
-        # Stop any active script runner thread
         if script_runner and script_runner.is_running:
             script_runner.stop()
-
-        # Abort any physical motion on the hardware
         command_funcs['abort']()
-
-        # Reset script state variables
         feed_hold_line = None
-
-        # Use the existing callback to reset button states and status
         on_run_finished()
-
-        # Move the selection highlight back to the first line
         update_selection_highlight(1)
-
-        # Update the status bar message
         status_var.set("Script reset. Ready to start from line 1.")
 
     def handle_cycle_start():
@@ -580,12 +574,10 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     reset_button = ttk.Button(btn_container, text="Reset", command=handle_reset, style="Small.TButton")
     reset_button.pack(side=tk.LEFT, padx=5)
 
-    # Use a Checkbutton with a custom toggle-button style
     single_block_switch = ttk.Checkbutton(btn_container, text="Single Block", variable=single_block_var,
                                           style="OrangeToggle.TButton")
     single_block_switch.pack(side=tk.LEFT, padx=5)
 
-    # Initial state for Feed Hold button
     feed_hold_button.config(state=tk.DISABLED)
 
     # --- Status Label ---

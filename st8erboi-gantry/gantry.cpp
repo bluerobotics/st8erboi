@@ -13,6 +13,7 @@ zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR
 	m_guiPort = 0;
 	m_peerDiscovered = false;
 	m_lastTelemetryTime = 0;
+    m_state = GANTRY_STANDBY;
 	
 	// Initialize queue pointers
 	m_rxQueueHead = 0;
@@ -55,14 +56,48 @@ void Gantry::update() {
 	xAxis.updateState();
 	yAxis.updateState();
 	zAxis.updateState();
+
+    // 5. Update the overall gantry state based on axis states
+    updateGantryState();
 	
-	// 5. Enqueue telemetry data at regular intervals
+	// 6. Enqueue telemetry data at regular intervals
 	uint32_t now = Milliseconds();
 	if (m_guiDiscovered && (now - m_lastTelemetryTime >= TELEMETRY_INTERVAL_MS)) {
 		m_lastTelemetryTime = now;
 		sendGuiTelemetry();
 	}
 }
+
+// -----------------------------------------------------------------------------
+// State Management
+// -----------------------------------------------------------------------------
+
+void Gantry::updateGantryState() {
+    // Homing has the highest priority. If any axis is homing, the whole gantry is homing.
+    if (xAxis.getState() == Axis::STATE_HOMING || yAxis.getState() == Axis::STATE_HOMING || zAxis.getState() == Axis::STATE_HOMING) {
+        m_state = GANTRY_HOMING;
+        return;
+    }
+
+    // Any other movement means the system is moving.
+    if (xAxis.isMoving() || yAxis.isMoving() || zAxis.isMoving()) {
+        m_state = GANTRY_MOVING;
+        return;
+    }
+
+    // If nothing else is happening, the system is in standby.
+    m_state = GANTRY_STANDBY;
+}
+
+const char* Gantry::getGantryStateString() {
+    switch (m_state) {
+        case GANTRY_STANDBY: return "STANDBY";
+        case GANTRY_HOMING:  return "HOMING";
+        case GANTRY_MOVING:  return "MOVING";
+        default:             return "UNKNOWN";
+    }
+}
+
 
 // -----------------------------------------------------------------------------
 // Queue Management
@@ -189,14 +224,16 @@ void Gantry::sendGuiTelemetry() {
 
 	snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
 	"%s"
-	"x_s:%s,x_p:%.2f,x_t:%.2f,x_e:%d,x_h:%d,"
-	"y_s:%s,y_p:%.2f,y_t:%.2f,y_e:%d,y_h:%d,"
-	"z_s:%s,z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d,"
+    "gantry_state:%s,"
+	"x_p:%.2f,x_t:%.2f,x_e:%d,x_h:%d,"
+	"y_p:%.2f,y_t:%.2f,y_e:%d,y_h:%d,"
+	"z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d,"
 	"pd:%d,pip:%s",
 	TELEM_PREFIX_GUI,
-	xAxis.getStateString(), xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(),
-	yAxis.getStateString(), yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(),
-	zAxis.getStateString(), zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(),
+    getGantryStateString(),
+	xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(),
+	yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(),
+	zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(),
 	(int)m_peerDiscovered, m_peerIp.StringValue());
 
 	// Enqueue the telemetry message instead of sending directly

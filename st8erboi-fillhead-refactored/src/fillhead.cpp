@@ -93,6 +93,15 @@ void Fillhead::loop() {
     m_heater.updatePid();
     m_vacuum.updateState();
 
+    // If in a busy state, check if the sub-controllers have finished.
+    if (m_mainState == BUSY_MODE) {
+        if (!m_injector.isBusy() && !m_injectorValve.isBusy() && !m_vacuumValve.isBusy()) {
+            m_mainState = STANDBY_MODE;
+            m_comms.sendStatus(STATUS_PREFIX_INFO, "All operations complete. Returning to STANDBY_MODE.");
+        }
+    }
+
+
     // 4. Handle time-based periodic tasks.
     uint32_t now = Milliseconds();
     if (now - m_lastSensorSampleTime >= SENSOR_SAMPLE_INTERVAL_MS) {
@@ -158,6 +167,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_RESUME_INJECTION:
         case CMD_CANCEL_INJECTION:
         case CMD_SET_INJECTOR_TORQUE_OFFSET:
+            m_mainState = BUSY_MODE;
             m_injector.handleCommand(command, args);
             break;
 
@@ -166,12 +176,14 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_INJECTION_VALVE_OPEN:
         case CMD_INJECTION_VALVE_CLOSE:
         case CMD_INJECTION_VALVE_JOG:
+            m_mainState = BUSY_MODE;
             m_injectorValve.handleCommand(command, args);
             break;
         case CMD_VACUUM_VALVE_HOME:
         case CMD_VACUUM_VALVE_OPEN:
         case CMD_VACUUM_VALVE_CLOSE:
         case CMD_VACUUM_VALVE_JOG:
+            m_mainState = BUSY_MODE;
             m_vacuumValve.handleCommand(command, args);
             break;
 
@@ -296,7 +308,13 @@ void Fillhead::publishTelemetry() {
     if (!m_comms.isGuiDiscovered()) return;
 
     char telemetryBuffer[1024];
-    const char* mainStateStr = (m_mainState == STANDBY_MODE) ? "STANDBY" : "DISABLED";
+    const char* mainStateStr;
+    switch (m_mainState) {
+        case STANDBY_MODE: mainStateStr = "STANDBY"; break;
+        case BUSY_MODE:    mainStateStr = "BUSY"; break;
+        case DISABLED_MODE:mainStateStr = "DISABLED"; break;
+        default:           mainStateStr = "UNKNOWN"; break;
+    }
     const char* errorStateStr = "NO_ERROR"; // TODO: Implement a function to convert m_errorState enum to a string.
 
     // Create a non-const copy of the peer IP to safely call StringValue()

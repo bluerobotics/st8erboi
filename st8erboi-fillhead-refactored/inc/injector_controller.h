@@ -61,15 +61,41 @@ private:
     MotorDriver* m_motorA;
     MotorDriver* m_motorB;
 
-    // State Machines
-    HomingState m_homingState;
+    // Unified State Machine, similar to Axis class
+    typedef enum {
+        STATE_STANDBY,
+        STATE_HOMING,
+        STATE_JOGGING,
+        STATE_FEEDING
+    } State;
+    State m_state;
+
+    // Sub-state for Homing
+    HomingState m_homingState; // Used to differentiate between Machine and Cartridge homing
+    typedef enum {
+		HOMING_PHASE_IDLE,
+		RAPID_SEARCH_START,
+		RAPID_SEARCH_WAIT_TO_START,
+		RAPID_SEARCH_MOVING,
+		BACKOFF_START,
+		BACKOFF_WAIT_TO_START,
+		BACKOFF_MOVING,
+		SLOW_SEARCH_START,
+		SLOW_SEARCH_WAIT_TO_START,
+		SLOW_SEARCH_MOVING,
+		SET_OFFSET_START,
+		SET_OFFSET_WAIT_TO_START,
+		SET_OFFSET_MOVING,
+		SET_ZERO,
+        HOMING_PHASE_ERROR
+	} HomingPhase;
     HomingPhase m_homingPhase;
+
+    // Sub-state for Feeding
     FeedState m_feedState;
 
     bool m_homingMachineDone;
     bool m_homingCartridgeDone;
-    bool m_feedingDone;
-    bool m_jogDone;
     uint32_t m_homingStartTime;
     bool m_isEnabled;
 
@@ -79,15 +105,22 @@ private:
     float m_smoothedTorqueValue0, m_smoothedTorqueValue1;
     bool m_firstTorqueReading0, m_firstTorqueReading1;
     int32_t m_machineHomeReferenceSteps, m_cartridgeHomeReferenceSteps;
-    long m_homingDefaultBackoffSteps;
     int m_feedDefaultTorquePercent;
     long m_feedDefaultVelocitySPS;
     long m_feedDefaultAccelSPS2;
 
+    // Homing parameters, aligned with Axis class
+    long m_homingDistanceSteps;
+    long m_homingBackoffSteps;
+    int m_homingRapidSps;
+    int m_homingTouchSps;
+    int m_homingBackoffSps;
+    int m_homingAccelSps2;
+
+
     // Operation-specific variables for a single dispense/feed action
     const char* m_activeFeedCommand;
     const char* m_activeJogCommand;
-    bool m_active_dispense_INJECTION_ongoing;
     float m_active_op_target_ml;
     float m_active_op_total_dispensed_ml;
     float m_last_completed_dispense_ml;
@@ -104,7 +137,8 @@ private:
     char m_telemetryBuffer[256];
 
     // --- Private Methods ---
-    void move(int stepsM0, int stepsM1, int torque_limit, int velocity, int accel);
+    // Updated function signature to match Axis::moveSteps
+    void moveSteps(long steps, int velSps, int accelSps2, int torque);
     bool isMoving();
     float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);
     bool checkTorqueLimit();
@@ -113,8 +147,8 @@ private:
 
     // --- Command Handlers ---
     void handleJogMove(const char* args);
-    void handleMachineHome();
-    void handleCartridgeHome();
+    void handleMachineHome(const char* args);
+    void handleCartridgeHome(const char* args);
     void handleMoveToCartridgeHome();
     void handleMoveToCartridgeRetract(const char* args);
     void handleInjectMove(const char* args);

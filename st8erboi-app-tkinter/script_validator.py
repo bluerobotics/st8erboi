@@ -6,9 +6,9 @@ Also contains the script validation logic.
 """
 
 COMMANDS = {
-    # --- Injector Commands ---
+    # --- Fillhead Commands (Formerly Injector) ---
     "INJECT_MOVE": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [
             {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000},
             {"name": "Speed(ml/s)", "type": float, "min": 0.01, "max": 10, "optional": True, "default": 0.1},
@@ -19,7 +19,7 @@ COMMANDS = {
         "help": "Executes a precision injection move based on volume."
     },
     "PURGE_MOVE": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [
             {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000},
             {"name": "Speed(ml/s)", "type": float, "min": 0.01, "max": 10, "optional": True, "default": 0.5},
@@ -30,12 +30,12 @@ COMMANDS = {
         "help": "Executes a purge move to expel a certain volume of material."
     },
     "SET_HEATER_SETPOINT": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [{"name": "Temp(°C)", "type": float, "min": 20, "max": 150}],
         "help": "Sets the target temperature for the heater PID."
     },
     "SET_HEATER_GAINS": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [
             {"name": "Kp", "type": float, "min": 0, "max": 1000},
             {"name": "Ki", "type": float, "min": 0, "max": 1000},
@@ -44,32 +44,42 @@ COMMANDS = {
         "help": "Sets the PID gains for the heater."
     },
     "MACHINE_HOME_MOVE": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [],
         "help": "Homes the main machine axis using parameters from the manual controls tab."
     },
     "CARTRIDGE_HOME_MOVE": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [],
         "help": "Homes the injector against the cartridge using parameters from the manual controls tab."
     },
-    # --- NEW/MODIFIED: Pinch Valve Commands ---
-    "INJECTION_VALVE_HOME": {"device": "injector", "params": [], "help": "Homes the injection pinch valve."},
-    "INJECTION_VALVE_OPEN": {"device": "injector", "params": [], "help": "Opens the injection pinch valve."},
-    "INJECTION_VALVE_CLOSE": {"device": "injector", "params": [], "help": "Closes the injection pinch valve."},
+    "INJECTION_VALVE_HOME": {"device": "fillhead", "params": [], "help": "Homes the injection pinch valve."},
+    "INJECTION_VALVE_OPEN": {"device": "fillhead", "params": [], "help": "Opens the injection pinch valve."},
+    "INJECTION_VALVE_CLOSE": {"device": "fillhead", "params": [], "help": "Closes the injection pinch valve."},
     "INJECTION_VALVE_JOG": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [{"name": "Dist(mm)", "type": float, "min": -50, "max": 50}],
         "help": "Jogs the injection pinch valve by a relative distance."
     },
-    "VACUUM_VALVE_HOME": {"device": "injector", "params": [], "help": "Homes the vacuum pinch valve."},
-    "VACUUM_VALVE_OPEN": {"device": "injector", "params": [], "help": "Opens the vacuum pinch valve."},
-    "VACUUM_VALVE_CLOSE": {"device": "injector", "params": [], "help": "Closes the vacuum pinch valve."},
+    "VACUUM_VALVE_HOME": {"device": "fillhead", "params": [], "help": "Homes the vacuum pinch valve."},
+    "VACUUM_VALVE_OPEN": {"device": "fillhead", "params": [], "help": "Opens the vacuum pinch valve."},
+    "VACUUM_VALVE_CLOSE": {"device": "fillhead", "params": [], "help": "Closes the vacuum pinch valve."},
     "VACUUM_VALVE_JOG": {
-        "device": "injector",
+        "device": "fillhead",
         "params": [{"name": "Dist(mm)", "type": float, "min": -50, "max": 50}],
         "help": "Jogs the vacuum pinch valve by a relative distance."
     },
+    "MOVE_TO_CARTRIDGE_HOME": {"device": "fillhead", "params": [],
+                               "help": "Moves the injector to the zero position of the cartridge."},
+    "PAUSE_INJECTION": {"device": "fillhead", "params": [], "help": "Pauses an ongoing injection or purge."},
+    "RESUME_INJECTION": {"device": "fillhead", "params": [], "help": "Resumes a paused injection or purge."},
+    "CANCEL_INJECTION": {"device": "fillhead", "params": [], "help": "Cancels an injection or purge."},
+    "ENABLE": {"device": "fillhead", "params": [], "help": "Enables all injector motors."},
+    "DISABLE": {"device": "fillhead", "params": [], "help": "Disables all injector motors."},
+    "HEATER_PID_ON": {"device": "fillhead", "params": [], "help": "Turns the heater PID controller on."},
+    "HEATER_PID_OFF": {"device": "fillhead", "params": [], "help": "Turns the heater PID controller off."},
+    "VACUUM_ON": {"device": "fillhead", "params": [], "help": "Turns the vacuum pump ON and opens the valve."},
+    "VACUUM_OFF": {"device": "fillhead", "params": [], "help": "Turns the vacuum pump OFF and closes the valve."},
 
     # --- Gantry Commands ---
     "MOVE_X": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -2000, "max": 2000},
@@ -111,20 +121,9 @@ COMMANDS = {
         "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True}],
         "help": "Homes the gantry Z-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
     },
-
-    # --- Simple Commands (No Params) ---
-    "MOVE_TO_CARTRIDGE_HOME": {"device": "injector", "params": [],
-                               "help": "Moves the injector to the zero position of the cartridge."},
-    "PAUSE_INJECTION": {"device": "injector", "params": [], "help": "Pauses an ongoing injection or purge."},
-    "RESUME_INJECTION": {"device": "injector", "params": [], "help": "Resumes a paused injection or purge."},
-    "CANCEL_INJECTION": {"device": "injector", "params": [], "help": "Cancels an injection or purge."},
-    "ENABLE": {"device": "injector", "params": [], "help": "Enables all injector motors."},
-    "DISABLE": {"device": "injector", "params": [], "help": "Disables all injector motors."},
-    "HEATER_PID_ON": {"device": "injector", "params": [], "help": "Turns the heater PID controller on."},
-    "HEATER_PID_OFF": {"device": "injector", "params": [], "help": "Turns the heater PID controller off."},
-    "VACUUM_ON": {"device": "injector", "params": [], "help": "Turns the vacuum pump ON and opens the valve."},
-    "VACUUM_OFF": {"device": "injector", "params": [], "help": "Turns the vacuum pump OFF and closes the valve."},
     "START_DEMO": {"device": "gantry", "params": [], "help": "Starts the circle demo on the gantry."},
+
+    # --- Global Commands ---
     "ABORT": {"device": "both", "params": [], "help": "Stops all motion on the target device."},
 
     # --- Script-Control Commands ---

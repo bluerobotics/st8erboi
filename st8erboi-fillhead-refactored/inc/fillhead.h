@@ -2,7 +2,7 @@
 
 #include "config.h"
 #include "comms_controller.h"
-#include "injector_controller.h"
+#include "injector_controller.hh"
 #include "pinch_valve_controller.h"
 #include "heater_controller.h"
 #include "vacuum_controller.h"

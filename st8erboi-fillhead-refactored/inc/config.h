@@ -96,15 +96,16 @@
 #define HOMING_STROKE_MM                    500.0f    // Maximum travel distance during homing sequence.
 #define HOMING_RAPID_VEL_MMS                20.0f     // Rapid velocity for seeking the hard stop.
 #define HOMING_TOUCH_VEL_MMS                3.125f    // Slow velocity for precise touch-off.
-#define HOMING_BACK_OFF_VEL_MMS             6.25f     // Velocity for the back-off move.
+#define HOMING_BACKOFF_VEL_MMS              6.25f     // Velocity for the back-off move.
 #define HOMING_RETRACT_VEL_MMS              31.25f    // Velocity for the post-touch-off retraction.
 #define HOMING_ACCEL_MMSS                   100.0f    // Acceleration for homing moves.
 #define HOMING_RETRACT_ACCEL_MMSS           125.0f    // Acceleration for the post-touch-off retraction.
 #define HOMING_TOUCH_OFF_ACCEL_MMSS         31.25f    // Acceleration for the final touch-off move.
-#define HOMING_BACK_OFF_ACCEL_MMSS          62.5f     // Acceleration for the back-off move.
+#define HOMING_BACKOFF_ACCEL_MMSS           62.5f     // Acceleration for the back-off move.
 #define HOMING_TORQUE_PERCENT               10.0f     // Torque limit (%) for homing moves.
 #define HOMING_DEFAULT_BACKOFF_STEPS        200       // Steps to back off the hard stop after initial contact.
 #define HOMING_POST_TOUCH_RETRACT_MM        12.5f     // Distance to retract after the final touch-off.
+#define HOMING_BACKOFF_MM                   1.25f     // Distance (mm) to back off after initial torque hit, calculated from steps.
 
 // --- Jogging Defaults ---
 #define JOG_DEFAULT_TORQUE_PERCENT          30        // Default torque limit (%) for jog moves.
@@ -124,10 +125,11 @@
 
 //==================================================================================================
 // Command Strings & Prefixes
+// MODIFIED: Changed "INJECTOR" and "INJ_" to "FILLHEAD" and "FILLHEAD_" for consistency.
 //==================================================================================================
 // --- General Commands ---
 #define CMD_STR_REQUEST_TELEM               "REQUEST_TELEM"
-#define CMD_STR_DISCOVER                    "DISCOVER_INJECTOR"
+#define CMD_STR_DISCOVER                    "DISCOVER_FILLHEAD"
 #define CMD_STR_SET_PEER_IP                 "SET_PEER_IP "
 #define CMD_STR_CLEAR_PEER_IP               "CLEAR_PEER_IP"
 #define CMD_STR_ENABLE                      "ENABLE"
@@ -173,11 +175,11 @@
 #define CMD_STR_SET_LEAK_TEST_DURATION_S        "SET_LEAK_TEST_DURATION_S "
 
 // --- Telemetry & Status Prefixes ---
-#define TELEM_PREFIX_GUI                    "INJ_TELEM_GUI:"
-#define STATUS_PREFIX_INFO                  "INJ_INFO: "
-#define STATUS_PREFIX_START                 "INJ_START: "
-#define STATUS_PREFIX_DONE                  "INJ_DONE: "
-#define STATUS_PREFIX_ERROR                 "INJ_ERROR: "
+#define TELEM_PREFIX_GUI                    "FILLHEAD_TELEM_GUI:"
+#define STATUS_PREFIX_INFO                  "FILLHEAD_INFO: "
+#define STATUS_PREFIX_START                 "FILLHEAD_START: "
+#define STATUS_PREFIX_DONE                  "FILLHEAD_DONE: "
+#define STATUS_PREFIX_ERROR                 "FILLHEAD_ERROR: "
 #define STATUS_PREFIX_DISCOVERY             "DISCOVERY: "
 
 //==================================================================================================

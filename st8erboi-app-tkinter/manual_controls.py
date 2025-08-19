@@ -14,7 +14,6 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
 
     power_frame.grid_columnconfigure((0, 1), weight=1)
 
-    # MODIFIED: Changed from 'send_injector' to 'send_fillhead' to fix KeyError.
     send_fillhead_cmd = command_funcs['send_fillhead']
     send_gantry_cmd = command_funcs['send_gantry']
 
@@ -38,7 +37,6 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
     btn_disable_fillhead.grid(row=0, column=1, sticky='ew', padx=(1, 0))
 
     def fillhead_state_tracer(*args):
-        # This logic assumes M0, M1, M2, M3 are all part of the fillhead and should be enabled/disabled together.
         m0_enabled = shared_gui_refs['enabled_state1_var'].get() == "Enabled"
         m1_enabled = shared_gui_refs['enabled_state2_var'].get() == "Enabled"
 
@@ -134,9 +132,9 @@ def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
 
     create_motor_power_controls(scrollable_frame, command_funcs, shared_gui_refs)
 
-    # MODIFIED: Pass the correct 'send_fillhead' command function.
     create_fillhead_ancillary_controls(scrollable_frame, command_funcs['send_fillhead'], shared_gui_refs, ui_elements)
-    create_gantry_ancillary_controls(scrollable_frame, command_funcs['send_gantry'])
+    # --- MODIFIED: Added the missing 'shared_gui_refs' argument ---
+    create_gantry_ancillary_controls(scrollable_frame, command_funcs['send_gantry'], shared_gui_refs)
 
 
 def create_manual_controls_display(parent, command_funcs, shared_gui_refs):

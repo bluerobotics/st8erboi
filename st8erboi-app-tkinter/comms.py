@@ -25,7 +25,9 @@ except OSError as e:
     print(f"ERROR binding socket: {e}. Port {CLIENT_PORT} may be in use by another application.")
     exit()
 
-# MODIFIED: Renamed 'injector' device to 'fillhead' for clarity and consistency.
+# MODIFIED: Added a threading lock to prevent race conditions on the socket.
+socket_lock = threading.Lock()
+
 devices = {
     "fillhead": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0},
     "gantry": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0}
@@ -46,7 +48,6 @@ def log_to_terminal(msg, terminal_cb_func):
 def discover(device_key, gui_refs):
     """Sends a targeted discovery message, logging only if the checkbox is ticked."""
     terminal_cb_func = gui_refs.get('terminal_cb')
-    # MODIFIED: The discovery command now correctly reflects the device name (e.g., DISCOVER_FILLHEAD).
     msg = f"DISCOVER_{device_key.upper()} PORT={CLIENT_PORT}"
 
     log_discovery = gui_refs.get('show_discovery_var', tk.BooleanVar(value=False)).get()
@@ -54,6 +55,7 @@ def discover(device_key, gui_refs):
         log_to_terminal(f"[CMD SENT to BROADCAST]: {msg}", terminal_cb_func)
 
     try:
+        # No lock needed for broadcast as it's less critical and frequent
         sock.sendto(msg.encode(), ('192.168.1.255', CLEARCORE_PORT))
     except Exception as e:
         log_to_terminal(f"Discovery error for {device_key}: {e}", terminal_cb_func)
@@ -64,13 +66,14 @@ def send_to_device(device_key, msg, gui_refs):
     terminal_cb_func = gui_refs.get('terminal_cb')
     device_ip = devices[device_key].get("ip")
     if device_ip:
-        try:
-            if "REQUEST_TELEM" not in msg:
-                # This log will now correctly show "FILLHEAD" instead of "INJECTOR".
-                log_to_terminal(f"[CMD SENT to {device_key.upper()}]: {msg}", terminal_cb_func)
-            sock.sendto(msg.encode(), (device_ip, CLEARCORE_PORT))
-        except Exception as e:
-            log_to_terminal(f"UDP send error to {device_key} ({device_ip}): {e}", terminal_cb_func)
+        # MODIFIED: Added a lock to ensure thread-safe socket access.
+        with socket_lock:
+            try:
+                if "REQUEST_TELEM" not in msg:
+                    log_to_terminal(f"[CMD SENT to {device_key.upper()}]: {msg}", terminal_cb_func)
+                sock.sendto(msg.encode(), (device_ip, CLEARCORE_PORT))
+            except Exception as e:
+                log_to_terminal(f"UDP send error to {device_key} ({device_ip}): {e}", terminal_cb_func)
     elif "DISCOVER" not in msg:
         log_to_terminal(f"Cannot send to {device_key}: IP unknown.", terminal_cb_func)
 
@@ -109,7 +112,6 @@ def monitor_connections(gui_refs):
 def telemetry_requester_loop(gui_refs, interval_ms):
     """Periodically requests telemetry from connected devices."""
     while True:
-        # MODIFIED: Request telemetry from 'fillhead' instead of 'injector'.
         if devices["fillhead"]["connected"]:
             send_to_device("fillhead", "REQUEST_TELEM", gui_refs)
         if devices["gantry"]["connected"]:
@@ -145,15 +147,15 @@ def handle_connection(device_key, source_ip, gui_refs):
 def safe_float(s, default_val=0.0):
     """Safely converts a string to a float."""
     if not s: return default_val
-    try: return float(s)
-    except (ValueError, TypeError): return default_val
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default_val
 
 
-# MODIFIED: Renamed function and updated to parse new telemetry format.
 def parse_fillhead_telemetry(msg, gui_refs):
     """Parses the telemetry string from the Fillhead controller."""
     try:
-        # MODIFIED: Uses the new, consistent telemetry prefix.
         payload = msg.split("FILLHEAD_TELEM_GUI:")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
@@ -167,29 +169,38 @@ def parse_fillhead_telemetry(msg, gui_refs):
         # Injector Motors (M0, M1)
         for i in range(2):
             gui_var_index = i + 1
-            if f'torque{i}_var' in gui_refs: gui_refs[f'torque{i}_var'].set(safe_float(parts.get(f'torque{i}', '0.0')))
+            if f'torque{i}_var' in gui_refs: gui_refs[f'torque{i}_var'].set(safe_float(parts.get(f'inj_t{i}', '0.0')))
             if f'pos_mm{i}_var' in gui_refs: gui_refs[f'pos_mm{i}_var'].set(parts.get(f'pos_mm{i}', '0.0'))
-            if f'motor_state{gui_var_index}_var' in gui_refs: gui_refs[f'motor_state{gui_var_index}_var'].set("Ready" if parts.get(f"hlfb{i}", "0") == "1" else "Busy/Fault")
-            if f'enabled_state{gui_var_index}_var' in gui_refs: gui_refs[f'enabled_state{gui_var_index}_var'].set("Enabled" if parts.get(f"enabled{i}", "0") == "1" else "Disabled")
+            if f'motor_state{gui_var_index}_var' in gui_refs: gui_refs[f'motor_state{gui_var_index}_var'].set(
+                "Ready" if parts.get(f"hlfb{i}", "0") == "1" else "Busy/Fault")
+            if f'enabled_state{gui_var_index}_var' in gui_refs: gui_refs[f'enabled_state{gui_var_index}_var'].set(
+                "Enabled" if parts.get(f"enabled{i}", "0") == "1" else "Disabled")
 
         # Pinch Valves
         if 'inj_valve_pos_var' in gui_refs: gui_refs['inj_valve_pos_var'].set(parts.get("inj_valve_pos", "---"))
-        if 'inj_valve_homed_var' in gui_refs: gui_refs['inj_valve_homed_var'].set("Homed" if parts.get("inj_valve_homed", "0") == "1" else "Not Homed")
+        if 'inj_valve_homed_var' in gui_refs: gui_refs['inj_valve_homed_var'].set(
+            "Homed" if parts.get("inj_valve_homed", "0") == "1" else "Not Homed")
         if 'torque2_var' in gui_refs: gui_refs['torque2_var'].set(safe_float(parts.get('torque2', '0.0')))
         if 'vac_valve_pos_var' in gui_refs: gui_refs['vac_valve_pos_var'].set(parts.get("vac_valve_pos", "---"))
-        if 'vac_valve_homed_var' in gui_refs: gui_refs['vac_valve_homed_var'].set("Homed" if parts.get("vac_valve_homed", "0") == "1" else "Not Homed")
+        if 'vac_valve_homed_var' in gui_refs: gui_refs['vac_valve_homed_var'].set(
+            "Homed" if parts.get("vac_valve_homed", "0") == "1" else "Not Homed")
         if 'torque3_var' in gui_refs: gui_refs['torque3_var'].set(safe_float(parts.get('torque3', '0.0')))
 
         # Other System Status
-        if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("machine_mm", "N/A"))
-        if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("cartridge_mm", "N/A"))
-        if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(f'{safe_float(parts.get("dispensed_ml")):.2f} ml')
-        if 'temp_c_var' in gui_refs: gui_refs['temp_c_var'].set(f'{safe_float(parts.get("temp_c")):.1f} °C')
-        if 'vacuum_psig_var' in gui_refs: gui_refs['vacuum_psig_var'].set(f"{safe_float(parts.get('vacuum_psig')):.2f} PSIG")
-        if 'pid_output_var' in gui_refs: gui_refs['pid_output_var'].set(f'{safe_float(parts.get("pid_output")):.1f}%')
-        if 'vacuum_state_var' in gui_refs: gui_refs['vacuum_state_var'].set("On" if parts.get("vacuum", "0") == "1" else "Off")
-        if 'vacuum_valve_state_var' in gui_refs: gui_refs['vacuum_valve_state_var'].set("On" if parts.get("vac_valve", "0") == "1" else "Off")
-        if 'heater_mode_var' in gui_refs: gui_refs['heater_mode_var'].set(parts.get("heater_mode", "OFF"))
+        if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("inj_mach_mm", "N/A"))
+        if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("inj_cart_mm", "N/A"))
+        if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
+            f'{safe_float(parts.get("inj_disp_ml")):.2f} ml')
+
+        if 'temp_c_var' in gui_refs:
+            gui_refs['temp_c_var'].set(f'{safe_float(parts.get("h_pv")):.1f} °C')
+
+        if 'vacuum_psig_var' in gui_refs: gui_refs['vacuum_psig_var'].set(f"{safe_float(parts.get('vac_pv')):.2f} PSIG")
+        if 'pid_output_var' in gui_refs: gui_refs['pid_output_var'].set(f'{safe_float(parts.get("h_op")):.1f}%')
+        if 'vacuum_state_var' in gui_refs: gui_refs['vacuum_state_var'].set(
+            "On" if parts.get("vac_st", "0") == "1" else "Off")
+        if 'heater_mode_var' in gui_refs: gui_refs['heater_mode_var'].set(
+            "PID Active" if parts.get("h_st", "0") == "1" else "OFF")
 
         # Peer Connection Status
         if 'peer_status_fillhead_var' in gui_refs:
@@ -222,9 +233,12 @@ def parse_gantry_telemetry(msg, gui_refs):
             enabled_val = "Enabled" if parts.get(f'{axis_prefix}_e', '0') == "1" else "Disabled"
             homed_val = "Homed" if parts.get(f'{axis_prefix}_h', '0') == "1" else "Not Homed"
             for motor_index in motor_indices:
-                if f'fh_pos_m{motor_index}_var' in gui_refs: gui_refs[f'fh_pos_m{motor_index}_var'].set(f"{float(pos_val):.2f}")
-                if f'fh_torque_m{motor_index}_var' in gui_refs: gui_refs[f'fh_torque_m{motor_index}_var'].set(safe_float(torque_str))
-                if f'fh_enabled_m{motor_index}_var' in gui_refs: gui_refs[f'fh_enabled_m{motor_index}_var'].set(enabled_val)
+                if f'fh_pos_m{motor_index}_var' in gui_refs: gui_refs[f'fh_pos_m{motor_index}_var'].set(
+                    f"{float(pos_val):.2f}")
+                if f'fh_torque_m{motor_index}_var' in gui_refs: gui_refs[f'fh_torque_m{motor_index}_var'].set(
+                    safe_float(torque_str))
+                if f'fh_enabled_m{motor_index}_var' in gui_refs: gui_refs[f'fh_enabled_m{motor_index}_var'].set(
+                    enabled_val)
                 if f'fh_homed_m{motor_index}_var' in gui_refs: gui_refs[f'fh_homed_m{motor_index}_var'].set(homed_val)
 
         if 'peer_status_gantry_var' in gui_refs:
@@ -250,12 +264,10 @@ def recv_loop(gui_refs):
             source_ip = addr[0]
             log_telemetry = gui_refs.get('show_telemetry_var', tk.BooleanVar(value=False)).get()
 
-            # MODIFIED: Listens for 'FILLHEAD DISCOVERED'
             if msg == "DISCOVERY: FILLHEAD DISCOVERED":
                 handle_connection("fillhead", source_ip, gui_refs)
             elif msg == "DISCOVERY: GANTRY DISCOVERED":
                 handle_connection("gantry", source_ip, gui_refs)
-            # MODIFIED: Checks for new 'FILLHEAD_TELEM_GUI' prefix
             elif msg.startswith("FILLHEAD_TELEM_GUI:"):
                 handle_connection("fillhead", source_ip, gui_refs)
                 if log_telemetry:
@@ -266,8 +278,8 @@ def recv_loop(gui_refs):
                 if log_telemetry:
                     log_to_terminal(f"[TELEM @{source_ip}]: {msg}", terminal_cb)
                 parse_gantry_telemetry(msg, gui_refs)
-            # MODIFIED: Added new 'FILLHEAD_' status prefixes
-            elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "FILLHEAD_DONE:", "FH_DONE:", "FILLHEAD_INFO:", "FH_INFO:", "FILLHEAD_ERROR:", "FH_ERROR:")):
+            elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "FILLHEAD_DONE:", "FH_DONE:",
+                                 "FILLHEAD_INFO:", "FH_INFO:", "FILLHEAD_ERROR:", "FH_ERROR:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
                 for key, device in devices.items():
                     if device["ip"] == source_ip:

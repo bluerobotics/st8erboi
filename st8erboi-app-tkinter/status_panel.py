@@ -9,36 +9,12 @@ def create_status_bar(parent, shared_gui_refs):
     status_bar_container = tk.Frame(parent, bg="#21232b")
     status_bar_container.pack(side=tk.TOP, fill=tk.X, expand=False)
 
-    # --- Initialize required StringVars ---
-    if 'fh_pos_m0_var' not in shared_gui_refs: shared_gui_refs['fh_pos_m0_var'] = tk.StringVar(value="0.00")
-    if 'fh_pos_m1_var' not in shared_gui_refs: shared_gui_refs['fh_pos_m1_var'] = tk.StringVar(value="0.00")
-    if 'fh_pos_m3_var' not in shared_gui_refs: shared_gui_refs['fh_pos_m3_var'] = tk.StringVar(value="0.00")
-    if 'pinch_pos_mm_var' not in shared_gui_refs: shared_gui_refs['pinch_pos_mm_var'] = tk.StringVar(value="---")
-    if 'homed0_var' not in shared_gui_refs: shared_gui_refs['homed0_var'] = tk.StringVar(value="Not Homed")
-    if 'homed1_var' not in shared_gui_refs: shared_gui_refs['homed1_var'] = tk.StringVar(value="Not Homed")
-    if 'fh_homed_m0_var' not in shared_gui_refs: shared_gui_refs['fh_homed_m0_var'] = tk.StringVar(value="Not Homed")
-    if 'fh_homed_m1_var' not in shared_gui_refs: shared_gui_refs['fh_homed_m1_var'] = tk.StringVar(value="Not Homed")
-    if 'fh_homed_m3_var' not in shared_gui_refs: shared_gui_refs['fh_homed_m3_var'] = tk.StringVar(value="Not Homed")
-    if 'pinch_homed_var' not in shared_gui_refs: shared_gui_refs['pinch_homed_var'] = tk.StringVar(value="Not Homed")
-    if 'main_state_var' not in shared_gui_refs: shared_gui_refs['main_state_var'] = tk.StringVar(value='---')
-    if 'fh_state_var' not in shared_gui_refs: shared_gui_refs['fh_state_var'] = tk.StringVar(value='Idle')
-    if 'vacuum_psig_var' not in shared_gui_refs: shared_gui_refs['vacuum_psig_var'] = tk.StringVar(value='---')
-    if 'cartridge_steps_var' not in shared_gui_refs: shared_gui_refs['cartridge_steps_var'] = tk.StringVar(value='---')
-    if 'temp_c_var' not in shared_gui_refs: shared_gui_refs['temp_c_var'] = tk.StringVar(value='---')
-    if 'machine_steps_var' not in shared_gui_refs: shared_gui_refs['machine_steps_var'] = tk.StringVar(value='---')
-    if 'inject_dispensed_ml_var' not in shared_gui_refs: shared_gui_refs['inject_dispensed_ml_var'] = tk.StringVar(
-        value='---')
-    if 'vac_pinch_pos_mm_var' not in shared_gui_refs: shared_gui_refs['vac_pinch_pos_mm_var'] = tk.StringVar(
-        value='---')
-    if 'vac_pinch_homed_var' not in shared_gui_refs: shared_gui_refs['vac_pinch_homed_var'] = tk.StringVar(
-        value='Not Homed')
-    if 'torque3_var' not in shared_gui_refs: shared_gui_refs['torque3_var'] = tk.DoubleVar(value=0.0)
-
     # --- Connection Status ---
     conn_frame = tk.LabelFrame(status_bar_container, text="Connection Status", bg="#2a2d3b", fg="white", padx=10,
                                pady=5, font=("Segoe UI", 10, "bold"))
     conn_frame.pack(side=tk.TOP, fill="x", pady=(0, 10))
-    tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_injector'], bg=conn_frame['bg'], fg="white",
+    # MODIFIED: Changed 'status_var_injector' to 'status_var_fillhead' to fix the KeyError.
+    tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_fillhead'], bg=conn_frame['bg'], fg="white",
              font=("Segoe UI", 9)).pack(anchor='w')
     tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_gantry'], bg=conn_frame['bg'], fg="white",
              font=("Segoe UI", 9)).pack(anchor='w')
@@ -141,11 +117,9 @@ def create_status_bar(parent, shared_gui_refs):
     tk.Label(injector_dist_frame, textvariable=shared_gui_refs['inject_dispensed_ml_var'], bg=injector_dist_frame['bg'],
              fg='white', font=font_medium_readout, anchor='e').grid(row=1, column=1, sticky='ew', padx=5)
 
-    # Shared torque bar for the injector axis
     injector_torque_widget = create_torque_widget(injector_dist_frame, shared_gui_refs['torque0_var'], bar_height)
     injector_torque_widget.grid(row=0, column=2, rowspan=2, sticky='ns', padx=(10, 0))
 
-    # Shared homing tracer for the injector axis labels
     injector_tracer = make_injector_axis_tracer(shared_gui_refs['homed0_var'], shared_gui_refs['homed1_var'],
                                                 [machine_label, cartridge_label])
     shared_gui_refs['homed0_var'].trace_add('write', injector_tracer)
@@ -153,10 +127,11 @@ def create_status_bar(parent, shared_gui_refs):
     injector_tracer()
 
     # --- Pinch Axes ---
+    # MODIFIED: Updated to use new, specific variable names for pinch valves.
     pinch_axes_data = [
-        {'label': 'Fill Pinch', 'pos_var': 'pinch_pos_mm_var', 'homed_var': 'pinch_homed_var',
+        {'label': 'Inj Valve', 'pos_var': 'inj_valve_pos_var', 'homed_var': 'inj_valve_homed_var',
          'torque_var': 'torque2_var'},
-        {'label': 'Vac Pinch', 'pos_var': 'vac_pinch_pos_mm_var', 'homed_var': 'vac_pinch_homed_var',
+        {'label': 'Vac Valve', 'pos_var': 'vac_valve_pos_var', 'homed_var': 'vac_valve_homed_var',
          'torque_var': 'torque3_var'},
     ]
 
@@ -191,7 +166,7 @@ def create_status_bar(parent, shared_gui_refs):
     font_status_value = ("Segoe UI", 10, "bold")
     font_state_value = ("Segoe UI", 14, "bold")
 
-    tk.Label(status_grid, text="Injector State:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
+    tk.Label(status_grid, text="Fillhead State:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
         row=0, column=0, sticky='e', padx=5, pady=3)
     tk.Label(status_grid, textvariable=shared_gui_refs['main_state_var'], bg=sys_status_frame['bg'], fg="cyan",
              font=font_state_value).grid(row=0, column=1, sticky='w')
