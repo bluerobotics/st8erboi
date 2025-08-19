@@ -1,0 +1,145 @@
+import tkinter as tk
+from tkinter import ttk
+import threading
+import comms
+from scripting_gui import create_scripting_interface
+from manual_controls import create_manual_controls_display
+from status_panel import create_status_bar
+from terminal import create_terminal_panel
+from styles import configure_styles
+from top_menu import create_top_menu
+
+GUI_UPDATE_INTERVAL_MS = 100
+
+
+def main():
+    """
+    Initializes the main application window, creates the primary UI layout,
+    and starts the communication threads.
+    """
+    root = tk.Tk()
+    root.title("Multi-Device Controller")
+    root.configure(bg="#21232b")
+    root.geometry("1600x950")
+
+    configure_styles()
+
+    # --- Shared State and Functions ---
+    # MODIFIED: Cleaned up unused/obsolete variable definitions.
+    shared_gui_refs = {
+        'status_var_fillhead': tk.StringVar(value='🔌 Fillhead Disconnected'),
+        'status_var_gantry': tk.StringVar(value='🔌 Gantry Disconnected'),
+
+        # Fillhead enabled states
+        'enabled_state1_var': tk.StringVar(value='Disabled'),
+        'enabled_state2_var': tk.StringVar(value='Disabled'),
+        'enabled_state3_var': tk.StringVar(value='Disabled'),
+
+        # Fillhead position and homing
+        'pos_mm0_var': tk.StringVar(value='---'),
+        'pos_mm1_var': tk.StringVar(value='---'),
+        'homed0_var': tk.StringVar(value='Not Homed'),
+        'homed1_var': tk.StringVar(value='Not Homed'),
+        'machine_steps_var': tk.StringVar(value='---'),
+        'cartridge_steps_var': tk.StringVar(value='---'),
+        'inject_dispensed_ml_var': tk.StringVar(value='---'),
+
+        # Fillhead torque values
+        'torque0_var': tk.DoubleVar(value=0.0),
+        'torque1_var': tk.DoubleVar(value=0.0),
+        'torque2_var': tk.DoubleVar(value=0.0),
+        'torque3_var': tk.DoubleVar(value=0.0),
+
+        # Fillhead system status
+        'main_state_var': tk.StringVar(value='---'),
+        'vacuum_psig_var': tk.StringVar(value='---'),
+        'temp_c_var': tk.StringVar(value='---'),
+
+        # Gantry enabled states
+        'fh_enabled_m0_var': tk.StringVar(value='Disabled'),
+        'fh_enabled_m1_var': tk.StringVar(value='Disabled'),
+        'fh_enabled_m2_var': tk.StringVar(value='Disabled'),
+        'fh_enabled_m3_var': tk.StringVar(value='Disabled'),
+
+        # Gantry position and homing
+        'fh_pos_m0_var': tk.StringVar(value='---'),
+        'fh_pos_m1_var': tk.StringVar(value='---'),
+        'fh_pos_m2_var': tk.StringVar(value='---'),
+        'fh_pos_m3_var': tk.StringVar(value='---'),
+        'fh_homed_m0_var': tk.StringVar(value='Not Homed'),
+        'fh_homed_m1_var': tk.StringVar(value='Not Homed'),
+        'fh_homed_m2_var': tk.StringVar(value='Not Homed'),
+        'fh_homed_m3_var': tk.StringVar(value='Not Homed'),
+        'fh_state_var': tk.StringVar(value='Idle'),
+
+        # Gantry torque values
+        'fh_torque_m0_var': tk.DoubleVar(value=0.0),
+        'fh_torque_m1_var': tk.DoubleVar(value=0.0),
+        'fh_torque_m2_var': tk.DoubleVar(value=0.0),
+        'fh_torque_m3_var': tk.DoubleVar(value=0.0),
+
+        # Fillhead pinch valve variables
+        'inj_valve_pos_var': tk.StringVar(value='---'),
+        'inj_valve_homed_var': tk.StringVar(value='Not Homed'),
+        'vac_valve_pos_var': tk.StringVar(value='---'),
+        'vac_valve_homed_var': tk.StringVar(value='Not Homed'),
+    }
+
+    send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
+    send_gantry_cmd = lambda msg: comms.send_to_device("gantry", msg, shared_gui_refs)
+
+    def send_global_abort():
+        if 'terminal_cb' in shared_gui_refs:
+            comms.log_to_terminal("--- GLOBAL ABORT TRIGGERED ---", shared_gui_refs.get('terminal_cb'))
+        send_fillhead_cmd("ABORT")
+        send_gantry_cmd("ABORT")
+
+    command_funcs = {
+        "abort": send_global_abort,
+        "clear_errors": lambda: send_fillhead_cmd("CLEAR_ERRORS"),
+        "send_fillhead": send_fillhead_cmd,
+        "send_gantry": send_gantry_cmd
+    }
+
+    # --- Main Layout Frames ---
+    left_bar_frame = tk.Frame(root, bg="#21232b", width=350)
+    left_bar_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0), pady=10)
+    left_bar_frame.pack_propagate(False)
+
+    manual_control_widgets = create_manual_controls_display(root, command_funcs, shared_gui_refs)
+    manual_control_widgets['main_container'].pack(side=tk.LEFT, fill=tk.Y, pady=10, padx=(10, 0))
+
+    terminal_widgets = create_terminal_panel(root, shared_gui_refs)
+    shared_gui_refs.update(terminal_widgets)
+    terminal_widgets['terminal_frame'].pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(0, 10))
+
+    main_content_frame = tk.Frame(root, bg="#21232b")
+    main_content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    # --- Populate UI Components ---
+    scripting_widgets = create_scripting_interface(main_content_frame, command_funcs, shared_gui_refs)
+    shared_gui_refs.update(scripting_widgets)
+
+    file_commands = scripting_widgets.get('file_commands', {})
+    menu_widgets = create_top_menu(root, file_commands)
+
+    if 'update_recent_menu_callback' in scripting_widgets:
+        scripting_widgets['update_recent_menu_callback'](menu_widgets['recent_files_menu'])
+
+    status_widgets = create_status_bar(left_bar_frame, shared_gui_refs)
+    shared_gui_refs.update(status_widgets)
+
+    abort_btn = ttk.Button(left_bar_frame, text="🛑 ABORT ALL", style="Abort.TButton",
+                           command=command_funcs.get("abort"))
+    abort_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+
+    # --- Start Communication Threads ---
+    threading.Thread(target=comms.recv_loop, args=(shared_gui_refs,), daemon=True).start()
+    threading.Thread(target=comms.monitor_connections, args=(shared_gui_refs,), daemon=True).start()
+    threading.Thread(target=comms.telemetry_requester_loop, args=(shared_gui_refs, GUI_UPDATE_INTERVAL_MS), daemon=True).start()
+
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
