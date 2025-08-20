@@ -26,7 +26,7 @@
 #define PULSES_PER_REV                  800       // Number of step pulses required for one full motor revolution (microstepping dependent).
 #define STEPS_PER_MM_INJECTOR           (PULSES_PER_REV / INJECTOR_PITCH_MM_PER_REV) // Calculated steps per millimeter for the injector axis.
 #define STEPS_PER_MM_PINCH              (PULSES_PER_REV / PINCH_PITCH_MM_PER_REV)    // Calculated steps per millimeter for the pinch valve axes.
-#define MAX_HOMING_DURATION_MS          30000     // Maximum time (in milliseconds) a homing operation is allowed to run before timing out.
+#define MAX_HOMING_DURATION_MS          100000    // Maximum time (in milliseconds) a homing operation is allowed to run before timing out.
 
 //==================================================================================================
 // Hardware Pin Definitions
@@ -34,8 +34,9 @@
 // --- Motors ---
 #define MOTOR_INJECTOR_A                ConnectorM0 // Primary injector motor.
 #define MOTOR_INJECTOR_B                ConnectorM1 // Secondary, ganged injector motor.
-#define MOTOR_INJECTION_VALVE           ConnectorM2 // Motor for the pinch valve on the injection side.
-#define MOTOR_VACUUM_VALVE              ConnectorM3 // Motor for the pinch valve on the vacuum side.
+#define MOTOR_VACUUM_VALVE              ConnectorM2 // Motor for the pinch valve on the vacuum side.
+#define MOTOR_INJECTION_VALVE           ConnectorM3 // Motor for the pinch valve on the injection side.
+
 
 // --- Analog Sensors ---
 #define PIN_THERMOCOUPLE                ConnectorA12 // Analog input for the heater thermocouple.
@@ -93,20 +94,31 @@
 #define DEFAULT_INJECTOR_TORQUE_LIMIT       20.0f     // Default torque limit (%) for injector motors.
 #define DEFAULT_INJECTOR_TORQUE_OFFSET      -2.4f     // Default torque offset (%) to account for sensor bias.
 
-// --- Homing Defaults ---
-#define HOMING_STROKE_MM                    500.0f    // Maximum travel distance during homing sequence.
-#define HOMING_RAPID_VEL_MMS                20.0f     // Rapid velocity for seeking the hard stop.
-#define HOMING_TOUCH_VEL_MMS                3.125f    // Slow velocity for precise touch-off.
-#define HOMING_BACKOFF_VEL_MMS              6.25f     // Velocity for the back-off move.
-#define HOMING_RETRACT_VEL_MMS              31.25f    // Velocity for the post-touch-off retraction.
-#define HOMING_ACCEL_MMSS                   100.0f    // Acceleration for homing moves.
-#define HOMING_RETRACT_ACCEL_MMSS           125.0f    // Acceleration for the post-touch-off retraction.
-#define HOMING_TOUCH_OFF_ACCEL_MMSS         31.25f    // Acceleration for the final touch-off move.
-#define HOMING_BACKOFF_ACCEL_MMSS           62.5f     // Acceleration for the back-off move.
-#define HOMING_TORQUE_PERCENT               10.0f     // Torque limit (%) for homing moves.
-#define HOMING_DEFAULT_BACKOFF_STEPS        200       // Steps to back off the hard stop after initial contact.
-#define HOMING_POST_TOUCH_RETRACT_MM        12.5f     // Distance to retract after the final touch-off.
-#define HOMING_BACKOFF_MM                   1.25f     // Distance (mm) to back off after initial torque hit, calculated from steps.
+// --- Injector Homing Defaults ---
+#define INJECTOR_HOMING_STROKE_MM           500.0f
+#define INJECTOR_HOMING_RAPID_VEL_MMS       1.0f
+#define INJECTOR_HOMING_TOUCH_VEL_MMS       1.0f
+#define INJECTOR_HOMING_BACKOFF_VEL_MMS     1.0f
+#define INJECTOR_HOMING_ACCEL_MMSS          100.0f
+#define INJECTOR_HOMING_SEARCH_TORQUE_PERCENT 10.0f
+#define INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT 40.0f
+#define INJECTOR_HOMING_BACKOFF_MM          1.25f
+
+// --- Pinch Valve Homing Defaults ---
+#define PINCH_HOMING_STROKE_MM              50.0f
+#define PINCH_HOMING_UNIFIED_VEL_MMS        1.0f // The single speed for all homing moves.
+#define PINCH_HOMING_ACCEL_MMSS             100.0f
+#define PINCH_HOMING_SEARCH_TORQUE_PERCENT  10.0f
+#define PINCH_HOMING_BACKOFF_TORQUE_PERCENT 40.0f
+#define PINCH_VALVE_HOMING_BACKOFF_MM       0.5f      // Distance (mm) for the initial and intermediate backoffs.
+#define PINCH_VALVE_FINAL_OFFSET_MM         9.0f      // Distance (mm) for the final offset from the hard stop.
+
+// --- Pinch Valve Operation Defaults (NEW) ---
+#define PINCH_VALVE_PINCH_TORQUE_PERCENT    15.0f     // Target torque for closing the valve.
+#define PINCH_VALVE_PINCH_VEL_MMS           5.0f      // Speed for the closing (pinching) move.
+#define PINCH_VALVE_OPEN_VEL_MMS            10.0f     // Speed for the opening move (returning to home).
+#define PINCH_VALVE_OPEN_ACCEL_MMSS         50.0f     // Acceleration for the opening move.
+
 
 // --- Jogging Defaults ---
 #define JOG_DEFAULT_TORQUE_PERCENT          30        // Default torque limit (%) for jog moves.
@@ -126,7 +138,6 @@
 
 //==================================================================================================
 // Command Strings & Prefixes
-// MODIFIED: Changed "INJECTOR" and "INJ_" to "FILLHEAD" and "FILLHEAD_" for consistency.
 //==================================================================================================
 // --- General Commands ---
 #define CMD_STR_REQUEST_TELEM               "REQUEST_TELEM"
@@ -167,13 +178,13 @@
 #define CMD_STR_SET_HEATER_SETPOINT         "SET_HEATER_SETPOINT "
 
 // --- Vacuum Commands ---
-#define CMD_STR_VACUUM_ON                       "VACUUM_ON"
-#define CMD_STR_VACUUM_OFF                      "VACUUM_OFF"
-#define CMD_STR_VACUUM_LEAK_TEST                "VACUUM_LEAK_TEST"
-#define CMD_STR_SET_VACUUM_TARGET               "SET_VACUUM_TARGET "
-#define CMD_STR_SET_VACUUM_TIMEOUT_S            "SET_VACUUM_TIMEOUT_S "
-#define CMD_STR_SET_LEAK_TEST_DELTA             "SET_LEAK_TEST_DELTA "
-#define CMD_STR_SET_LEAK_TEST_DURATION_S        "SET_LEAK_TEST_DURATION_S "
+#define CMD_STR_VACUUM_ON                   "VACUUM_ON"
+#define CMD_STR_VACUUM_OFF                  "VACUUM_OFF"
+#define CMD_STR_VACUUM_LEAK_TEST            "VACUUM_LEAK_TEST"
+#define CMD_STR_SET_VACUUM_TARGET           "SET_VACUUM_TARGET "
+#define CMD_STR_SET_VACUUM_TIMEOUT_S        "SET_VACUUM_TIMEOUT_S "
+#define CMD_STR_SET_LEAK_TEST_DELTA         "SET_LEAK_TEST_DELTA "
+#define CMD_STR_SET_LEAK_TEST_DURATION_S    "SET_LEAK_TEST_DURATION_S "
 
 // --- Telemetry & Status Prefixes ---
 #define TELEM_PREFIX						"FILLHEAD_TELEM: "
@@ -227,19 +238,19 @@ enum FeedState : uint8_t {
 
 // Defines various error conditions the system can be in.
 enum ErrorState : uint8_t {
-	ERROR_NONE,                     // No error.
-	ERROR_MANUAL_ABORT,             // Operation aborted by user command.
-	ERROR_TORQUE_ABORT,             // Operation aborted due to exceeding torque limits.
-	ERROR_MOTION_EXCEEDED_ABORT,    // Operation aborted because motion limits were exceeded.
-	ERROR_NO_CARTRIDGE_HOME,        // A required cartridge home position is not set.
-	ERROR_NO_MACHINE_HOME,          // A required machine home position is not set.
-	ERROR_HOMING_TIMEOUT,           // Homing operation took too long to complete.
-	ERROR_HOMING_NO_TORQUE_RAPID,   // Homing failed to detect torque during the rapid move.
-	ERROR_HOMING_NO_TORQUE_TOUCH,   // Homing failed to detect torque during the touch-off move.
-	ERROR_INVALID_INJECTION,        // An injection command was invalid.
-	ERROR_NOT_HOMED,                // An operation required homing, but the system is not homed.
-	ERROR_INVALID_PARAMETERS,       // A command was received with invalid parameters.
-	ERROR_MOTORS_DISABLED           // An operation was blocked because motors are disabled.
+	ERROR_NONE,                   // No error.
+	ERROR_MANUAL_ABORT,           // Operation aborted by user command.
+	ERROR_TORQUE_ABORT,           // Operation aborted due to exceeding torque limits.
+	ERROR_MOTION_EXCEEDED_ABORT,  // Operation aborted because motion limits were exceeded.
+	ERROR_NO_CARTRIDGE_HOME,      // A required cartridge home position is not set.
+	ERROR_NO_MACHINE_HOME,        // A required machine home position is not set.
+	ERROR_HOMING_TIMEOUT,         // Homing operation took too long to complete.
+	ERROR_HOMING_NO_TORQUE_RAPID, // Homing failed to detect torque during the rapid move.
+	ERROR_HOMING_NO_TORQUE_TOUCH, // Homing failed to detect torque during the touch-off move.
+	ERROR_INVALID_INJECTION,      // An injection command was invalid.
+	ERROR_NOT_HOMED,              // An operation required homing, but the system is not homed.
+	ERROR_INVALID_PARAMETERS,     // A command was received with invalid parameters.
+	ERROR_MOTORS_DISABLED         // An operation was blocked because motors are disabled.
 };
 
 // Defines the operational state of the heater.

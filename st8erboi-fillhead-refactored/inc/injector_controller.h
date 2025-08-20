@@ -137,7 +137,7 @@ private:
     char m_telemetryBuffer[256];
 
     // --- Private Methods ---
-    void moveSteps(long steps, int velSps, int accelSps2, int torque);
+    void moveSteps(long steps, int velSps, int accelSps2);
     bool isMoving();
     float getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead);
     bool checkTorqueLimit();
@@ -146,8 +146,8 @@ private:
 
     // --- Command Handlers ---
     void handleJogMove(const char* args);
-    void handleMachineHome(); // MODIFIED: No longer takes arguments
-    void handleCartridgeHome(); // MODIFIED: No longer takes arguments
+    void handleMachineHome();
+    void handleCartridgeHome();
     void handleMoveToCartridgeHome();
     void handleMoveToCartridgeRetract(const char* args);
     void handleInjectMove(const char* args);

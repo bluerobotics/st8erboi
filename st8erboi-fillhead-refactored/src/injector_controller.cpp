@@ -1,7 +1,7 @@
 /**
  * @file injector_controller.cpp
  * @author Your Name
- * @date August 19, 2025
+ * @date August 20, 2025
  * @brief Implements the controller for the dual-motor injector system.
  *
  * This file contains the implementation for the Injector class, which is
@@ -25,9 +25,6 @@
 
 /**
  * @brief Constructs the Injector controller.
- * @param motorA Pointer to the MotorDriver object for the first injector motor (M0).
- * @param motorB Pointer to the MotorDriver object for the second injector motor (M1).
- * @param comms Pointer to the master CommsController for sending status messages.
  */
 Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, CommsController* comms) {
     m_motorA = motorA;
@@ -84,9 +81,6 @@ void Injector::setup() {
 
 /**
  * @brief The main update loop for the injector's state machines.
- * @details This function is called on every iteration of the main application
- * loop. It checks the current state (e.g., homing, feeding) and executes the
- * corresponding logic for that state.
  */
 void Injector::updateState() {
     switch (m_state) {
@@ -98,12 +92,12 @@ void Injector::updateState() {
             switch (m_homingPhase) {
                 case RAPID_SEARCH_START: {
                     m_comms->sendStatus(STATUS_PREFIX_INFO, "Homing: Starting rapid search.");
+                    m_torqueLimit = INJECTOR_HOMING_SEARCH_TORQUE_PERCENT;
                     long rapid_search_steps = m_homingDistanceSteps;
-                    // Machine homing moves in the negative direction (retract)
                     if (m_homingState == HOMING_MACHINE) {
                         rapid_search_steps = -rapid_search_steps;
                     }
-                    moveSteps(rapid_search_steps, m_homingRapidSps, m_homingAccelSps2, (int)m_torqueLimit);
+                    moveSteps(rapid_search_steps, m_homingRapidSps, m_homingAccelSps2);
                     m_homingStartTime = Milliseconds();
                     m_homingPhase = RAPID_SEARCH_WAIT_TO_START;
                     break;
@@ -112,16 +106,12 @@ void Injector::updateState() {
                     if (isMoving()) {
                         m_homingPhase = RAPID_SEARCH_MOVING;
                     }
-                    // Add a timeout to prevent getting stuck waiting for movement to start
                     else if (Milliseconds() - m_homingStartTime > 500) {
                         abortMove();
-                        // --- ENHANCED DIAGNOSTIC LOGGING ---
-                        // Log the raw status register values to see the motor controller's state.
                         char errorMsg[200];
                         snprintf(errorMsg, sizeof(errorMsg), "Homing failed: Motor did not start moving. M0 Status=0x%04X, M1 Status=0x%04X",
                                  (unsigned int)m_motorA->StatusReg().reg, (unsigned int)m_motorB->StatusReg().reg);
                         m_comms->sendStatus(STATUS_PREFIX_INFO, errorMsg);
-                        // --- END DIAGNOSTIC LOGGING ---
                         m_state = STATE_STANDBY;
                         m_homingPhase = HOMING_PHASE_IDLE;
                     }
@@ -140,8 +130,9 @@ void Injector::updateState() {
                 }
                 case BACKOFF_START: {
                     m_comms->sendStatus(STATUS_PREFIX_INFO, "Homing: Starting backoff.");
+                    m_torqueLimit = INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT;
                     long backoff_steps = (m_homingState == HOMING_MACHINE) ? m_homingBackoffSteps : -m_homingBackoffSteps;
-                    moveSteps(backoff_steps, m_homingBackoffSps, m_homingAccelSps2, (int)m_torqueLimit);
+                    moveSteps(backoff_steps, m_homingBackoffSps, m_homingAccelSps2);
                     m_homingPhase = BACKOFF_WAIT_TO_START;
                     break;
                 }
@@ -158,8 +149,9 @@ void Injector::updateState() {
                 break;
                 case SLOW_SEARCH_START: {
                     m_comms->sendStatus(STATUS_PREFIX_INFO, "Homing: Starting slow search.");
+                    m_torqueLimit = INJECTOR_HOMING_SEARCH_TORQUE_PERCENT;
                     long slow_search_steps = (m_homingState == HOMING_MACHINE) ? -m_homingBackoffSteps * 2 : m_homingBackoffSteps * 2;
-                    moveSteps(slow_search_steps, m_homingTouchSps, m_homingAccelSps2, (int)m_torqueLimit);
+                    moveSteps(slow_search_steps, m_homingTouchSps, m_homingAccelSps2);
                     m_homingPhase = SLOW_SEARCH_WAIT_TO_START;
                     break;
                 }
@@ -181,8 +173,9 @@ void Injector::updateState() {
                     break;
                 }
                 case SET_OFFSET_START: {
+                    m_torqueLimit = INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT;
                     long offset_steps = (m_homingState == HOMING_MACHINE) ? m_homingBackoffSteps : -m_homingBackoffSteps;
-                    moveSteps(offset_steps, m_homingBackoffSps, m_homingAccelSps2, (int)m_torqueLimit);
+                    moveSteps(offset_steps, m_homingBackoffSps, m_homingAccelSps2);
                     m_homingPhase = SET_OFFSET_WAIT_TO_START;
                     break;
                 }
@@ -292,8 +285,6 @@ void Injector::updateState() {
 
 /**
  * @brief Handles a command specifically for the injector system.
- * @param command The UserCommand enum representing the action to take.
- * @param args A pointer to the arguments string for the command, or nullptr if none.
  */
 void Injector::handleCommand(UserCommand cmd, const char* args) {
     if (!m_isEnabled && cmd != CMD_SET_INJECTOR_TORQUE_OFFSET) {
@@ -317,8 +308,8 @@ void Injector::handleCommand(UserCommand cmd, const char* args) {
 
     switch(cmd) {
         case CMD_JOG_MOVE:                  handleJogMove(args); break;
-        case CMD_MACHINE_HOME_MOVE:         handleMachineHome(); break; // MODIFIED: No longer passes args
-        case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHome(); break; // MODIFIED: No longer passes args
+        case CMD_MACHINE_HOME_MOVE:         handleMachineHome(); break;
+        case CMD_CARTRIDGE_HOME_MOVE:       handleCartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_HOME:    handleMoveToCartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: handleMoveToCartridgeRetract(args); break;
         case CMD_INJECT_MOVE:               handleInjectMove(args); break;
@@ -373,7 +364,6 @@ void Injector::resetState() {
 
 /**
  * @brief Handles the JOG_MOVE command.
- * @param args The command arguments string.
  */
 void Injector::handleJogMove(const char* args) {
     float dist_mm1 = 0, dist_mm2 = 0, vel_mms = 0, accel_mms2 = 0;
@@ -392,7 +382,8 @@ void Injector::handleJogMove(const char* args) {
         
         m_activeJogCommand = CMD_STR_JOG_MOVE;
         m_state = STATE_JOGGING;
-        moveSteps(steps1, velocity_sps, accel_sps2_val, torque_percent);
+        m_torqueLimit = (float)torque_percent;
+        moveSteps(steps1, velocity_sps, accel_sps2_val);
         } else {
         char errorMsg[STATUS_MESSAGE_BUFFER_SIZE];
         std::snprintf(errorMsg, sizeof(errorMsg), "Invalid JOG_MOVE format. Expected 5 params, got %d.", parsed_count);
@@ -401,19 +392,16 @@ void Injector::handleJogMove(const char* args) {
 }
 
 /**
- * @brief Handles the MACHINE_HOME_MOVE command using hardcoded parameters.
+ * @brief Handles the MACHINE_HOME_MOVE command.
  */
-void Injector::handleMachineHome() { // MODIFIED: No longer takes arguments
-    // MODIFIED: Arguments are ignored. Using hardcoded values from config.h
-    m_torqueLimit = HOMING_TORQUE_PERCENT;
-    m_homingDistanceSteps = (long)(fabs(HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
-    m_homingBackoffSteps = (long)(HOMING_BACKOFF_MM * STEPS_PER_MM_INJECTOR);
-    m_homingRapidSps = (int)fabs(HOMING_RAPID_VEL_MMS * STEPS_PER_MM_INJECTOR);
-    m_homingBackoffSps = (int)fabs(HOMING_BACKOFF_VEL_MMS * STEPS_PER_MM_INJECTOR);
-    m_homingTouchSps = (int)fabs(HOMING_TOUCH_VEL_MMS * STEPS_PER_MM_INJECTOR);
-    m_homingAccelSps2 = (int)fabs(HOMING_ACCEL_MMSS * STEPS_PER_MM_INJECTOR);
+void Injector::handleMachineHome() {
+    m_homingDistanceSteps = (long)(fabs(INJECTOR_HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
+    m_homingBackoffSteps = (long)(INJECTOR_HOMING_BACKOFF_MM * STEPS_PER_MM_INJECTOR);
+    m_homingRapidSps = (int)fabs(INJECTOR_HOMING_RAPID_VEL_MMS * STEPS_PER_MM_INJECTOR);
+    m_homingBackoffSps = (int)fabs(INJECTOR_HOMING_BACKOFF_VEL_MMS * STEPS_PER_MM_INJECTOR);
+    m_homingTouchSps = (int)fabs(INJECTOR_HOMING_TOUCH_VEL_MMS * STEPS_PER_MM_INJECTOR);
+    m_homingAccelSps2 = (int)fabs(INJECTOR_HOMING_ACCEL_MMSS * STEPS_PER_MM_INJECTOR);
     
-    // --- DIAGNOSTIC LOGGING ---
     char logMsg[200];
     snprintf(logMsg, sizeof(logMsg), "Homing params: dist_steps=%ld, rapid_sps=%d, touch_sps=%d, accel_sps2=%d",
              m_homingDistanceSteps, m_homingRapidSps, m_homingTouchSps, m_homingAccelSps2);
@@ -421,9 +409,8 @@ void Injector::handleMachineHome() { // MODIFIED: No longer takes arguments
 
     if (m_homingDistanceSteps == 0) {
         m_comms->sendStatus(STATUS_PREFIX_ERROR, "Homing failed: Calculated distance is zero. Check config.");
-        return; // Abort the homing command
+        return;
     }
-    // --- END DIAGNOSTIC LOGGING ---
 
     m_state = STATE_HOMING;
     m_homingState = HOMING_MACHINE;
@@ -435,17 +422,15 @@ void Injector::handleMachineHome() { // MODIFIED: No longer takes arguments
 }
 
 /**
- * @brief Handles the CARTRIDGE_HOME_MOVE command using hardcoded parameters.
+ * @brief Handles the CARTRIDGE_HOME_MOVE command.
  */
-void Injector::handleCartridgeHome() { // MODIFIED: No longer takes arguments
-    // MODIFIED: Arguments are ignored. Using hardcoded values from config.h
-    m_torqueLimit = HOMING_TORQUE_PERCENT;
-    m_homingDistanceSteps = (long)(fabs(HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
-    m_homingBackoffSteps = (long)(HOMING_BACKOFF_MM * STEPS_PER_MM_INJECTOR);
-    m_homingRapidSps = (int)fabs(HOMING_RAPID_VEL_MMS * STEPS_PER_MM_INJECTOR);
-    m_homingBackoffSps = (int)fabs(HOMING_BACKOFF_VEL_MMS * STEPS_PER_MM_INJECTOR);
-    m_homingTouchSps = (int)fabs(HOMING_TOUCH_VEL_MMS * STEPS_PER_MM_INJECTOR);
-    m_homingAccelSps2 = (int)fabs(HOMING_ACCEL_MMSS * STEPS_PER_MM_INJECTOR);
+void Injector::handleCartridgeHome() {
+    m_homingDistanceSteps = (long)(fabs(INJECTOR_HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
+    m_homingBackoffSteps = (long)(INJECTOR_HOMING_BACKOFF_MM * STEPS_PER_MM_INJECTOR);
+    m_homingRapidSps = (int)fabs(INJECTOR_HOMING_RAPID_VEL_MMS * STEPS_PER_MM_INJECTOR);
+    m_homingBackoffSps = (int)fabs(INJECTOR_HOMING_BACKOFF_VEL_MMS * STEPS_PER_MM_INJECTOR);
+    m_homingTouchSps = (int)fabs(INJECTOR_HOMING_TOUCH_VEL_MMS * STEPS_PER_MM_INJECTOR);
+    m_homingAccelSps2 = (int)fabs(INJECTOR_HOMING_ACCEL_MMSS * STEPS_PER_MM_INJECTOR);
     
     m_state = STATE_HOMING;
     m_homingState = HOMING_CARTRIDGE;
@@ -472,13 +457,13 @@ void Injector::handleMoveToCartridgeHome() {
     
     long current_pos = m_motorA->PositionRefCommanded();
     long steps_to_move = m_cartridgeHomeReferenceSteps - current_pos;
-
-    moveSteps(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2, m_feedDefaultTorquePercent);
+    
+    m_torqueLimit = (float)m_feedDefaultTorquePercent;
+    moveSteps(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
 }
 
 /**
  * @brief Handles the MOVE_TO_CARTRIDGE_RETRACT command.
- * @param args The command arguments string.
  */
 void Injector::handleMoveToCartridgeRetract(const char* args) {
     if (!m_homingCartridgeDone) {
@@ -502,12 +487,12 @@ void Injector::handleMoveToCartridgeRetract(const char* args) {
     long current_pos = m_motorA->PositionRefCommanded();
     long steps_to_move = target_pos - current_pos;
 
-    moveSteps(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2, m_feedDefaultTorquePercent);
+    m_torqueLimit = (float)m_feedDefaultTorquePercent;
+    moveSteps(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
 }
 
 /**
  * @brief Handles the INJECT_MOVE command.
- * @param args The command arguments string.
  */
 void Injector::handleInjectMove(const char* args) {
     float volume_ml, speed_ml_s, accel_sps2, steps_per_ml;
@@ -534,7 +519,8 @@ void Injector::handleInjectMove(const char* args) {
         m_activeFeedCommand = CMD_STR_INJECT_MOVE;
         
         m_comms->sendStatus(STATUS_PREFIX_START, "INJECT_MOVE initiated.");
-        moveSteps(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2, m_active_op_torque_percent);
+        m_torqueLimit = (float)m_active_op_torque_percent;
+        moveSteps(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2);
         } else {
         m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid INJECT_MOVE format. Expected 5 params.");
     }
@@ -569,7 +555,8 @@ void Injector::handleResumeOperation() {
     }
     m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
     m_feedState = FEED_INJECT_RESUMING;
-    moveSteps(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2, m_active_op_torque_percent);
+    m_torqueLimit = (float)m_active_op_torque_percent;
+    moveSteps(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2);
     m_comms->sendStatus(STATUS_PREFIX_DONE, "RESUME_INJECTION complete.");
 }
 
@@ -589,7 +576,6 @@ void Injector::handleCancelOperation() {
 
 /**
  * @brief Handles the SET_INJECTOR_TORQUE_OFFSET command.
- * @param args The command arguments string.
  */
 void Injector::handleSetTorqueOffset(const char* args) {
     m_torqueOffset = std::atof(args);
@@ -600,23 +586,13 @@ void Injector::handleSetTorqueOffset(const char* args) {
 
 /**
  * @brief Commands a synchronized move on both injector motors.
- * @param steps The number of steps to move. Positive is dispense, negative is retract.
- * @param velSps The velocity in steps per second.
- * @param accelSps2 The acceleration in steps per second squared.
- * @param torque The torque limit as a percentage (1-100).
  */
-void Injector::moveSteps(long steps, int velSps, int accelSps2, int torque) {
-    // This function now uses a single 'steps' parameter for synchronized motion.
-    // Both motors receive the same step command, which assumes they are physically
-    // oriented to move in the same direction.
-
+void Injector::moveSteps(long steps, int velSps, int accelSps2) {
     m_firstTorqueReading0 = true;
     m_firstTorqueReading1 = true;
-    m_torqueLimit = (float)torque;
 
-    // Add diagnostic logging to see exactly what move is being commanded.
     char logMsg[128];
-    snprintf(logMsg, sizeof(logMsg), "moveSteps called: steps=%ld, vel=%d, accel=%d, torque=%d", steps, velSps, accelSps2, torque);
+    snprintf(logMsg, sizeof(logMsg), "moveSteps called: steps=%ld, vel=%d, accel=%d, torque=%.1f", steps, velSps, accelSps2, m_torqueLimit);
     m_comms->sendStatus(STATUS_PREFIX_INFO, logMsg);
 
     if (steps == 0) {
@@ -629,15 +605,12 @@ void Injector::moveSteps(long steps, int velSps, int accelSps2, int torque) {
     m_motorB->VelMax(velSps);
     m_motorB->AccelMax(accelSps2);
 
-    // Move both motors in the same direction. This corrects the previous issue
-    // where they were commanded to move in opposite directions, causing a stall.
     m_motorA->Move(steps);
     m_motorB->Move(steps);
 }
 
 /**
  * @brief Checks if either of the injector motors are currently active.
- * @return True if either motor is moving, false otherwise.
  */
 bool Injector::isMoving() {
     if (!m_isEnabled) return false;
@@ -648,10 +621,6 @@ bool Injector::isMoving() {
 
 /**
  * @brief Gets a smoothed torque value from a motor using an EWMA filter.
- * @param motor Pointer to the motor to read from.
- * @param smoothedValue Pointer to the variable holding the smoothed value.
- * @param firstRead Pointer to a flag indicating if this is the first reading.
- * @return The smoothed torque value, or a sentinel value if the reading is invalid.
  */
 float Injector::getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, bool *firstRead) {
     float currentRawTorque = motor->HlfbPercent();
@@ -669,7 +638,6 @@ float Injector::getSmoothedTorqueEWMA(MotorDriver *motor, float *smoothedValue, 
 
 /**
  * @brief Checks if the torque on either motor has exceeded the current limit.
- * @return True if the torque limit is exceeded, false otherwise.
  */
 bool Injector::checkTorqueLimit() {
     if (isMoving()) {
@@ -692,7 +660,6 @@ bool Injector::checkTorqueLimit() {
 
 /**
  * @brief Finalizes a dispense operation, calculating the total dispensed volume.
- * @param success True if the operation completed successfully, false if cancelled.
  */
 void Injector::finalizeAndResetActiveDispenseOperation(bool success) {
     if (m_active_op_steps_per_ml > 0.0001f) {
@@ -723,7 +690,6 @@ void Injector::fullyResetActiveDispenseOperation() {
 
 /**
  * @brief Assembles the injector-specific portion of the telemetry string.
- * @return A const char pointer to the internal buffer containing the formatted string.
  */
 const char* Injector::getTelemetryString() {
     float displayTorque0 = getSmoothedTorqueEWMA(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
