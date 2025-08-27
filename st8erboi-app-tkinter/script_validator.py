@@ -76,8 +76,8 @@ COMMANDS = {
     "CANCEL_INJECTION": {"device": "fillhead", "params": [], "help": "Cancels an injection or purge."},
     "ENABLE": {"device": "fillhead", "params": [], "help": "Enables all injector motors."},
     "DISABLE": {"device": "fillhead", "params": [], "help": "Disables all injector motors."},
-    "HEATER_PID_ON": {"device": "fillhead", "params": [], "help": "Turns the heater PID controller on."},
-    "HEATER_PID_OFF": {"device": "fillhead", "params": [], "help": "Turns the heater PID controller off."},
+    "HEATER_ON": {"device": "fillhead", "params": [], "help": "Turns the heater PID controller on."},
+    "HEATER_OFF": {"device": "fillhead", "params": [], "help": "Turns the heater PID controller off."},
     "VACUUM_ON": {"device": "fillhead", "params": [], "help": "Turns the vacuum pump ON and opens the valve."},
     "VACUUM_OFF": {"device": "fillhead", "params": [], "help": "Turns the vacuum pump OFF and closes the valve."},
 
