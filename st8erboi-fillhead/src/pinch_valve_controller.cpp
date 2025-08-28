@@ -133,7 +133,7 @@ void PinchValve::update() {
 					if (m_motor->StatusReg().bit.StepsActive) m_homingPhase = SET_OFFSET_MOVING;
 					break;
 				case SET_OFFSET_MOVING:
-					if (!m_motor->StatusReg().bit.StepsActive) m_homingPhase = SET_ZERO;
+					if (checkTorqueLimit() || !m_motor->StatusReg().bit.StepsActive) m_homingPhase = SET_ZERO;
 					break;
 				case SET_ZERO:
 					m_motor->PositionRefSet(0); 

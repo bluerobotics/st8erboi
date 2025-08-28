@@ -164,6 +164,15 @@ def parse_fillhead_telemetry(msg, gui_refs):
             if f'enabled_state{gui_var_index}_var' in gui_refs: gui_refs[f'enabled_state{gui_var_index}_var'].set(
                 "Enabled" if parts.get(f"enabled{i}", "0") == "1" else "Disabled")
 
+        # --- FINAL FIX ---
+        # The telemetry uses specific keys 'inj_h_mach' and 'inj_h_cart' for homing status,
+        # not indexed keys. This correctly maps them to the GUI variables that control the status color.
+        if 'homed0_var' in gui_refs:
+            gui_refs['homed0_var'].set("Homed" if parts.get("inj_h_mach", "0") == "1" else "Not Homed")
+        if 'homed1_var' in gui_refs:
+            gui_refs['homed1_var'].set("Homed" if parts.get("inj_h_cart", "0") == "1" else "Not Homed")
+        # -------------------
+
         # Pinch Valves
         if 'inj_valve_pos_var' in gui_refs: gui_refs['inj_valve_pos_var'].set(parts.get("inj_valve_pos", "---"))
         if 'inj_valve_homed_var' in gui_refs: gui_refs['inj_valve_homed_var'].set(
@@ -210,8 +219,7 @@ def parse_gantry_telemetry(msg, gui_refs):
         payload = msg.split("GANTRY_TELEM: ")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
-        # --- THIS IS THE FIX ---
-        if 'fh_state_var' in gui_refs: gui_refs['fh_state_var'].set(parts.get("gantry_state", "UNKNOWN")) # <-- ADD THIS LINE
+        if 'fh_state_var' in gui_refs: gui_refs['fh_state_var'].set(parts.get("gantry_state", "UNKNOWN"))
 
         if 'fh_state_x_var' in gui_refs: gui_refs['fh_state_x_var'].set(parts.get("x_s", "UNKNOWN"))
         if 'fh_state_y_var' in gui_refs: gui_refs['fh_state_y_var'].set(parts.get("y_s", "UNKNOWN"))

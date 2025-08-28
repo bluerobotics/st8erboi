@@ -74,8 +74,8 @@
 #define VAC_PRESSURE_MIN                -14.7f    // Minimum pressure in PSIG that the sensor can read.
 #define VAC_PRESSURE_MAX                15.0f     // Maximum pressure in PSIG that the sensor can read.
 #define VACUUM_PSIG_OFFSET              0.0f      // A calibration offset for the vacuum sensor reading.
-#define DEFAULT_VACUUM_TARGET_PSIG      -12.0f    // Default target pressure in PSIG.
-#define DEFAULT_VACUUM_RAMP_TIMEOUT_MS  15000     // Default time (15s) to reach target pressure.
+#define DEFAULT_VACUUM_TARGET_PSIG      -14.0f    // Default target pressure in PSIG.
+#define DEFAULT_VACUUM_RAMP_TIMEOUT_MS  30000     // Default time (30s) to reach target pressure.
 #define DEFAULT_LEAK_TEST_DELTA_PSIG    0.1f      // Default max allowed pressure drop during a leak test.
 #define DEFAULT_LEAK_TEST_DURATION_MS   10000     // Default duration (10s) for a leak test.
 #define VACUUM_SETTLE_TIME_S            2.0f      // Time (in s) to let pressure settle before a leak test.
@@ -96,20 +96,20 @@
 
 // --- Injector Homing Defaults ---
 #define INJECTOR_HOMING_STROKE_MM           500.0f
-#define INJECTOR_HOMING_RAPID_VEL_MMS       1.0f
+#define INJECTOR_HOMING_RAPID_VEL_MMS       5.0f
 #define INJECTOR_HOMING_TOUCH_VEL_MMS       1.0f
-#define INJECTOR_HOMING_BACKOFF_VEL_MMS     1.0f
+#define INJECTOR_HOMING_BACKOFF_VEL_MMS     5.0f
 #define INJECTOR_HOMING_ACCEL_MMSS          100.0f
 #define INJECTOR_HOMING_SEARCH_TORQUE_PERCENT 10.0f
 #define INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT 40.0f
-#define INJECTOR_HOMING_BACKOFF_MM          1.25f
+#define INJECTOR_HOMING_BACKOFF_MM          1.0f
 
 // --- Pinch Valve Homing Defaults ---
 #define PINCH_HOMING_STROKE_MM              50.0f
 #define PINCH_HOMING_UNIFIED_VEL_MMS        1.0f // The single speed for all homing moves.
 #define PINCH_HOMING_ACCEL_MMSS             100.0f
 #define PINCH_HOMING_SEARCH_TORQUE_PERCENT  10.0f
-#define PINCH_HOMING_BACKOFF_TORQUE_PERCENT 40.0f
+#define PINCH_HOMING_BACKOFF_TORQUE_PERCENT 50.0f
 #define PINCH_VALVE_HOMING_BACKOFF_MM       0.5f      // Distance (mm) for the initial and intermediate backoffs.
 #define PINCH_VALVE_FINAL_OFFSET_MM         9.0f      // Distance (mm) for the final offset from the hard stop.
 

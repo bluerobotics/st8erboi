@@ -263,6 +263,7 @@ void Fillhead::handleStandbyMode() {
     m_injector.resetState();
     m_injectorValve.reset();
     m_vacuumValve.reset();
+    m_vacuum.resetState(); // <-- FINAL FIX: Reset vacuum controller state
     m_mainState = STANDBY_MODE;
     m_errorState = ERROR_NONE;
 

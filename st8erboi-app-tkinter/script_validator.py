@@ -81,30 +81,57 @@ COMMANDS = {
     "VACUUM_ON": {"device": "fillhead", "params": [], "help": "Turns the vacuum pump ON and opens the valve."},
     "VACUUM_OFF": {"device": "fillhead", "params": [], "help": "Turns the vacuum pump OFF and closes the valve."},
 
+    # --- NEW: Firmware-based Vacuum Test Commands ---
+    "VACUUM_LEAK_TEST": {
+        "device": "fillhead",
+        "params": [],
+        "help": "Starts the automated vacuum leak test sequence in the firmware."
+    },
+    "SET_VACUUM_TARGET": {
+        "device": "fillhead",
+        "params": [{"name": "Target(PSIG)", "type": float, "min": -14.5, "max": 0}],
+        "help": "Sets the target pressure for the vacuum system."
+    },
+    "SET_VACUUM_TIMEOUT_S": {
+        "device": "fillhead",
+        "params": [{"name": "Timeout(s)", "type": float, "min": 1, "max": 300}],
+        "help": "Sets the timeout for reaching the vacuum target."
+    },
+    "SET_LEAK_TEST_DELTA": {
+        "device": "fillhead",
+        "params": [{"name": "Delta(PSI)", "type": float, "min": 0.01, "max": 5.0}],
+        "help": "Sets the maximum allowed pressure drop for the leak test."
+    },
+    "SET_LEAK_TEST_DURATION_S": {
+        "device": "fillhead",
+        "params": [{"name": "Duration(s)", "type": float, "min": 1, "max": 300}],
+        "help": "Sets the duration of the leak test measurement period."
+    },
+
     # --- Gantry Commands ---
     "MOVE_X": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -2000, "max": 2000},
-                                                {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
-                                                 "optional": True, "default": 50},
-                                                {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
-                                                 "optional": True, "default": 200},
-                                                {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
-                                                 "optional": True, "default": 25}],
+                                              {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
+                                               "optional": True, "default": 50},
+                                              {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
+                                               "optional": True, "default": 200},
+                                              {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
+                                               "optional": True, "default": 25}],
                "help": "Moves the gantry X-axis by a relative distance."},
     "MOVE_Y": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
-                                                {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
-                                                 "optional": True, "default": 50},
-                                                {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
-                                                 "optional": True, "default": 200},
-                                                {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
-                                                 "optional": True, "default": 25}],
+                                              {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 500,
+                                               "optional": True, "default": 50},
+                                              {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
+                                               "optional": True, "default": 200},
+                                              {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
+                                               "optional": True, "default": 25}],
                "help": "Moves the gantry Y-axis by a relative distance."},
     "MOVE_Z": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -1000, "max": 1000},
-                                                {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 200,
-                                                 "optional": True, "default": 50},
-                                                {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
-                                                 "optional": True, "default": 200},
-                                                {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
-                                                 "optional": True, "default": 25}],
+                                              {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 200,
+                                               "optional": True, "default": 50},
+                                              {"name": "Accel(mm/s^2)", "type": float, "min": 10, "max": 10000,
+                                               "optional": True, "default": 200},
+                                              {"name": "Torque(%)", "type": float, "min": 0, "max": 100,
+                                               "optional": True, "default": 25}],
                "help": "Moves the gantry Z-axis by a relative distance."},
     "HOME_X": {
         "device": "gantry",
@@ -127,11 +154,10 @@ COMMANDS = {
     "ABORT": {"device": "both", "params": [], "help": "Stops all motion on the target device."},
 
     # --- Script-Control Commands ---
-    "VACUUM_CHECK": { "device": "script", "params": [], "help": "Checks for vacuum leak based on set parameters."},
-    "SET_VACUUM_CHECK_PASS_PRESS_DROP": { "device": "script", "params": [{"name": "Max-PSI-Increase", "type": float, "min": 0, "max": 10}], "help": "Sets the max allowed pressure increase for VACUUM_CHECK."},
-    "SET_VACUUM_CHECK_DURATION": { "device": "script", "params": [{"name": "Duration(s)", "type": float, "min": 1, "max": 300}], "help": "Sets the duration for VACUUM_CHECK."},
-    "WAIT_MS": {"device": "script", "params": [{"name": "Milliseconds", "type": float, "min": 0, "max": 600000}], "help": "Pauses script execution for a given time in milliseconds."},
-    "WAIT_S": {"device": "script", "params": [{"name": "Seconds", "type": float, "min": 0, "max": 600}], "help": "Pauses script execution for a given time in seconds."},
+    "WAIT_MS": {"device": "script", "params": [{"name": "Milliseconds", "type": float, "min": 0, "max": 600000}],
+                "help": "Pauses script execution for a given time in milliseconds."},
+    "WAIT_S": {"device": "script", "params": [{"name": "Seconds", "type": float, "min": 0, "max": 600}],
+               "help": "Pauses script execution for a given time in seconds."},
     "WAIT_UNTIL_VACUUM": {"device": "script",
                           "params": [{"name": "Target-PSI", "type": float, "min": -14.5, "max": 0, "optional": True},
                                      {"name": "Timeout(s)", "type": float, "min": 1, "max": 600, "optional": True}],
@@ -184,8 +210,10 @@ def _validate_line(line_content, line_num):
         num_required_params = sum(1 for p in params_def if not p.get("optional"))
 
         if len(args) < num_required_params or len(args) > len(params_def):
-            expected = f"{num_required_params}" if num_required_params == len(params_def) else f"{num_required_params}-{len(params_def)}"
-            errors.append({"line": line_num, "error": f"In '{sub_cmd_str}': Incorrect parameter count for '{command_word}'. Expected {expected}, but got {len(args)}."})
+            expected = f"{num_required_params}" if num_required_params == len(
+                params_def) else f"{num_required_params}-{len(params_def)}"
+            errors.append({"line": line_num,
+                           "error": f"In '{sub_cmd_str}': Incorrect parameter count for '{command_word}'. Expected {expected}, but got {len(args)}."})
             continue
 
         for j, arg in enumerate(args):
@@ -194,16 +222,20 @@ def _validate_line(line_content, line_num):
             try:
                 value = float(arg)
             except ValueError:
-                errors.append({"line": line_num, "error": f"In '{sub_cmd_str}': Parameter '{param_name}' must be a number, but got '{arg}'."})
+                errors.append({"line": line_num,
+                               "error": f"In '{sub_cmd_str}': Parameter '{param_name}' must be a number, but got '{arg}'."})
                 continue
 
             if 'min' in param_def and value < param_def['min']:
-                errors.append({"line": line_num, "error": f"In '{sub_cmd_str}': Parameter '{param_name}' is below minimum of {param_def['min']}. Got {value}."})
+                errors.append({"line": line_num,
+                               "error": f"In '{sub_cmd_str}': Parameter '{param_name}' is below minimum of {param_def['min']}. Got {value}."})
 
             if 'max' in param_def and value > param_def['max']:
-                errors.append({"line": line_num, "error": f"In '{sub_cmd_str}': Parameter '{param_name}' is above maximum of {param_def['max']}. Got {value}."})
+                errors.append({"line": line_num,
+                               "error": f"In '{sub_cmd_str}': Parameter '{param_name}' is above maximum of {param_def['max']}. Got {value}."})
 
     return errors
+
 
 def validate_script(script_content):
     """Validates an entire script against the command reference."""
@@ -216,6 +248,7 @@ def validate_script(script_content):
             continue
         errors.extend(_validate_line(line, line_num))
     return errors
+
 
 def validate_single_line(line_content, line_num):
     """Validates a single line of a script."""

@@ -17,10 +17,7 @@ class ScriptRunner:
         self.line_offset = line_offset
         self.is_running = False
         self.thread = None
-        self.runtime_defaults = {
-            "VACUUM_CHECK_DROP": 0.1,
-            "VACUUM_CHECK_DURATION": 10
-        }
+        self.runtime_defaults = {}  # No longer need script-side defaults for vacuum
 
     def start(self):
         if self.is_running: return
@@ -138,58 +135,7 @@ class ScriptRunner:
 
             time.sleep(0.2)
 
-    def _handle_vacuum_check(self, args, line_num):
-        max_increase = float(self.runtime_defaults["VACUUM_CHECK_DROP"])
-        duration_s = float(self.runtime_defaults["VACUUM_CHECK_DURATION"])
-
-        if 'vacuum_check_status_var' in self.gui_refs:
-            self.gui_refs['vacuum_check_status_var'].set("N/A")
-
-        time.sleep(0.2)
-
-        try:
-            initial_psig_str = self.gui_refs['vacuum_psig_var'].get().split()[0]
-            initial_psi = float(initial_psig_str)
-        except (ValueError, IndexError, tk.TclError):
-            self.status_callback(f"Error on L{line_num}: Could not read initial vacuum pressure.", line_num)
-            if 'vacuum_check_status_var' in self.gui_refs: self.gui_refs['vacuum_check_status_var'].set("FAIL")
-            self.is_running = False
-            return False
-
-        self.status_callback(f"L{line_num}: Checking vacuum for {duration_s}s (max increase: {max_increase} PSI)...",
-                             line_num)
-        start_time = time.time()
-
-        while time.time() - start_time < duration_s:
-            if not self.is_running: return False
-            time.sleep(0.2)
-
-        try:
-            final_psig_str = self.gui_refs['vacuum_psig_var'].get().split()[0]
-            final_psi = float(final_psig_str)
-
-            if final_psi > initial_psi + max_increase:
-                self.status_callback(
-                    f"Error on L{line_num}: Vacuum leak detected! ({final_psi:.2f} > {initial_psi + max_increase:.2f})",
-                    line_num)
-                if 'vacuum_check_status_var' in self.gui_refs: self.gui_refs['vacuum_check_status_var'].set("FAIL")
-                self.is_running = False
-                return False
-        except (ValueError, IndexError, tk.TclError):
-            self.status_callback(f"Error on L{line_num}: Could not read final vacuum pressure.", line_num)
-            if 'vacuum_check_status_var' in self.gui_refs: self.gui_refs['vacuum_check_status_var'].set("FAIL")
-            self.is_running = False
-            return False
-
-        self.status_callback(f"L{line_num}: Vacuum check passed.", line_num)
-        if 'vacuum_check_status_var' in self.gui_refs:
-            self.gui_refs['vacuum_check_status_var'].set("PASS")
-        return True
-
     def _run(self):
-        if 'vacuum_check_status_var' in self.gui_refs:
-            self.gui_refs['vacuum_check_status_var'].set("N/A")
-
         for i, line in enumerate(self.script_lines):
             line_num = i + 1 + self.line_offset
             if not self.is_running:
@@ -231,12 +177,6 @@ class ScriptRunner:
                         if not self._handle_wait_until_vacuum(args, line_num): break
                     elif command_word == "WAIT_UNTIL_HEATER_AT_TEMP":
                         if not self._handle_wait_until_heater_at_temp(args, line_num): break
-                    elif command_word == "VACUUM_CHECK":
-                        if not self._handle_vacuum_check(args, line_num): break
-                    elif command_word == "SET_VACUUM_CHECK_PASS_PRESS_DROP":
-                        if len(args) == 1: self.runtime_defaults["VACUUM_CHECK_DROP"] = args[0]
-                    elif command_word == "SET_VACUUM_CHECK_DURATION":
-                        if len(args) == 1: self.runtime_defaults["VACUUM_CHECK_DURATION"] = args[0]
                     elif command_word.startswith("SET_DEFAULT_"):
                         key = command_word.replace("SET_DEFAULT_", "")
                         if len(args) == 1: self.runtime_defaults[key] = args[0]
@@ -258,28 +198,14 @@ class ScriptRunner:
 
                     if not self.is_running: continue
 
-                    # Before sending a move, update GUI to show "Not Homed"
-                    if command_word == "HOME_X":
-                        self.gui_refs['fh_homed_m0_var'].set("Not Homed")
-                    elif command_word == "HOME_Y":
-                        self.gui_refs['fh_homed_m1_var'].set("Not Homed")
-                        self.gui_refs['fh_homed_m2_var'].set("Not Homed")
-                    elif command_word == "HOME_Z":
-                        self.gui_refs['fh_homed_m3_var'].set("Not Homed")
-                    elif command_word == "INJECTION_VALVE_HOME":
-                        self.gui_refs['inj_valve_homed_var'].set("Not Homed")
-                    elif command_word == "VACUUM_VALVE_HOME":
-                        self.gui_refs['vac_valve_homed_var'].set("Not Homed")
-
-
                     final_command_str = f"{command_word} {' '.join(full_args)}" if full_args else command_word
                     send_func = self.command_funcs.get(f"send_{device}")
                     if send_func:
                         send_func(final_command_str)
-                        if "MOVE" in command_word or "HOME" in command_word:
+                        # Add VACUUM_LEAK_TEST to the list of commands that we wait for a DONE message
+                        if "MOVE" in command_word or "HOME" in command_word or "VACUUM_LEAK_TEST" in command_word:
                             commands_to_wait_for.append(command_word)
                 time.sleep(0.05)
-
 
             if not self.is_running: break
             if commands_to_wait_for:
@@ -310,9 +236,41 @@ class ScriptRunner:
             try:
                 msg = self.message_queue.get(timeout=0.1)
 
+                # Check for failure messages first
+                if "FAILED" in msg:
+                    for command_to_check in wait_list:
+                        is_failure = False
+                        if command_to_check == "VACUUM_LEAK_TEST" and "LEAK_TEST" in msg:
+                            is_failure = True
+                        elif command_to_check in msg:
+                            is_failure = True
+
+                        if is_failure:
+                            self.status_callback(
+                                f"Error on L{line_num}: Received FAILURE for {command_to_check}. Message: {msg}",
+                                line_num)
+                            return False
+
+                # Check for success messages
                 for i in range(len(wait_list) - 1, -1, -1):
                     command_to_check = wait_list[i]
-                    if command_to_check in msg:
+                    is_complete = False
+
+                    # --- FINAL FIX ---
+                    # Added specific checks for pinch valve homing commands, as their "DONE"
+                    # messages don't contain the original command string.
+                    if command_to_check == "VACUUM_LEAK_TEST" and "LEAK_TEST" in msg and "PASSED" in msg:
+                        is_complete = True
+                    elif command_to_check == "INJECTION_VALVE_HOME" and "inj_valve" in msg and "DONE" in msg:
+                        is_complete = True
+                    elif command_to_check == "VACUUM_VALVE_HOME" and "vac_valve" in msg and "DONE" in msg:
+                        is_complete = True
+                    # Generic fallback for other commands like MOVE_X, HOME_Y, etc.
+                    elif command_to_check in msg and "DONE" in msg:
+                        is_complete = True
+                    # -----------------
+
+                    if is_complete:
                         wait_list.pop(i)
                         self.status_callback(f"L{line_num}: Received DONE for {command_to_check}", line_num)
                         break
@@ -320,5 +278,5 @@ class ScriptRunner:
             except queue.Empty:
                 continue
 
-        self.status_callback(f"L{line_num}: All motions complete.", line_num)
+        self.status_callback(f"L{line_num}: All operations complete.", line_num)
         return True
