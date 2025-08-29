@@ -42,27 +42,27 @@ void VacuumController::handleCommand(Command cmd, const char* args) {
 	}
 
 	switch(cmd) {
-		case CMD_VACUUM_ON:                 handleVacuumOn(); break;
-		case CMD_VACUUM_OFF:                handleVacuumOff(); break;
-		case CMD_VACUUM_LEAK_TEST:          handleLeakTest(); break;
-		case CMD_SET_VACUUM_TARGET:         handleSetTarget(args); break;
-		case CMD_SET_VACUUM_TIMEOUT_S:      handleSetTimeout(args); break;
-		case CMD_SET_LEAK_TEST_DELTA:       handleSetLeakDelta(args); break;
-		case CMD_SET_LEAK_TEST_DURATION_S:  handleSetLeakDuration(args); break;
+		case CMD_VACUUM_ON:                 vacuumOn(); break;
+		case CMD_VACUUM_OFF:                vacuumOff(); break;
+		case CMD_VACUUM_LEAK_TEST:          leakTest(); break;
+		case CMD_SET_VACUUM_TARGET:         setTarget(args); break;
+		case CMD_SET_VACUUM_TIMEOUT_S:      setTimeout(args); break;
+		case CMD_SET_LEAK_TEST_DELTA:       setLeakDelta(args); break;
+		case CMD_SET_LEAK_TEST_DURATION_S:  setLeakDuration(args); break;
 		default:
 		// Not a vacuum command, ignore.
 		break;
 	}
 }
 
-void VacuumController::handleVacuumOn() {
+void VacuumController::vacuumOn() {
 	m_comms->sendStatus(STATUS_PREFIX_START, "VACUUM_ON received. Actively holding target pressure.");
 	m_state = VACUUM_ACTIVE_HOLD;
 	PIN_VACUUM_RELAY.State(true);
 	PIN_VACUUM_VALVE_RELAY.State(true); // Assuming valve should be open
 }
 
-void VacuumController::handleVacuumOff() {
+void VacuumController::vacuumOff() {
 	if (m_state == VACUUM_OFF) {
 		m_comms->sendStatus(STATUS_PREFIX_INFO, "VACUUM_OFF ignored: System is already OFF.");
 		return;
@@ -71,7 +71,7 @@ void VacuumController::handleVacuumOff() {
 	m_comms->sendStatus(STATUS_PREFIX_DONE, "VACUUM_OFF complete.");
 }
 
-void VacuumController::handleLeakTest() {
+void VacuumController::leakTest() {
 	m_comms->sendStatus(STATUS_PREFIX_START, "LEAK_TEST initiated.");
 	m_state = VACUUM_PULLDOWN;
 	m_stateStartTimeMs = Milliseconds();
@@ -132,7 +132,7 @@ void VacuumController::resetState() {
 	PIN_VACUUM_VALVE_RELAY.State(false);
 }
 
-void VacuumController::handleSetTarget(const char* args) {
+void VacuumController::setTarget(const char* args) {
 	float val = std::atof(args);
 	if (val <= 0 && val > -15.0f) {
 		m_targetPsig = val;
@@ -144,7 +144,7 @@ void VacuumController::handleSetTarget(const char* args) {
 	}
 }
 
-void VacuumController::handleSetTimeout(const char* args) {
+void VacuumController::setTimeout(const char* args) {
 	float val = std::atof(args);
 	if (val >= 0.5f && val <= 60.0f) {
 		m_rampTimeoutSec = val;
@@ -156,7 +156,7 @@ void VacuumController::handleSetTimeout(const char* args) {
 	}
 }
 
-void VacuumController::handleSetLeakDelta(const char* args) {
+void VacuumController::setLeakDelta(const char* args) {
 	float val = std::atof(args);
 	if (val > 0.0f && val < 5.0f) {
 		m_leakTestDeltaPsig = val;
@@ -168,7 +168,7 @@ void VacuumController::handleSetLeakDelta(const char* args) {
 	}
 }
 
-void VacuumController::handleSetLeakDuration(const char* args) {
+void VacuumController::setLeakDuration(const char* args) {
 	float val = std::atof(args);
 	if (val >= 1.0f && val <= 120.0f) {
 		m_leakTestDurationSec = val;

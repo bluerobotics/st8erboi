@@ -162,7 +162,8 @@ src/injector_controller.d src/injector_controller.o: \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
  ../../libClearCore/inc/XBeeDriver.h ../inc/comms_controller.h \
- ../../libClearCore/inc/EthernetUdp.h ../../libClearCore/inc/IpAddress.h
+ ../../libClearCore/inc/EthernetUdp.h ../../libClearCore/inc/IpAddress.h \
+ ../inc/commands.h
 
 ../inc/injector_controller.h:
 
@@ -511,3 +512,5 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 ../../libClearCore/inc/EthernetUdp.h:
 
 ../../libClearCore/inc/IpAddress.h:
+
+../inc/commands.h:

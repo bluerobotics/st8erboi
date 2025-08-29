@@ -117,9 +117,9 @@ void Fillhead::loop() {
 void Fillhead::updateState() {
     // First, update the state of all sub-controllers to ensure their fault status is current.
     m_injector.updateState();
-    m_injectorValve.update();
-    m_vacuumValve.update();
-    m_heater.updatePid();
+    m_injectorValve.updateState();
+    m_vacuumValve.updateState();
+    m_heater.updateState();
     m_vacuum.updateState();
 
     // Now, update the main Fillhead state based on the sub-controller states.

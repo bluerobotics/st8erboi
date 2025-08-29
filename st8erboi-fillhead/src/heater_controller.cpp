@@ -14,7 +14,7 @@ HeaterController::HeaterController(CommsController* comms) {
 	m_pid_kp = DEFAULT_HEATER_KP;
 	m_pid_ki = DEFAULT_HEATER_KI;
 	m_pid_kd = DEFAULT_HEATER_KD;
-	resetPid();
+	resetPID();
 }
 
 void HeaterController::setup() {
@@ -30,16 +30,16 @@ void HeaterController::setup() {
 void HeaterController::handleCommand(Command cmd, const char* args) {
 	switch (cmd) {
 	case CMD_HEATER_ON:
-		handleHeaterOn();
+		heaterOn();
 		break;
 	case CMD_HEATER_OFF:
-		handleHeaterOff();
+		heaterOff();
 		break;
 	case CMD_SET_HEATER_GAINS:
-		handleSetGains(args);
+		setGains(args);
 		break;
 	case CMD_SET_HEATER_SETPOINT:
-		handleSetSetpoint(args);
+		setSetpoint(args);
 		break;
 	default:
 		// This command was not for us
@@ -47,10 +47,10 @@ void HeaterController::handleCommand(Command cmd, const char* args) {
 	}
 }
 
-void HeaterController::handleHeaterOn() {
+void HeaterController::heaterOn() {
 	// This function now enables PID control.
 	if (m_heaterState != HEATER_PID_ACTIVE) {
-		resetPid(); // Reset PID terms before starting
+		resetPID(); // Reset PID terms before starting
 		m_heaterState = HEATER_PID_ACTIVE;
 		m_comms->sendStatus(STATUS_PREFIX_DONE, "HEATER_ON: PID control activated.");
 		} else {
@@ -58,7 +58,7 @@ void HeaterController::handleHeaterOn() {
 	}
 }
 
-void HeaterController::handleHeaterOff() {
+void HeaterController::heaterOff() {
 	if (m_heaterState != HEATER_OFF) {
 		m_heaterState = HEATER_OFF;
 		PIN_HEATER_RELAY.State(false); // Ensure relay is off
@@ -69,18 +69,18 @@ void HeaterController::handleHeaterOff() {
 	}
 }
 
-void HeaterController::handleSetGains(const char* args) {
+void HeaterController::setGains(const char* args) {
 	if (sscanf(args, "%f %f %f", &m_pid_kp, &m_pid_ki, &m_pid_kd) == 3) {
 		char response[128];
 		snprintf(response, sizeof(response), "Heater gains set: P=%.2f, I=%.2f, D=%.2f", m_pid_kp, m_pid_ki, m_pid_kd);
 		m_comms->sendStatus(STATUS_PREFIX_DONE, response);
-		resetPid(); // Reset integral and derivative terms after changing gains
+		resetPID(); // Reset integral and derivative terms after changing gains
 		} else {
 		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D");
 	}
 }
 
-void HeaterController::handleSetSetpoint(const char* args) {
+void HeaterController::setSetpoint(const char* args) {
 	float newSetpoint = atof(args);
 	if (newSetpoint > 20.0f && newSetpoint < 200.0f) { // Basic safety check
 		m_pid_setpoint = newSetpoint;
@@ -106,7 +106,7 @@ void HeaterController::updateTemperature() {
 	m_temperatureCelsius = m_smoothedTemperatureCelsius;
 }
 
-void HeaterController::updatePid() {
+void HeaterController::updateState() {
 	if (m_heaterState != HEATER_PID_ACTIVE) {
 		// If PID is not active, ensure the output is zero and the relay is off.
 		if (m_pid_output != 0.0f) {
@@ -146,7 +146,7 @@ void HeaterController::updatePid() {
 	PIN_HEATER_RELAY.State((now % PID_PWM_PERIOD_MS) < on_duration_ms);
 }
 
-void HeaterController::resetPid() {
+void HeaterController::resetPID() {
 	m_pid_integral = 0.0f;
 	m_pid_last_error = 0.0f;
 	m_pid_output = 0.0f;

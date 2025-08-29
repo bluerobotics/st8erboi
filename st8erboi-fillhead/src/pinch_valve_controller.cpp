@@ -35,12 +35,12 @@ void PinchValve::setup() {
 /**
  * @brief The main update loop for the valve's state machine.
  */
-void PinchValve::update() {
+void PinchValve::updateState() {
 	switch (m_state) {
 		case VALVE_IDLE:
 		case VALVE_OPEN:
 		case VALVE_CLOSED:
-		case VALVE_ERROR:
+		case VALVE_OPERATION_ERROR:
 			// Do nothing in these terminal states
 			m_opPhase = PHASE_IDLE;
 			break;
@@ -49,7 +49,7 @@ void PinchValve::update() {
 			// Homing logic remains the same...
 			if (Milliseconds() - m_homingStartTime > MAX_HOMING_DURATION_MS) {
 				abort();
-				m_state = VALVE_ERROR;
+				m_state = VALVE_OPERATION_ERROR;
 				m_homingPhase = HOMING_PHASE_IDLE;
 				char errorMsg[128];
 				snprintf(errorMsg, sizeof(errorMsg), "%s homing timeout.", m_name);
@@ -90,7 +90,7 @@ void PinchValve::update() {
 					if (checkTorqueLimit()) {
 						m_homingPhase = BACKOFF_START;
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_ERROR;
+						m_state = VALVE_OPERATION_ERROR;
 						m_comms->sendStatus(STATUS_PREFIX_ERROR, "Homing failed: move finished before hard stop.");
 					}
 					break;
@@ -119,7 +119,7 @@ void PinchValve::update() {
 					if (checkTorqueLimit()) {
 						m_homingPhase = SET_OFFSET_START;
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_ERROR;
+						m_state = VALVE_OPERATION_ERROR;
 						m_comms->sendStatus(STATUS_PREFIX_ERROR, "Homing failed during slow search.");
 					}
 					break;
@@ -146,7 +146,7 @@ void PinchValve::update() {
 					break;
 				default:
 					abort();
-					m_state = VALVE_ERROR;
+					m_state = VALVE_OPERATION_ERROR;
 					m_homingPhase = HOMING_PHASE_IDLE;
 					break;
 			}
@@ -162,7 +162,7 @@ void PinchValve::update() {
 					if (m_motor->StatusReg().bit.StepsActive) {
 						m_opPhase = PHASE_MOVING;
 					} else if (Milliseconds() - m_moveStartTime > 500) {
-						m_state = VALVE_ERROR;
+						m_state = VALVE_OPERATION_ERROR;
 						m_opPhase = PHASE_IDLE;
 						m_comms->sendStatus(STATUS_PREFIX_ERROR, "Close failed: Motor did not start moving.");
 					}
@@ -175,7 +175,7 @@ void PinchValve::update() {
 						snprintf(msg, sizeof(msg), "%s closed on torque.", m_name);
 						m_comms->sendStatus(STATUS_PREFIX_DONE, msg);
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_ERROR;
+						m_state = VALVE_OPERATION_ERROR;
 						m_opPhase = PHASE_IDLE;
 						m_comms->sendStatus(STATUS_PREFIX_ERROR, "Close failed: move finished before torque limit.");
 					}
@@ -196,14 +196,14 @@ void PinchValve::update() {
 					if (m_motor->StatusReg().bit.StepsActive) {
 						m_opPhase = PHASE_MOVING;
 					} else if (Milliseconds() - m_moveStartTime > 500) {
-						m_state = VALVE_ERROR;
+						m_state = VALVE_OPERATION_ERROR;
 						m_opPhase = PHASE_IDLE;
 						m_comms->sendStatus(STATUS_PREFIX_ERROR, "Move failed: Motor did not start.");
 					}
 					break;
 				case PHASE_MOVING:
 					if (checkTorqueLimit()) { // Safety check
-						m_state = VALVE_ERROR;
+						m_state = VALVE_OPERATION_ERROR;
 						m_opPhase = PHASE_IDLE;
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
 						// Success

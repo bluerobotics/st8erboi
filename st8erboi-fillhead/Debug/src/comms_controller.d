@@ -161,7 +161,7 @@ src/comms_controller.d src/comms_controller.o: \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
  ../../libClearCore/inc/XBeeDriver.h ../../libClearCore/inc/EthernetUdp.h \
- ../../libClearCore/inc/IpAddress.h ../inc/config.h
+ ../../libClearCore/inc/IpAddress.h ../inc/config.h ../inc/commands.h
 
 ../inc/comms_controller.h:
 
@@ -508,3 +508,5 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 ../../libClearCore/inc/IpAddress.h:
 
 ../inc/config.h:
+
+../inc/commands.h:

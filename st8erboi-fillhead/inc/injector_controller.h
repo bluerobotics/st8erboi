@@ -125,6 +125,24 @@ public:
     bool isBusy() const;
 
 private:
+    void startMove(long steps, int velSps, int accelSps2);
+    bool isMoving();
+    float getSmoothedTorque(MotorDriver *motor, float *smoothedValue, bool *firstRead);
+    bool checkTorqueLimit();
+    void finalizeAndResetActiveDispenseOperation(bool success);
+    void fullyResetActiveDispenseOperation();
+
+    void jogMove(const char* args);
+    void machineHome();
+    void cartridgeHome();
+    void moveToCartridgeHome();
+    void moveToCartridgeRetract(const char* args);
+    void injectMove(const char* args);
+    void pauseOperation();
+    void resumeOperation();
+    void cancelOperation();
+    void setTorqueOffset(const char* args);
+    
     CommsController* m_comms;   ///< Pointer to the communications controller.
     MotorDriver* m_motorA;      ///< Pointer to the primary motor driver.
     MotorDriver* m_motorB;      ///< Pointer to the secondary motor driver.
@@ -203,56 +221,4 @@ private:
     int m_active_op_torque_percent;         ///< Torque limit for the current operation.
     
     char m_telemetryBuffer[256]; ///< Buffer for the telemetry string.
-
-    /**
-     * @brief Commands the motors to start a coordinated move.
-     * @param steps Target position in motor steps.
-     * @param velSps Maximum velocity in steps per second.
-     * @param accelSps2 Acceleration in steps per second squared.
-     */
-    void startMove(long steps, int velSps, int accelSps2);
-
-    /**
-     * @brief Checks if either motor is currently moving.
-     * @return True if a motor is moving, false otherwise.
-     */
-    bool isMoving();
-
-    /**
-     * @brief Gets the smoothed torque for a single motor.
-     * @param motor Pointer to the motor driver.
-     * @param smoothedValue Pointer to the variable storing the smoothed value.
-     * @param firstRead Pointer to the flag for initializing the filter.
-     * @return The calculated smoothed torque.
-     */
-    float getSmoothedTorque(MotorDriver *motor, float *smoothedValue, bool *firstRead);
-
-    /**
-     * @brief Checks if either motor has exceeded the current torque limit.
-     * @return True if the torque limit is exceeded, false otherwise.
-     */
-    bool checkTorqueLimit();
-
-    /**
-     * @brief Finalizes a dispense operation and resets related variables.
-     * @param success Whether the operation completed successfully.
-     */
-    void finalizeAndResetActiveDispenseOperation(bool success);
-
-    /**
-     * @brief Fully resets all variables related to an active dispense operation.
-     */
-    void fullyResetActiveDispenseOperation();
-
-    // Command handlers
-    void jogMove(const char* args);
-    void machineHome();
-    void cartridgeHome();
-    void moveToCartridgeHome();
-    void moveToCartridgeRetract(const char* args);
-    void injectMove(const char* args);
-    void pauseOperation();
-    void resumeOperation();
-    void cancelOperation();
-    void setTorqueOffset(const char* args);
 };
