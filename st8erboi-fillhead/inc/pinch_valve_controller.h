@@ -3,6 +3,7 @@
 #include "config.h"
 #include "comms_controller.h"
 #include "ClearCore.h"
+#include "commands.h"
 
 /**
  * @enum PinchValveState

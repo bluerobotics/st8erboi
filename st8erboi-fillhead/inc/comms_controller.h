@@ -4,6 +4,7 @@
 #include "EthernetUdp.h"
 #include "IpAddress.h"
 #include "config.h"
+#include "commands.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>

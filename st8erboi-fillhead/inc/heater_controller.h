@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "comms_controller.h"
+#include "commands.h"
 
 /**
  * @enum HeaterState

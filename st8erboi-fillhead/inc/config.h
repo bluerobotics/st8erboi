@@ -136,4 +136,3 @@
 #define INJECT_DEFAULT_VELOCITY_MMS         0.625f    // Fallback velocity if a command provides an invalid value.
 #define INJECT_DEFAULT_VELOCITY_SPS         (int)(INJECT_DEFAULT_VELOCITY_MMS * STEPS_PER_MM_INJECTOR)
 
-#include "commands.h"
