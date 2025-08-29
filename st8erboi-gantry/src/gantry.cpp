@@ -34,9 +34,13 @@ void Gantry::setup() {
     m_comms.setup();
 
     // Setup each axis controller
-    xAxis.setup(this);
-    yAxis.setup(this);
-    zAxis.setup(this);
+    xAxis.setup(this, nullptr, STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS, &SENSOR_X, nullptr, nullptr, nullptr);
+    yAxis.setup(this, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS, &SENSOR_Y1, &SENSOR_Y2, &LIMIT_Y_BACK, nullptr);
+    zAxis.setup(this, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR_Z, nullptr, nullptr, &Z_BRAKE);
+
+    xAxis.setupMotors();
+    yAxis.setupMotors();
+    zAxis.setupMotors();
     
     // Wait for up to 2 seconds for all motors to report as enabled.
     uint32_t timeout = Milliseconds() + 2000;
@@ -134,13 +138,13 @@ void Gantry::publishTelemetry() {
  */
 void Gantry::handleMessage(const Message& msg) {
     // Parse the command string into a GantryCommand enum.
-    GantryCommand cmd = m_comms.parseCommand(msg.buffer);
+    Command command = m_comms.parseCommand(msg.buffer);
 
     // Find the beginning of the arguments (the character after the first space).
     const char* args = strchr(msg.buffer, ' ');
     if(args) args++; // Increment pointer to skip the space.
 
-    switch(cmd) {
+    switch(command) {
         // --- System & Communication Commands ---
         case CMD_SET_PEER_IP:   handleSetPeerIp(msg.buffer); break;
         case CMD_CLEAR_PEER_IP: handleClearPeerIp(); break;

@@ -5,18 +5,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-Axis::Axis(Gantry* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm, Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor, Connector* zBrake) {
-	m_controller = controller;
+Axis::Axis(MotorDriver* motor, const char* name) {
+	m_motor1 = motor;
 	m_name = name;
-	m_motor1 = motor1;
-	m_motor2 = motor2;
-	m_stepsPerMm = stepsPerMm;
-	m_minPosMm = minPosMm;
-	m_maxPosMm = maxPosMm;
-	m_homingSensor1 = homingSensor1;
-	m_homingSensor2 = homingSensor2;
-	m_limitSensor = limitSensor;
-	m_zBrake = zBrake;
+
+	m_motor2 = nullptr;
+	m_stepsPerMm = 0.0f;
+	m_minPosMm = 0.0f;
+	m_maxPosMm = 0.0f;
+	m_homingSensor1 = nullptr;
+	m_homingSensor2 = nullptr;
+	m_limitSensor = nullptr;
+	m_zBrake = nullptr;
 	
 	m_state = STATE_STANDBY;
 	homingPhase = HOMING_NONE;
@@ -29,6 +29,19 @@ Axis::Axis(Gantry* controller, const char* name, MotorDriver* motor1, MotorDrive
 
 	m_torqueLimit = 0.0f;
 	m_activeCommand = nullptr;
+}
+
+void Axis::setup(Gantry* controller, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm, 
+		Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor, Connector* zBrake) {
+	m_controller = controller;
+	m_motor2 = motor2;
+	m_stepsPerMm = stepsPerMm;
+	m_minPosMm = minPosMm;
+	m_maxPosMm = maxPosMm;
+	m_homingSensor1 = homingSensor1;
+	m_homingSensor2 = homingSensor2;
+	m_limitSensor = limitSensor;
+	m_zBrake = zBrake;
 }
 
 void Axis::enable() {

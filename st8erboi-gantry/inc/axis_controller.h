@@ -19,9 +19,13 @@ public:
 		INCREMENTAL
 	} MoveType;
 
-    Axis(Motor* motor, const char* axisName);
-    void setup(Gantry* gantry);
+    Axis(MotorDriver* motor, const char* name);
+	
+	void setup(Gantry* controller, MotorDriver* motor2, float stepsPerMm, float minPosMm, float maxPosMm, 
+		Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor, Connector* zBrake);
 
+	void setupMotors();
+	
 	// Made public to be accessible by Gantry
 	
 	void updateState();
