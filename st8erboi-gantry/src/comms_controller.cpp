@@ -137,6 +137,16 @@ void CommsController::clearPeerIp() {
 }
 
 Command CommsController::parseCommand(const char* msg) {
+	// Trim leading whitespace
+	while (isspace((unsigned char)*msg)) {
+		msg++;
+	}
+
+	// If the message is empty after trimming, return UNKNOWN.
+	if (*msg == '\0') {
+		return CMD_UNKNOWN;
+	}
+
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
 	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
