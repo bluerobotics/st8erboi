@@ -196,7 +196,6 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_PAUSE_INJECTION:
         case CMD_RESUME_INJECTION:
         case CMD_CANCEL_INJECTION:
-        case CMD_SET_INJECTOR_TORQUE_OFFSET:
             m_injector.handleCommand(command, args);
             break;
 

@@ -319,7 +319,6 @@ void Injector::handleCommand(Command cmd, const char* args) {
         case CMD_PAUSE_INJECTION:           pauseOperation(); break;
         case CMD_RESUME_INJECTION:          resumeOperation(); break;
         case CMD_CANCEL_INJECTION:          cancelOperation(); break;
-        case CMD_SET_INJECTOR_TORQUE_OFFSET: setTorqueOffset(args); break;
         default:
         break;
     }
@@ -575,16 +574,6 @@ void Injector::cancelOperation() {
     finalizeAndResetActiveDispenseOperation(false);
     m_state = STATE_STANDBY;
     m_comms->sendStatus(STATUS_PREFIX_DONE, "CANCEL_INJECTION complete.");
-}
-
-/**
- * @brief Handles the SET_INJECTOR_TORQUE_OFFSET command.
- */
-void Injector::setTorqueOffset(const char* args) {
-    m_torqueOffset = std::atof(args);
-    char response[STATUS_MESSAGE_BUFFER_SIZE];
-    std::snprintf(response, sizeof(response), "Injector torque offset set to %.2f", m_torqueOffset);
-    m_comms->sendStatus(STATUS_PREFIX_DONE, response);
 }
 
 /**
