@@ -27,7 +27,7 @@ class CommsController {
 	bool enqueueTx(const char* msg, const IpAddress& ip, uint16_t port);
 	
 	void sendStatus(const char* statusType, const char* message);
-	UserCommand parseCommand(const char* msg);
+	Command parseCommand(const char* msg);
 
 	// Getters
 	bool isGuiDiscovered() const { return m_guiDiscovered; }

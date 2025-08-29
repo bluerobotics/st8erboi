@@ -27,7 +27,12 @@ void VacuumController::setup() {
 	PIN_VACUUM_VALVE_RELAY.State(false);
 }
 
-void VacuumController::handleCommand(UserCommand cmd, const char* args) {
+/**
+ * Handles a command from the CommsController.
+ * @param cmd The command to execute.
+ * @param args A string containing any arguments for the command.
+ */
+void VacuumController::handleCommand(Command cmd, const char* args) {
 	// Prevent starting a new operation if one is already in progress (except for turning off)
 	if (m_state != VACUUM_OFF && m_state != VACUUM_ACTIVE_HOLD) {
 		if (cmd == CMD_VACUUM_ON || cmd == CMD_VACUUM_LEAK_TEST) {

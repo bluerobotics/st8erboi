@@ -147,7 +147,13 @@ void CommsController::clearPeerIp() {
 	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }
 
-UserCommand CommsController::parseCommand(const char* msg) {
+/**
+ * This is the main parser that converts string commands from the network into
+ * an enumerated type for easier handling within the state machine.
+ * @param msg The raw string message from the network.
+ * @return The `UserCommand` enum corresponding to the string, or `CMD_UNKNOWN`.
+ */
+Command CommsController::parseCommand(const char* msg) {
 	// General Commands
 	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;

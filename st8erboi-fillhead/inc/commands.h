@@ -1,0 +1,101 @@
+#pragma once
+
+//==================================================================================================
+// Command Strings & Prefixes
+//==================================================================================================
+// --- General Commands ---
+#define CMD_STR_REQUEST_TELEM               "REQUEST_TELEM"
+#define CMD_STR_DISCOVER                    "DISCOVER_FILLHEAD"
+#define CMD_STR_SET_PEER_IP                 "SET_PEER_IP "
+#define CMD_STR_CLEAR_PEER_IP               "CLEAR_PEER_IP"
+#define CMD_STR_ENABLE                      "ENABLE"
+#define CMD_STR_DISABLE                     "DISABLE"
+#define CMD_STR_ABORT                       "ABORT"
+#define CMD_STR_CLEAR_ERRORS                "CLEAR_ERRORS"
+
+// --- Injector Motion Commands ---
+#define CMD_STR_SET_INJECTOR_TORQUE_OFFSET  "SET_INJECTOR_TORQUE_OFFSET "
+#define CMD_STR_JOG_MOVE                    "JOG_MOVE "
+#define CMD_STR_MACHINE_HOME_MOVE           "MACHINE_HOME_MOVE"
+#define CMD_STR_CARTRIDGE_HOME_MOVE         "CARTRIDGE_HOME_MOVE"
+#define CMD_STR_INJECT_MOVE                 "INJECT_MOVE "
+#define CMD_STR_MOVE_TO_CARTRIDGE_HOME      "MOVE_TO_CARTRIDGE_HOME"
+#define CMD_STR_MOVE_TO_CARTRIDGE_RETRACT   "MOVE_TO_CARTRIDGE_RETRACT "
+#define CMD_STR_PAUSE_INJECTION             "PAUSE_INJECTION"
+#define CMD_STR_RESUME_INJECTION            "RESUME_INJECTION"
+#define CMD_STR_CANCEL_INJECTION            "CANCEL_INJECTION"
+
+// --- Pinch Valve Commands ---
+#define CMD_STR_INJECTION_VALVE_HOME        "INJECTION_VALVE_HOME"
+#define CMD_STR_INJECTION_VALVE_OPEN        "INJECTION_VALVE_OPEN"
+#define CMD_STR_INJECTION_VALVE_CLOSE       "INJECTION_VALVE_CLOSE"
+#define CMD_STR_INJECTION_VALVE_JOG         "INJECTION_VALVE_JOG "
+#define CMD_STR_VACUUM_VALVE_HOME           "VACUUM_VALVE_HOME"
+#define CMD_STR_VACUUM_VALVE_OPEN           "VACUUM_VALVE_OPEN"
+#define CMD_STR_VACUUM_VALVE_CLOSE          "VACUUM_VALVE_CLOSE"
+#define CMD_STR_VACUUM_VALVE_JOG            "VACUUM_VALVE_JOG "
+
+// --- Heater Commands ---
+#define CMD_STR_HEATER_ON                   "HEATER_ON"
+#define CMD_STR_HEATER_OFF                  "HEATER_OFF"
+#define CMD_STR_SET_HEATER_GAINS            "SET_HEATER_GAINS "
+#define CMD_STR_SET_HEATER_SETPOINT         "SET_HEATER_SETPOINT "
+
+// --- Vacuum Commands ---
+#define CMD_STR_VACUUM_ON                   "VACUUM_ON"
+#define CMD_STR_VACUUM_OFF                  "VACUUM_OFF"
+#define CMD_STR_VACUUM_LEAK_TEST            "VACUUM_LEAK_TEST"
+#define CMD_STR_SET_VACUUM_TARGET           "SET_VACUUM_TARGET "
+#define CMD_STR_SET_VACUUM_TIMEOUT_S        "SET_VACUUM_TIMEOUT_S "
+#define CMD_STR_SET_LEAK_TEST_DELTA         "SET_LEAK_TEST_DELTA "
+#define CMD_STR_SET_LEAK_TEST_DURATION_S    "SET_LEAK_TEST_DURATION_S "
+
+// --- Telemetry & Status Prefixes ---
+#define TELEM_PREFIX						"FILLHEAD_TELEM: "
+#define STATUS_PREFIX_INFO                  "FILLHEAD_INFO: "
+#define STATUS_PREFIX_START                 "FILLHEAD_START: "
+#define STATUS_PREFIX_DONE                  "FILLHEAD_DONE: "
+#define STATUS_PREFIX_ERROR                 "FILLHEAD_ERROR: "
+#define STATUS_PREFIX_DISCOVERY             "DISCOVERY: "
+
+// Maps all command strings to a single enum for easier parsing.
+typedef enum {
+	CMD_UNKNOWN,
+	CMD_ENABLE,
+	CMD_DISABLE,
+	CMD_JOG_MOVE,
+	CMD_MACHINE_HOME_MOVE,
+	CMD_CARTRIDGE_HOME_MOVE,
+	CMD_MOVE_TO_CARTRIDGE_HOME,
+	CMD_MOVE_TO_CARTRIDGE_RETRACT,
+	CMD_INJECT_MOVE,
+	CMD_PAUSE_INJECTION,
+	CMD_RESUME_INJECTION,
+	CMD_CANCEL_INJECTION,
+	CMD_SET_INJECTOR_TORQUE_OFFSET,
+	CMD_DISCOVER,
+	CMD_REQUEST_TELEM,
+	CMD_ABORT,
+	CMD_CLEAR_ERRORS,
+	CMD_SET_PEER_IP,
+	CMD_CLEAR_PEER_IP,
+	CMD_VACUUM_ON,
+	CMD_VACUUM_OFF,
+	CMD_VACUUM_LEAK_TEST,
+	CMD_SET_VACUUM_TARGET,
+	CMD_SET_VACUUM_TIMEOUT_S,
+	CMD_SET_LEAK_TEST_DELTA,
+	CMD_SET_LEAK_TEST_DURATION_S,
+	CMD_HEATER_ON,
+	CMD_HEATER_OFF,
+	CMD_SET_HEATER_GAINS,
+	CMD_SET_HEATER_SETPOINT,
+	CMD_INJECTION_VALVE_HOME,
+	CMD_INJECTION_VALVE_OPEN,
+	CMD_INJECTION_VALVE_CLOSE,
+	CMD_INJECTION_VALVE_JOG,
+	CMD_VACUUM_VALVE_HOME,
+	CMD_VACUUM_VALVE_OPEN,
+	CMD_VACUUM_VALVE_CLOSE,
+	CMD_VACUUM_VALVE_JOG
+} Command;

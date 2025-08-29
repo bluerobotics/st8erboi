@@ -7,6 +7,35 @@
 #include "heater_controller.h"
 #include "vacuum_controller.h"
 
+// Defines the top-level operational state of the entire Fillhead system.
+enum MainState : uint8_t {
+	STATE_STANDBY,       // System is idle and ready to accept commands.
+	STATE_BUSY,          // A non-error operation is in progress.
+	STATE_ERROR,         // A fault has occurred, typically a motor fault.
+	STATE_DISABLED       // System is disabled; motors will not move.
+};
+
+/**
+ * @enum ErrorState
+ * @brief Defines various error conditions the system can be in.
+ */
+enum ErrorState : uint8_t {
+	ERROR_NONE,                   ///< No error.
+	ERROR_MANUAL_ABORT,           ///< Operation aborted by user command.
+	ERROR_TORQUE_ABORT,           ///< Operation aborted due to exceeding torque limits.
+	ERROR_MOTION_EXCEEDED_ABORT,  ///< Operation aborted because motion limits were exceeded.
+	ERROR_NO_CARTRIDGE_HOME,      ///< A required cartridge home position is not set.
+	ERROR_NO_MACHINE_HOME,        ///< A required machine home position is not set.
+	ERROR_HOMING_TIMEOUT,         ///< Homing operation took too long to complete.
+	ERROR_HOMING_NO_TORQUE_RAPID, ///< Homing failed to detect torque during the rapid move.
+	ERROR_HOMING_NO_TORQUE_TOUCH, ///< Homing failed to detect torque during the touch-off move.
+	ERROR_INVALID_INJECTION,      ///< An injection command was invalid.
+	ERROR_NOT_HOMED,              ///< An operation required homing, but the system is not homed.
+	ERROR_INVALID_PARAMETERS,     ///< A command was received with invalid parameters.
+	ERROR_MOTORS_DISABLED         ///< An operation was blocked because motors are disabled.
+};
+
+
 class Fillhead {
 public:
     /**
@@ -25,6 +54,15 @@ public:
     void loop();
 
 private:
+    /**
+     * @brief Updates the main system state and the state machines of all sub-controllers.
+     * @details This function is called once per loop. It first checks for motor faults
+     * to determine if the system should be in an error state. If not, it checks if any
+     * subsystem is busy. Otherwise, it remains in standby. It then calls the update
+     * functions for all sub-controllers.
+     */
+    void updateState();
+
 	/**
 	 * @brief Processes and routes an incoming command to the correct sub-system.
 	 * @details This is the entry point for handling all received commands. It takes a
@@ -53,7 +91,6 @@ private:
 
     // Main system state machine
     MainState m_mainState;
-    ErrorState m_errorState;
 
     // Timers for periodic tasks
     uint32_t m_lastTelemetryTime;

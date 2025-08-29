@@ -23,21 +23,25 @@ void HeaterController::setup() {
 	PIN_HEATER_RELAY.State(false); // Ensure heater is off on startup
 }
 
-void HeaterController::handleCommand(UserCommand cmd, const char* args) {
-	switch(cmd) {
-		case CMD_HEATER_ON:
+/**
+ * @param cmd The command to be executed.
+ * @param args A string containing any arguments for the command.
+ */
+void HeaterController::handleCommand(Command cmd, const char* args) {
+	switch (cmd) {
+	case CMD_HEATER_ON:
 		handleHeaterOn();
 		break;
-		case CMD_HEATER_OFF:
+	case CMD_HEATER_OFF:
 		handleHeaterOff();
 		break;
-		case CMD_SET_HEATER_GAINS:
+	case CMD_SET_HEATER_GAINS:
 		handleSetGains(args);
 		break;
-		case CMD_SET_HEATER_SETPOINT:
+	case CMD_SET_HEATER_SETPOINT:
 		handleSetSetpoint(args);
 		break;
-		default:
+	default:
 		// This command was not for us
 		break;
 	}

@@ -41,9 +41,7 @@ Fillhead::Fillhead() :
     m_vacuum(&m_comms)
 {
     // Initialize the main system state.
-    // MODIFIED: Start in STANDBY_MODE to be enabled on startup.
-    m_mainState = STANDBY_MODE;
-    m_errorState = ERROR_NONE;
+    m_mainState = STATE_STANDBY;
 
     // Initialize timers for periodic tasks.
     m_lastTelemetryTime = 0;
@@ -90,12 +88,8 @@ void Fillhead::loop() {
         dispatchCommand(msg);
     }
 
-    // 3. Update the internal state of all active sub-controllers.
-    m_injector.updateState();
-    m_injectorValve.update();
-    m_vacuumValve.update();
-    m_heater.updatePid();
-    m_vacuum.updateState();
+    // 3. Update the main state machine and all sub-controllers.
+    updateState();
 
     // 4. Handle time-based periodic tasks.
     uint32_t now = Milliseconds();
@@ -111,8 +105,42 @@ void Fillhead::loop() {
     }
 }
 
+// --- Private Methods: State, Command, and Telemetry Handling ---
 
-// --- Private Methods: Command Handling ---
+/**
+ * @brief Updates the main system state and the state machines of all sub-controllers.
+ * @details This function is called once per loop. It first checks for motor faults
+ * to determine if the system should be in an error state. If not, it checks if any
+ * subsystem is busy. Otherwise, it remains in standby. It then calls the update
+ * functions for all sub-controllers.
+ */
+void Fillhead::updateState() {
+    // First, update the state of all sub-controllers to ensure their fault status is current.
+    m_injector.updateState();
+    m_injectorValve.update();
+    m_vacuumValve.update();
+    m_heater.updatePid();
+    m_vacuum.updateState();
+
+    // Now, update the main Fillhead state based on the sub-controller states.
+    if (m_mainState != STATE_DISABLED) {
+        // Check for motor faults. This has the highest priority.
+        if (m_injector.isInFault() || m_injectorValve.isInFault() || m_vacuumValve.isInFault()) {
+            if (m_mainState != STATE_ERROR) {
+                m_mainState = STATE_ERROR;
+                m_comms.sendStatus(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Use CLEAR_ERRORS to reset.");
+            }
+        }
+        // If no faults, determine if the system is busy or in standby.
+        else if (m_injector.isBusy() || m_injectorValve.isBusy() || m_vacuumValve.isBusy() || m_vacuum.isBusy()) {
+            m_mainState = STATE_BUSY;
+        }
+        else {
+            m_mainState = STATE_STANDBY;
+        }
+    }
+}
+
 
 /**
  * @brief Master command handler; acts as a switchboard to delegate tasks.
@@ -122,7 +150,15 @@ void Fillhead::loop() {
  * handles system-level commands itself.
  */
 void Fillhead::dispatchCommand(const Message& msg) {
-    UserCommand command = m_comms.parseCommand(msg.buffer);
+    Command command = m_comms.parseCommand(msg.buffer);
+    
+    // If the system is in an error state, block most commands.
+    if (m_mainState == STATE_ERROR) {
+        if (command != CMD_CLEAR_ERRORS && command != CMD_DISABLE && command != CMD_DISCOVER) {
+            m_comms.sendStatus(STATUS_PREFIX_ERROR, "Command ignored: System is in ERROR state. Send CLEAR_ERRORS to reset.");
+            return;
+        }
+    }
 
     // Isolate arguments by finding the first space in the command string.
     const char* args = strchr(msg.buffer, ' ');
@@ -206,16 +242,58 @@ void Fillhead::dispatchCommand(const Message& msg) {
 }
 
 /**
+ * @brief Aggregates telemetry data from all sub-controllers and sends it as a single UDP packet.
+ */
+void Fillhead::publishTelemetry() {
+    if (!m_comms.isGuiDiscovered()) return;
+
+    char telemetryBuffer[1024];
+    const char* mainStateStr;
+    switch(m_mainState) {
+        case STATE_STANDBY:  mainStateStr = "STANDBY"; break;
+        case STATE_BUSY:     mainStateStr = "BUSY"; break;
+        case STATE_ERROR:    mainStateStr = "ERROR"; break;
+        case STATE_DISABLED: mainStateStr = "DISABLED"; break;
+        default:             mainStateStr = "UNKNOWN"; break;
+    }
+
+    // Create a non-const copy of the peer IP to safely call StringValue()
+    IpAddress peerIp = m_comms.getPeerIp();
+
+    // Assemble the full telemetry string from all components.
+    snprintf(telemetryBuffer, sizeof(telemetryBuffer),
+        "%s"
+        "MAIN_STATE:%s,"
+        "%s," // Injector Telemetry
+        "%s," // Injection Valve Telemetry
+        "%s," // Vacuum Valve Telemetry
+        "%s," // Heater Telemetry
+        "%s," // Vacuum Telemetry
+        "peer_disc:%d,peer_ip:%s",
+        TELEM_PREFIX,
+        mainStateStr,
+        m_injector.getTelemetryString(),
+        m_injectorValve.getTelemetryString(),
+        m_vacuumValve.getTelemetryString(),
+        m_heater.getTelemetryString(),
+        m_vacuum.getTelemetryString(),
+        (int)m_comms.isPeerDiscovered(), peerIp.StringValue()
+    );
+
+    // Enqueue the message for sending.
+    m_comms.enqueueTx(telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
+}
+
+/**
  * @brief Enables all motors and places the system in a ready state.
  */
 void Fillhead::handleEnable() {
-    if (m_mainState == DISABLED_MODE) {
-        m_mainState = STANDBY_MODE;
-        m_errorState = ERROR_NONE;
+    if (m_mainState == STATE_DISABLED) {
+        m_mainState = STATE_STANDBY;
         m_injector.enable();
         m_injectorValve.enable();
         m_vacuumValve.enable();
-        m_comms.sendStatus(STATUS_PREFIX_DONE, "System ENABLE complete. Now in STANDBY_MODE.");
+        m_comms.sendStatus(STATUS_PREFIX_DONE, "System ENABLE complete. Now in STANDBY state.");
     } else {
         m_comms.sendStatus(STATUS_PREFIX_INFO, "System already enabled.");
     }
@@ -226,8 +304,7 @@ void Fillhead::handleEnable() {
  */
 void Fillhead::handleDisable() {
     handleAbort(); // Safest to abort any motion first.
-    m_mainState = DISABLED_MODE;
-    m_errorState = ERROR_NONE;
+    m_mainState = STATE_DISABLED;
     m_injector.disable();
     m_injectorValve.disable();
     m_vacuumValve.disable();
@@ -247,31 +324,28 @@ void Fillhead::handleAbort() {
 }
 
 /**
- * @brief Resets any error states and returns the system to standby.
+ * @brief Resets any error states, clears motor faults, and returns the system to standby.
  */
 void Fillhead::handleClearErrors() {
-    m_comms.sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting system state...");
-    handleStandbyMode();
-    m_comms.sendStatus(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete.");
+    m_comms.sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
+    m_injector.reset();
+    m_injectorValve.reset();
+    m_vacuumValve.reset();
+    m_vacuum.resetState();
+    m_mainState = STATE_STANDBY;
+    m_comms.sendStatus(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
 }
 
 /**
  * @brief Resets all component states to their default/idle configuration.
  */
 void Fillhead::handleStandbyMode() {
-    bool wasError = (m_errorState != ERROR_NONE);
-    m_injector.resetState();
+    m_injector.reset();
     m_injectorValve.reset();
     m_vacuumValve.reset();
-    m_vacuum.resetState(); // <-- FINAL FIX: Reset vacuum controller state
-    m_mainState = STANDBY_MODE;
-    m_errorState = ERROR_NONE;
-
-    if (wasError) {
-        m_comms.sendStatus(STATUS_PREFIX_INFO, "Error cleared. System is in STANDBY_MODE.");
-    } else {
-        m_comms.sendStatus(STATUS_PREFIX_INFO, "System is in STANDBY_MODE.");
-    }
+    m_vacuum.resetState();
+    m_mainState = STATE_STANDBY;
+    m_comms.sendStatus(STATUS_PREFIX_INFO, "System is in STANDBY state.");
 }
 
 /**
@@ -288,46 +362,6 @@ void Fillhead::handleSetPeerIp(const char* msg) {
  */
 void Fillhead::handleClearPeerIp() {
     m_comms.clearPeerIp();
-}
-
-
-// --- Private Methods: Telemetry ---
-
-/**
- * @brief Aggregates telemetry data from all sub-controllers and sends it as a single UDP packet.
- */
-void Fillhead::publishTelemetry() {
-    if (!m_comms.isGuiDiscovered()) return;
-
-    char telemetryBuffer[1024];
-    const char* mainStateStr = (m_mainState == STANDBY_MODE) ? "STANDBY" : "DISABLED";
-    const char* errorStateStr = "NO_ERROR"; // TODO: Implement a function to convert m_errorState enum to a string.
-
-    // Create a non-const copy of the peer IP to safely call StringValue()
-    IpAddress peerIp = m_comms.getPeerIp();
-
-    // Assemble the full telemetry string from all components.
-    snprintf(telemetryBuffer, sizeof(telemetryBuffer),
-        "%s"
-        "MAIN_STATE:%s,ERROR_STATE:%s,"
-        "%s," // Injector Telemetry
-        "%s," // Injection Valve Telemetry
-        "%s," // Vacuum Valve Telemetry
-        "%s," // Heater Telemetry
-        "%s," // Vacuum Telemetry
-        "peer_disc:%d,peer_ip:%s",
-        TELEM_PREFIX,
-        mainStateStr, errorStateStr,
-        m_injector.getTelemetryString(),
-        m_injectorValve.getTelemetryString(),
-        m_vacuumValve.getTelemetryString(),
-        m_heater.getTelemetryString(),
-        m_vacuum.getTelemetryString(),
-        (int)m_comms.isPeerDiscovered(), peerIp.StringValue()
-    );
-
-    // Enqueue the message for sending.
-    m_comms.enqueueTx(telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
 }
 
 
