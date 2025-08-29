@@ -719,3 +719,11 @@ const char* Injector::getTelemetryString() {
     );
     return m_telemetryBuffer;
 }
+
+bool Injector::isBusy() const {
+    return m_state != STATE_STANDBY;
+}
+
+bool Injector::isInFault() const {
+    return m_motorA->StatusReg().bit.MotorInFault || m_motorB->StatusReg().bit.MotorInFault;
+}

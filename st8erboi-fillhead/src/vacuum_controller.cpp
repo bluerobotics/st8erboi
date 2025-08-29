@@ -203,3 +203,7 @@ const char* VacuumController::getTelemetryString() {
 	(int)m_state, m_vacuumPressurePsig, m_targetPsig);
 	return m_telemetryBuffer;
 }
+
+bool VacuumController::isBusy() const {
+    return m_state != VACUUM_OFF && m_state != VACUUM_ERROR;
+}

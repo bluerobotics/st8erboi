@@ -421,3 +421,11 @@ const char* PinchValve::getTelemetryString() {
 	);
 	return m_telemetryBuffer;
 }
+
+bool PinchValve::isBusy() const {
+	return m_state == VALVE_HOMING || m_state == VALVE_OPENING || m_state == VALVE_CLOSING || m_state == VALVE_JOGGING;
+}
+
+bool PinchValve::isInFault() const {
+	return m_motor->StatusReg().bit.MotorInFault;
+}
