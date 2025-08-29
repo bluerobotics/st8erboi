@@ -290,7 +290,7 @@ void Injector::updateState() {
  * @brief Handles a command specifically for the injector system.
  */
 void Injector::handleCommand(Command cmd, const char* args) {
-    if (!m_isEnabled && cmd != CMD_SET_INJECTOR_TORQUE_OFFSET) {
+    if (!m_isEnabled) {
         m_comms->sendStatus(STATUS_PREFIX_ERROR, "Injector command ignored: Motors are disabled.");
         return;
     }

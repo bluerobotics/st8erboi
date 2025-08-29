@@ -23,6 +23,8 @@
 #define CMD_STR_ENABLE_Z "ENABLE_Z"
 #define CMD_STR_DISABLE_Z "DISABLE_Z"
 
+#define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
+
 // --- Telemetry & Status Prefixes ---
 #define TELEM_PREFIX "GANTRY_TELEM: "
 #define STATUS_PREFIX_INFO "GANTRY_INFO: "
@@ -49,5 +51,6 @@ typedef enum {
 	CMD_ENABLE_Y,
 	CMD_DISABLE_Y,
 	CMD_ENABLE_Z,
-	CMD_DISABLE_Z
+	CMD_DISABLE_Z,
+	CMD_REQUEST_TELEM
 } Command;
