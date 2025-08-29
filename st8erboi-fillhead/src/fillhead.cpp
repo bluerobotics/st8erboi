@@ -339,17 +339,17 @@ void Fillhead::publishTelemetry() {
  * @brief Global instance of the entire Fillhead system.
  * @details The C++ runtime ensures the Fillhead constructor is called before main() begins.
  */
-Fillhead fillhead_system;
+Fillhead fillhead;
 
 /**
  * @brief The main function and entry point of the application.
  */
 int main(void) {
     // Initialize all hardware and controllers.
-    fillhead_system.setup();
+    fillhead.setup();
 
     // Enter the main application loop, which runs forever.
     while (true) {
-        fillhead_system.loop();
+        fillhead.loop();
     }
 }
