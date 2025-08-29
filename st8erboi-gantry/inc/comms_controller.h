@@ -4,18 +4,10 @@
 #include "EthernetUdp.h"
 #include "IpAddress.h"
 #include "config.h"
+#include "commands.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-
-// --- Command parsing enum (Moved from gantry.h) ---
-typedef enum {
-	CMD_UNKNOWN, CMD_REQUEST_TELEM, CMD_DISCOVER, CMD_SET_PEER_IP,
-	CMD_CLEAR_PEER_IP, CMD_ABORT, CMD_MOVE_X, CMD_MOVE_Y, CMD_MOVE_Z,
-	CMD_HOME_X, CMD_HOME_Y, CMD_HOME_Z,
-	CMD_ENABLE_X, CMD_DISABLE_X, CMD_ENABLE_Y, CMD_DISABLE_Y,
-	CMD_ENABLE_Z, CMD_DISABLE_Z
-} GantryCommand;
 
 // --- Message struct (Moved from gantry.h) ---
 struct Message {
@@ -31,10 +23,11 @@ class CommsController {
 	void update();
 
 	// Queue Management
+	bool enqueueRx(const char* msg, const IpAddress& ip, uint16_t port);
 	bool dequeueRx(Message& msg);
 	void sendStatus(const char* statusType, const char* message);
 	bool enqueueTx(const char* msg, const IpAddress& ip, uint16_t port);
-	GantryCommand parseCommand(const char* msg);
+	Command parseCommand(const char* msg);
 
 	// Getters
 	bool isGuiDiscovered() const { return m_guiDiscovered; }
@@ -54,7 +47,6 @@ class CommsController {
 	void processUdp();
 	void processTxQueue();
 	void setupEthernet();
-	bool enqueueRx(const char* msg, const IpAddress& ip, uint16_t port);
 
 	EthernetUdp m_udp;
 	IpAddress m_guiIp;

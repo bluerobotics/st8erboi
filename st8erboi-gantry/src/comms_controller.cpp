@@ -62,7 +62,7 @@ bool CommsController::enqueueRx(const char* msg, const IpAddress& ip, uint16_t p
 	if (next_head == m_rxQueueTail) {
 		// Rx Queue is full. Send an immediate error back to the GUI.
 		if(m_guiDiscovered) {
-			char errorMsg[] = "ERROR: GANTRY RX QUEUE OVERFLOW - COMMAND DROPPED";
+			char errorMsg[] = "INJ_ERROR: RX QUEUE OVERFLOW - COMMAND DROPPED";
 			m_udp.Connect(m_guiIp, m_guiPort);
 			m_udp.PacketWrite(errorMsg);
 			m_udp.PacketSend();
@@ -90,7 +90,7 @@ bool CommsController::enqueueTx(const char* msg, const IpAddress& ip, uint16_t p
 	int next_head = (m_txQueueHead + 1) % TX_QUEUE_SIZE;
 	if (next_head == m_txQueueTail) {
 		if(m_guiDiscovered) {
-			char errorMsg[] = "ERROR: GANTRY TX QUEUE OVERFLOW - MESSAGE DROPPED";
+			char errorMsg[] = "INJ_ERROR: TX QUEUE OVERFLOW - MESSAGE DROPPED";
 			m_udp.Connect(m_guiIp, m_guiPort);
 			m_udp.PacketWrite(errorMsg);
 			m_udp.PacketSend();
@@ -136,7 +136,7 @@ void CommsController::clearPeerIp() {
 	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }
 
-GantryCommand CommsController::parseCommand(const char* msg) {
+Command CommsController::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;

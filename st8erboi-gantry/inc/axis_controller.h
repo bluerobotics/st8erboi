@@ -3,28 +3,27 @@
 #include "ClearCore.h"
 #include "config.h"
 
-class Gantry;
+class Gantry; // Forward declaration
 
 class Axis {
-	public:
-	typedef enum {
-		ABSOLUTE,
-		INCREMENTAL
-	} MoveType;
-
-	// Made public to be accessible by Gantry
+public:
 	typedef enum {
 		STATE_STANDBY,
 		STATE_STARTING_MOVE,
 		STATE_MOVING,
 		STATE_HOMING
 	} AxisState;
+	
+	typedef enum {
+		ABSOLUTE,
+		INCREMENTAL
+	} MoveType;
 
-	Axis(Gantry* controller, const char* name, MotorDriver* motor1, MotorDriver* motor2,
-	float stepsPerMm, float minPosMm, float maxPosMm,
-	Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor, Connector* zBrake);
+    Axis(Motor* motor, const char* axisName);
+    void setup(Gantry* gantry);
 
-	void setupMotors();
+	// Made public to be accessible by Gantry
+	
 	void updateState();
 	void handleMove(const char* args);
 	void handleHome(const char* args);

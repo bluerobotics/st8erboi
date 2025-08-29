@@ -13,37 +13,31 @@
 #include <math.h>
 
 /**
- * @brief Constructs the Gantry controller.
- * @details The constructor uses a member initializer list to instantiate the
- * CommsController and all three Axis objects. Each Axis is configured with its
- * name, associated motors, physical parameters, and sensors.
+ * @brief Construct the Gantry controller.
  */
-Gantry::Gantry() :
-    m_comms(),
-    xAxis(this, "X", &MotorX, nullptr, STEPS_PER_MM_X, X_MIN_POS, X_MAX_POS, &SENSOR_X, nullptr, nullptr, nullptr),
-    yAxis(this, "Y", &MotorY1, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS, &SENSOR_Y1, &SENSOR_Y2, &LIMIT_Y_BACK, nullptr),
-    zAxis(this, "Z", &MotorZ, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR_Z, nullptr, nullptr, &Z_BRAKE)
-{
-    // Initialize state and timers
-    m_lastTelemetryTime = 0;
+Gantry::Gantry()
+    : xAxis(&MotorX, "X"),
+      yAxis(&MotorY1, "Y"), // Using Y1 as the primary motor for the Y-axis
+      zAxis(&MotorZ, "Z") {
     m_state = GANTRY_STANDBY;
+    m_lastTelemetryTime = 0;
 }
 
 /**
- * @brief Performs one-time hardware and software initialization.
- * @details This method should be called once at startup. It configures motors,
- * initializes network communication, and ensures all components are ready
- * for operation.
+ * @brief Perform one-time hardware and software initialization.
  */
 void Gantry::setup() {
     // Configure all motors for step and direction mode.
     MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
+    
+    // Setup communications
+    m_comms.setup();
 
-    // Initialize each axis controller.
-    xAxis.setupMotors();
-    yAxis.setupMotors();
-    zAxis.setupMotors();
-
+    // Setup each axis controller
+    xAxis.setup(this);
+    yAxis.setup(this);
+    zAxis.setup(this);
+    
     // Wait for up to 2 seconds for all motors to report as enabled.
     uint32_t timeout = Milliseconds() + 2000;
     while(Milliseconds() < timeout) {
@@ -54,9 +48,6 @@ void Gantry::setup() {
             break;
         }
     }
-    
-    // Initialize the communications controller (Ethernet, UDP).
-    m_comms.setup();
 }
 
 /**

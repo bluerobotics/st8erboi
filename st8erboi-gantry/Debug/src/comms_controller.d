@@ -1,4 +1,5 @@
-gantry.d gantry.o: .././gantry.cpp .././gantry.h \
+src/comms_controller.d src/comms_controller.o: \
+ ../src/comms_controller.cpp ../inc/comms_controller.h \
  ../../libClearCore/inc/ClearCore.h ../../libClearCore/inc/AdcManager.h \
  ../../libClearCore/inc/IirFilter.h ../../libClearCore/inc/SysTiming.h \
  ../../libClearCore/inc/CcioBoardManager.h \
@@ -159,11 +160,10 @@ gantry.d gantry.o: .././gantry.cpp .././gantry.h \
  ../../libClearCore/inc/SysManager.h \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
- ../../libClearCore/inc/XBeeDriver.h .././config.h .././axis_controller.h \
- .././comms_controller.h ../../libClearCore/inc/EthernetUdp.h \
- ../../libClearCore/inc/IpAddress.h
+ ../../libClearCore/inc/XBeeDriver.h ../../libClearCore/inc/EthernetUdp.h \
+ ../../libClearCore/inc/IpAddress.h ../inc/config.h ../inc/commands.h
 
-.././gantry.h:
+../inc/comms_controller.h:
 
 ../../libClearCore/inc/ClearCore.h:
 
@@ -503,12 +503,10 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 
 ../../libClearCore/inc/XBeeDriver.h:
 
-.././config.h:
-
-.././axis_controller.h:
-
-.././comms_controller.h:
-
 ../../libClearCore/inc/EthernetUdp.h:
 
 ../../libClearCore/inc/IpAddress.h:
+
+../inc/config.h:
+
+../inc/commands.h:
