@@ -493,6 +493,11 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
         if script_runner and script_runner.is_running:
             script_runner.stop()
         command_funcs['abort']()
+
+        # Send CLEAR_ERRORS to both devices. Gantry will ignore it for now.
+        command_funcs['send_fillhead']("CLEAR_ERRORS")
+        command_funcs['send_gantry']("CLEAR_ERRORS")
+
         feed_hold_line = None
         on_run_finished()
         update_selection_highlight(1)

@@ -309,8 +309,6 @@ def create_feed_controls(parent, send_cmd_func, ui_elements, variables):
 
     # --- Create Inject and Purge sections using the helper ---
     _create_operation_ui(feed_controls_frame, "Inject", "INJECT_MOVE", send_cmd_func, ui_elements, variables)
-    ttk.Separator(feed_controls_frame, orient='horizontal').pack(fill=tk.X, pady=8)
-    _create_operation_ui(feed_controls_frame, "Purge", "PURGE_MOVE", send_cmd_func, ui_elements, variables)
 
 
 def create_fillhead_ancillary_controls(parent, send_fillhead_cmd, shared_gui_refs, ui_elements):

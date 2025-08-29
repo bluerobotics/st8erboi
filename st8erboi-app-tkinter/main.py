@@ -91,6 +91,18 @@ def main():
         'vacuum_psig_var': tk.StringVar(value='0.00 PSIG'),
         'temp_c_var': tk.StringVar(value='0.0 °C'),
         'pid_setpoint_var': tk.StringVar(value='25.0'), # Default setpoint
+
+        # Heater variables
+        'heater_setpoint_var': tk.StringVar(value='70.0'),
+        'heater_kp_var': tk.StringVar(value='60.0'),
+        'heater_ki_var': tk.StringVar(value='2.5'),
+        'heater_kd_var': tk.StringVar(value='40.0'),
+
+        # Vacuum variables
+        'vac_target_var': tk.StringVar(value='-14.0'),
+        'vac_timeout_var': tk.StringVar(value='30'),
+        'vac_leak_delta_var': tk.StringVar(value='0.1'),
+        'vac_leak_duration_var': tk.StringVar(value='10')
     }
 
     send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)

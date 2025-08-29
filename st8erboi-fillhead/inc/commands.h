@@ -4,7 +4,6 @@
 // Command Strings & Prefixes
 //==================================================================================================
 // --- General Commands ---
-#define CMD_STR_REQUEST_TELEM               "REQUEST_TELEM"
 #define CMD_STR_DISCOVER                    "DISCOVER_FILLHEAD"
 #define CMD_STR_SET_PEER_IP                 "SET_PEER_IP "
 #define CMD_STR_CLEAR_PEER_IP               "CLEAR_PEER_IP"
@@ -14,7 +13,6 @@
 #define CMD_STR_CLEAR_ERRORS                "CLEAR_ERRORS"
 
 // --- Injector Motion Commands ---
-#define CMD_STR_SET_INJECTOR_TORQUE_OFFSET  "SET_INJECTOR_TORQUE_OFFSET "
 #define CMD_STR_JOG_MOVE                    "JOG_MOVE "
 #define CMD_STR_MACHINE_HOME_MOVE           "MACHINE_HOME_MOVE"
 #define CMD_STR_CARTRIDGE_HOME_MOVE         "CARTRIDGE_HOME_MOVE"
@@ -72,9 +70,7 @@ typedef enum {
 	CMD_PAUSE_INJECTION,
 	CMD_RESUME_INJECTION,
 	CMD_CANCEL_INJECTION,
-	CMD_SET_INJECTOR_TORQUE_OFFSET,
 	CMD_DISCOVER,
-	CMD_REQUEST_TELEM,
 	CMD_ABORT,
 	CMD_CLEAR_ERRORS,
 	CMD_SET_PEER_IP,

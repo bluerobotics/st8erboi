@@ -4,7 +4,6 @@
 // Command Strings & Prefixes
 //==================================================================================================
 // --- General Commands ---
-#define CMD_STR_REQUEST_TELEM "REQUEST_TELEM"
 #define CMD_STR_DISCOVER "DISCOVER_GANTRY"
 #define CMD_STR_SET_PEER_IP "SET_PEER_IP "
 #define CMD_STR_CLEAR_PEER_IP "CLEAR_PEER_IP"
@@ -35,7 +34,6 @@
 // Maps all command strings to a single enum for easier parsing.
 typedef enum {
 	CMD_UNKNOWN,
-	CMD_REQUEST_TELEM,
 	CMD_DISCOVER,
 	CMD_SET_PEER_IP,
 	CMD_CLEAR_PEER_IP,

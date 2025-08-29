@@ -154,8 +154,17 @@ void CommsController::clearPeerIp() {
  * @return The `UserCommand` enum corresponding to the string, or `CMD_UNKNOWN`.
  */
 Command CommsController::parseCommand(const char* msg) {
+	// Trim leading whitespace
+	while (isspace((unsigned char)*msg)) {
+		msg++;
+	}
+
+	// If the message is empty after trimming, treat it as UNKNOWN and let the caller handle it.
+	if (*msg == '\0') {
+		return CMD_UNKNOWN;
+	}
+
 	// General Commands
-	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
@@ -165,7 +174,6 @@ Command CommsController::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
 
 	// Injector Motion Commands
-	if (strncmp(msg, CMD_STR_SET_INJECTOR_TORQUE_OFFSET, strlen(CMD_STR_SET_INJECTOR_TORQUE_OFFSET)) == 0) return CMD_SET_INJECTOR_TORQUE_OFFSET;
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
 	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;

@@ -100,6 +100,97 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
     z_tracer()
 
 
+def create_pinch_valve_controls(parent, command_funcs):
+    """Creates controls for opening and closing the pinch valves."""
+    send_fillhead_cmd = command_funcs['send_fillhead']
+    frame = tk.LabelFrame(parent, text="Pinch Valve Control", bg="#2a2d3b", fg="#E0B0FF", font=("Segoe UI", 9, "bold"), padx=5, pady=5)
+    frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
+    frame.grid_columnconfigure((0, 1), weight=1)
+
+    # Injection Valve
+    ttk.Button(frame, text="Open Injection Valve", style='Small.TButton', command=lambda: send_fillhead_cmd("INJECTION_VALVE_OPEN")).grid(row=0, column=0, sticky='ew', padx=(0, 2), pady=1)
+    ttk.Button(frame, text="Close Injection Valve", style='Small.TButton', command=lambda: send_fillhead_cmd("INJECTION_VALVE_CLOSE")).grid(row=1, column=0, sticky='ew', padx=(0, 2))
+
+    # Vacuum Valve
+    ttk.Button(frame, text="Open Vacuum Valve", style='Small.TButton', command=lambda: send_fillhead_cmd("VACUUM_VALVE_OPEN")).grid(row=0, column=1, sticky='ew', padx=(2, 0), pady=1)
+    ttk.Button(frame, text="Close Vacuum Valve", style='Small.TButton', command=lambda: send_fillhead_cmd("VACUUM_VALVE_CLOSE")).grid(row=1, column=1, sticky='ew', padx=(2, 0))
+
+
+def create_heater_controls(parent, command_funcs, shared_gui_refs):
+    """Creates controls for the heater."""
+    send_fillhead_cmd = command_funcs['send_fillhead']
+    frame = tk.LabelFrame(parent, text="Heater Control", bg="#2a2d3b", fg="#FFD700", font=("Segoe UI", 9, "bold"), padx=5, pady=5)
+    frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
+
+    # On/Off Buttons
+    btn_frame = tk.Frame(frame, bg=frame['bg'])
+    btn_frame.pack(fill=tk.X, pady=(0, 5))
+    btn_frame.grid_columnconfigure((0, 1), weight=1)
+    ttk.Button(btn_frame, text="Heater On", style='Green.TButton', command=lambda: send_fillhead_cmd("HEATER_ON")).grid(row=0, column=0, sticky='ew', padx=(0, 2))
+    ttk.Button(btn_frame, text="Heater Off", style='Red.TButton', command=lambda: send_fillhead_cmd("HEATER_OFF")).grid(row=0, column=1, sticky='ew', padx=(2, 0))
+
+    # Parameter Entries
+    param_frame = tk.Frame(frame, bg=frame['bg'])
+    param_frame.pack(fill=tk.X)
+    param_frame.grid_columnconfigure(1, weight=1)
+
+    # Setpoint
+    tk.Label(param_frame, text="Setpoint (°C):", bg=frame['bg'], fg='white').grid(row=0, column=0, sticky='e', padx=(0, 5))
+    entry_setpoint = ttk.Entry(param_frame, textvariable=shared_gui_refs['heater_setpoint_var'], width=8)
+    entry_setpoint.grid(row=0, column=1, sticky='ew', pady=1)
+    ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_HEATER_SETPOINT {shared_gui_refs['heater_setpoint_var'].get()}")).grid(row=0, column=2, sticky='ew', padx=2)
+
+    # Gains
+    tk.Label(param_frame, text="Gains (P, I, D):", bg=frame['bg'], fg='white').grid(row=1, column=0, sticky='e', padx=(0, 5))
+    gains_frame = tk.Frame(param_frame, bg=frame['bg'])
+    gains_frame.grid(row=1, column=1, sticky='ew', pady=1)
+    gains_frame.grid_columnconfigure((0,1,2), weight=1)
+    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_kp_var'], width=5).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_ki_var'], width=5).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_kd_var'], width=5).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+    ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_HEATER_GAINS {shared_gui_refs['heater_kp_var'].get()} {shared_gui_refs['heater_ki_var'].get()} {shared_gui_refs['heater_kd_var'].get()}")).grid(row=1, column=2, sticky='ew', padx=2)
+
+
+def create_vacuum_controls(parent, command_funcs, shared_gui_refs):
+    """Creates controls for the vacuum system."""
+    send_fillhead_cmd = command_funcs['send_fillhead']
+    frame = tk.LabelFrame(parent, text="Vacuum Control", bg="#2a2d3b", fg="#ADD8E6", font=("Segoe UI", 9, "bold"), padx=5, pady=5)
+    frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
+
+    # On/Off/Test Buttons
+    btn_frame = tk.Frame(frame, bg=frame['bg'])
+    btn_frame.pack(fill=tk.X, pady=(0, 5))
+    btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
+    ttk.Button(btn_frame, text="Vacuum On", style='Green.TButton', command=lambda: send_fillhead_cmd("VACUUM_ON")).grid(row=0, column=0, sticky='ew', padx=(0, 2))
+    ttk.Button(btn_frame, text="Vacuum Off", style='Red.TButton', command=lambda: send_fillhead_cmd("VACUUM_OFF")).grid(row=0, column=1, sticky='ew', padx=2)
+    ttk.Button(btn_frame, text="Leak Test", style='Blue.TButton', command=lambda: send_fillhead_cmd("VACUUM_LEAK_TEST")).grid(row=0, column=2, sticky='ew', padx=(2, 0))
+
+    # Parameter Entries
+    param_frame = tk.Frame(frame, bg=frame['bg'])
+    param_frame.pack(fill=tk.X, pady=2)
+    param_frame.grid_columnconfigure(1, weight=1)
+
+    # Target
+    tk.Label(param_frame, text="Target (PSIG):", bg=frame['bg'], fg='white').grid(row=0, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_target_var'], width=8).grid(row=0, column=1, sticky='ew', pady=1)
+    ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_VACUUM_TARGET {shared_gui_refs['vac_target_var'].get()}")).grid(row=0, column=2, sticky='ew', padx=2)
+
+    # Timeout
+    tk.Label(param_frame, text="Timeout (s):", bg=frame['bg'], fg='white').grid(row=1, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_timeout_var'], width=8).grid(row=1, column=1, sticky='ew', pady=1)
+    ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_VACUUM_TIMEOUT_S {shared_gui_refs['vac_timeout_var'].get()}")).grid(row=1, column=2, sticky='ew', padx=2)
+    
+    # Leak Test Delta
+    tk.Label(param_frame, text="Leak Δ (PSIG):", bg=frame['bg'], fg='white').grid(row=2, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_leak_delta_var'], width=8).grid(row=2, column=1, sticky='ew', pady=1)
+    ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_LEAK_TEST_DELTA {shared_gui_refs['vac_leak_delta_var'].get()}")).grid(row=2, column=2, sticky='ew', padx=2)
+    
+    # Leak Test Duration
+    tk.Label(param_frame, text="Leak Dura. (s):", bg=frame['bg'], fg='white').grid(row=3, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_leak_duration_var'], width=8).grid(row=3, column=1, sticky='ew', pady=1)
+    ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_LEAK_TEST_DURATION_S {shared_gui_refs['vac_leak_duration_var'].get()}")).grid(row=3, column=2, sticky='ew', padx=2)
+
+
 # --- Main Collapsible Panel Creation ---
 def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
     """Creates the scrollable panel containing all manual device controls."""
@@ -131,6 +222,16 @@ def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
     ui_elements = {}
 
     create_motor_power_controls(scrollable_frame, command_funcs, shared_gui_refs)
+
+    # Separator
+    ttk.Separator(scrollable_frame, orient='horizontal').pack(fill=tk.X, pady=10, padx=5)
+
+    create_pinch_valve_controls(scrollable_frame, command_funcs)
+    create_heater_controls(scrollable_frame, command_funcs, shared_gui_refs)
+    create_vacuum_controls(scrollable_frame, command_funcs, shared_gui_refs)
+
+    # Separator
+    ttk.Separator(scrollable_frame, orient='horizontal').pack(fill=tk.X, pady=10, padx=5)
 
     create_fillhead_ancillary_controls(scrollable_frame, command_funcs['send_fillhead'], shared_gui_refs, ui_elements)
     # --- MODIFIED: Added the missing 'shared_gui_refs' argument ---
