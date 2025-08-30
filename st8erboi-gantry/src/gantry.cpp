@@ -187,9 +187,6 @@ void Gantry::handleMessage(const Message& msg) {
             break;
 
         // --- Miscellaneous Commands ---
-        case CMD_REQUEST_TELEM:
-            publishTelemetry();
-            break;
         case CMD_DISCOVER: {
             // Extract the GUI's listening port from the discovery message.
             char* portStr = strstr(msg.buffer, "PORT=");
