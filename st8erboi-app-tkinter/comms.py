@@ -29,8 +29,8 @@ except OSError as e:
 socket_lock = threading.Lock()
 
 devices = {
-    "fillhead": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0},
-    "gantry": {"ip": None, "last_rx": 0, "connected": False, "peer_connected": False, "last_discovery_attempt": 0}
+    "fillhead": {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0},
+    "gantry": {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0}
 }
 
 
@@ -88,18 +88,12 @@ def monitor_connections(gui_refs):
 
             if prev_conn_status and (now - device["last_rx"]) > TIMEOUT_THRESHOLD:
                 device["connected"] = False
-                device["peer_connected"] = False
                 device["ip"] = None
 
                 if prev_conn_status and not device["connected"]:
                     status_text = f"🔌 {key.capitalize()} Disconnected"
                     log_to_terminal(status_text, terminal_cb)
                     gui_refs[f'status_var_{key}'].set(status_text)
-
-                    other_key = "gantry" if key == "fillhead" else "fillhead"
-                    if devices[other_key]["connected"]:
-                        log_to_terminal(f"INFO: {key.capitalize()} disconnected. Informing peer.", terminal_cb)
-                        send_to_device(other_key, "CLEAR_PEER_IP", gui_refs)
 
             if not device["connected"]:
                 if now - device["last_discovery_attempt"] > DISCOVERY_INTERVAL:
@@ -120,12 +114,6 @@ def handle_connection(device_key, source_ip, gui_refs):
         status_text = f"✅ {device_key.capitalize()} Connected ({source_ip})"
         log_to_terminal(status_text, gui_refs.get('terminal_cb'))
         gui_refs[f'status_var_{device_key}'].set(status_text)
-
-        other_key = "gantry" if device_key == "fillhead" else "fillhead"
-        if devices[other_key]["connected"]:
-            log_to_terminal("INFO: Both devices now connected. Brokering IPs.", gui_refs.get('terminal_cb'))
-            send_to_device(device_key, f"SET_PEER_IP {devices[other_key]['ip']}", gui_refs)
-            send_to_device(other_key, f"SET_PEER_IP {device['ip']}", gui_refs)
 
     device["last_rx"] = time.time()
 
@@ -199,16 +187,6 @@ def parse_fillhead_telemetry(msg, gui_refs):
         if 'heater_mode_var' in gui_refs: gui_refs['heater_mode_var'].set(
             "PID Active" if parts.get("h_st", "0") == "1" else "OFF")
 
-        # Peer Connection Status
-        if 'peer_status_fillhead_var' in gui_refs:
-            is_peer_discovered = parts.get("peer_disc", "0") == "1"
-            devices["fillhead"]["peer_connected"] = is_peer_discovered
-            peer_ip = parts.get("peer_ip", "0.0.0.0")
-            if is_peer_discovered:
-                gui_refs['peer_status_fillhead_var'].set(f"Peer: {peer_ip}")
-            else:
-                gui_refs['peer_status_fillhead_var'].set("Peer: Not Connected")
-
     except Exception as e:
         log_to_terminal(f"Fillhead telemetry parse error: {e}\n", gui_refs.get('terminal_cb'))
 
@@ -239,15 +217,6 @@ def parse_gantry_telemetry(msg, gui_refs):
                 if f'fh_enabled_m{motor_index}_var' in gui_refs: gui_refs[f'fh_enabled_m{motor_index}_var'].set(
                     enabled_val)
                 if f'fh_homed_m{motor_index}_var' in gui_refs: gui_refs[f'fh_homed_m{motor_index}_var'].set(homed_val)
-
-        if 'peer_status_gantry_var' in gui_refs:
-            is_peer_discovered = parts.get("pd", "0") == "1"
-            devices["gantry"]["peer_connected"] = is_peer_discovered
-            peer_ip = parts.get("pip", "0.0.0.0")
-            if is_peer_discovered:
-                gui_refs['peer_status_gantry_var'].set(f"Peer: {peer_ip}")
-            else:
-                gui_refs['peer_status_gantry_var'].set("Peer: Not Connected")
 
     except Exception as e:
         log_to_terminal(f"Gantry telemetry parse error: {e} -> on msg: {msg}\n", gui_refs.get('terminal_cb'))

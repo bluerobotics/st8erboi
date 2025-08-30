@@ -109,7 +109,6 @@ void Gantry::publishTelemetry() {
     if (!m_comms.isGuiDiscovered()) return;
     
     // Get peer IP from comms object for telemetry string.
-    IpAddress peerIp = m_comms.getPeerIp();
 
     // Format the telemetry string with data from all relevant components.
     snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
@@ -117,14 +116,12 @@ void Gantry::publishTelemetry() {
         "gantry_state:%s,"
         "x_p:%.2f,x_t:%.2f,x_e:%d,x_h:%d,"
         "y_p:%.2f,y_t:%.2f,y_e:%d,y_h:%d,"
-        "z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d,"
-        "pd:%d,pip:%s",
+        "z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d",
         TELEM_PREFIX,
         getGantryStateString(),
         xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(),
         yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(),
-        zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(),
-        (int)m_comms.isPeerDiscovered(), peerIp.StringValue());
+        zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed());
 
     // Enqueue the formatted string for transmission.
     m_comms.enqueueTx(m_telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
@@ -146,8 +143,6 @@ void Gantry::handleMessage(const Message& msg) {
 
     switch(command) {
         // --- System & Communication Commands ---
-        case CMD_SET_PEER_IP:   handleSetPeerIp(msg.buffer); break;
-        case CMD_CLEAR_PEER_IP: handleClearPeerIp(); break;
         case CMD_ABORT:         abortAll(); break;
 
         // --- Axis Motion Commands ---
@@ -203,22 +198,6 @@ void Gantry::handleMessage(const Message& msg) {
             // For robustness, unknown commands are silently ignored.
             break;
     }
-}
-
-/**
- * @brief Handles the SET_PEER_IP command.
- * @param msg The full message string containing the peer's IP address.
- */
-void Gantry::handleSetPeerIp(const char* msg) {
-    const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
-    m_comms.setPeerIp(IpAddress(ipStr));
-}
-
-/**
- * @brief Handles the CLEAR_PEER_IP command.
- */
-void Gantry::handleClearPeerIp() {
-    m_comms.clearPeerIp();
 }
 
 /**

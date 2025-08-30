@@ -33,27 +33,16 @@ class CommsController {
 	bool isGuiDiscovered() const { return m_guiDiscovered; }
 	IpAddress getGuiIp() const { return m_guiIp; }
 	uint16_t getGuiPort() const { return m_guiPort; }
-	bool isPeerDiscovered() const { return m_peerDiscovered; }
-	IpAddress getPeerIp() const { return m_peerIp; }
-
-	// Setters
-	void setGuiDiscovered(bool discovered) { m_guiDiscovered = discovered; }
-	void setGuiIp(const IpAddress& ip) { m_guiIp = ip; }
-	void setGuiPort(uint16_t port) { m_guiPort = port; }
-	void setPeerIp(const IpAddress& ip);
-	void clearPeerIp();
 
 	private:
+	void setupEthernet();
 	void processUdp();
 	void processTxQueue();
-	void setupEthernet();
 
 	EthernetUdp m_udp;
 	IpAddress m_guiIp;
 	uint16_t m_guiPort;
 	bool m_guiDiscovered;
-	IpAddress m_peerIp;
-	bool m_peerDiscovered;
 
 	unsigned char m_packetBuffer[MAX_PACKET_LENGTH];
 

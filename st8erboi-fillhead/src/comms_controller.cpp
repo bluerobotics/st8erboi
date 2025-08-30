@@ -3,7 +3,6 @@
 CommsController::CommsController() {
 	m_guiDiscovered = false;
 	m_guiPort = 0;
-	m_peerDiscovered = false;
 	
 	m_rxQueueHead = 0;
 	m_rxQueueTail = 0;
@@ -99,9 +98,6 @@ void CommsController::sendStatus(const char* statusType, const char* message) {
 	if (m_guiDiscovered) {
 		enqueueTx(fullMsg, m_guiIp, m_guiPort);
 	}
-	if (m_peerDiscovered) {
-		enqueueTx(fullMsg, m_peerIp, LOCAL_PORT);
-	}
 }
 
 void CommsController::setupUsbSerial(void) {
@@ -125,26 +121,6 @@ void CommsController::setupEthernet() {
 	}
 
 	m_udp.Begin(LOCAL_PORT);
-}
-
-void CommsController::setPeerIp(const IpAddress& ip) {
-	// Create a non-const copy to safely call StringValue(), which is not a const method.
-	IpAddress tempIp = ip;
-	if (strcmp(tempIp.StringValue(), "0.0.0.0") == 0) {
-		m_peerDiscovered = false;
-		sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
-		} else {
-		m_peerIp = ip;
-		m_peerDiscovered = true;
-		char response[100];
-		snprintf(response, sizeof(response), "Peer IP set to %s", tempIp.StringValue());
-		sendStatus(STATUS_PREFIX_INFO, response);
-	}
-}
-
-void CommsController::clearPeerIp() {
-	m_peerDiscovered = false;
-	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }
 
 /**

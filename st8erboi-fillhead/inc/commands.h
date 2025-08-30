@@ -5,8 +5,6 @@
 //==================================================================================================
 // --- General Commands ---
 #define CMD_STR_DISCOVER                    "DISCOVER_FILLHEAD"
-#define CMD_STR_SET_PEER_IP                 "SET_PEER_IP "
-#define CMD_STR_CLEAR_PEER_IP               "CLEAR_PEER_IP"
 #define CMD_STR_ENABLE                      "ENABLE"
 #define CMD_STR_DISABLE                     "DISABLE"
 #define CMD_STR_ABORT                       "ABORT"
@@ -73,8 +71,6 @@ typedef enum {
 	CMD_DISCOVER,
 	CMD_ABORT,
 	CMD_CLEAR_ERRORS,
-	CMD_SET_PEER_IP,
-	CMD_CLEAR_PEER_IP,
 	CMD_VACUUM_ON,
 	CMD_VACUUM_OFF,
 	CMD_VACUUM_LEAK_TEST,

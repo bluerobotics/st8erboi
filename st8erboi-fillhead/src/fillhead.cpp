@@ -183,8 +183,6 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_DISABLE:       handleDisable(); break;
         case CMD_ABORT:         handleAbort(); break;
         case CMD_CLEAR_ERRORS:  handleClearErrors(); break;
-        case CMD_SET_PEER_IP:   handleSetPeerIp(msg.buffer); break;
-        case CMD_CLEAR_PEER_IP: handleClearPeerIp(); break;
 
         // --- Injector Motor Commands (Delegated to Injector) ---
         case CMD_JOG_MOVE:
@@ -256,9 +254,6 @@ void Fillhead::publishTelemetry() {
         default:             mainStateStr = "UNKNOWN"; break;
     }
 
-    // Create a non-const copy of the peer IP to safely call StringValue()
-    IpAddress peerIp = m_comms.getPeerIp();
-
     // Assemble the full telemetry string from all components.
     snprintf(telemetryBuffer, sizeof(telemetryBuffer),
         "%s"
@@ -267,16 +262,14 @@ void Fillhead::publishTelemetry() {
         "%s," // Injection Valve Telemetry
         "%s," // Vacuum Valve Telemetry
         "%s," // Heater Telemetry
-        "%s," // Vacuum Telemetry
-        "peer_disc:%d,peer_ip:%s",
+        "%s", // Vacuum Telemetry
         TELEM_PREFIX,
         mainStateStr,
         m_injector.getTelemetryString(),
         m_injectorValve.getTelemetryString(),
         m_vacuumValve.getTelemetryString(),
         m_heater.getTelemetryString(),
-        m_vacuum.getTelemetryString(),
-        (int)m_comms.isPeerDiscovered(), peerIp.StringValue()
+        m_vacuum.getTelemetryString()
     );
 
     // Enqueue the message for sending.
@@ -358,22 +351,6 @@ void Fillhead::handleStandbyMode() {
     m_vacuum.resetState();
     m_mainState = STATE_STANDBY;
     m_comms.sendStatus(STATUS_PREFIX_INFO, "System is in STANDBY state.");
-}
-
-/**
- * @brief Sets the IP address of the peer device for peer-to-peer communication.
- * @param msg The full command message containing the IP address.
- */
-void Fillhead::handleSetPeerIp(const char* msg) {
-    const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
-    m_comms.setPeerIp(IpAddress(ipStr));
-}
-
-/**
- * @brief Clears the stored peer IP address.
- */
-void Fillhead::handleClearPeerIp() {
-    m_comms.clearPeerIp();
 }
 
 

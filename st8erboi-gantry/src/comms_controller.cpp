@@ -3,7 +3,6 @@
 CommsController::CommsController() {
 	m_guiDiscovered = false;
 	m_guiPort = 0;
-	m_peerDiscovered = false;
 
 	m_rxQueueHead = 0;
 	m_rxQueueTail = 0;
@@ -112,28 +111,6 @@ void CommsController::sendStatus(const char* statusType, const char* message) {
 	if (m_guiDiscovered) {
 		enqueueTx(fullMsg, m_guiIp, m_guiPort);
 	}
-	if (m_peerDiscovered) {
-		enqueueTx(fullMsg, m_peerIp, LOCAL_PORT);
-	}
-}
-
-void CommsController::setPeerIp(const IpAddress& ip) {
-	IpAddress tempIp = ip; // Create non-const copy to use StringValue()
-	if (strcmp(tempIp.StringValue(), "0.0.0.0") == 0) {
-		m_peerDiscovered = false;
-		sendStatus(STATUS_PREFIX_ERROR, "Failed to parse peer IP address");
-		} else {
-		m_peerIp = ip;
-		m_peerDiscovered = true;
-		char response[100];
-		snprintf(response, sizeof(response), "Peer IP set to %s", tempIp.StringValue());
-		sendStatus(STATUS_PREFIX_INFO, response);
-	}
-}
-
-void CommsController::clearPeerIp() {
-	m_peerDiscovered = false;
-	sendStatus(STATUS_PREFIX_INFO, "Peer IP cleared");
 }
 
 Command CommsController::parseCommand(const char* msg) {
@@ -163,6 +140,5 @@ Command CommsController::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_DISABLE_Y) == 0) return CMD_DISABLE_Y;
 	if (strcmp(msg, CMD_STR_ENABLE_Z) == 0) return CMD_ENABLE_Z;
 	if (strcmp(msg, CMD_STR_DISABLE_Z) == 0) return CMD_DISABLE_Z;
-	if (strcmp(msg, CMD_STR_REQUEST_TELEM) == 0) return CMD_REQUEST_TELEM;
 	return CMD_UNKNOWN;
 }
