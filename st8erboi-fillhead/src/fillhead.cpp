@@ -327,10 +327,23 @@ void Fillhead::handleAbort() {
  */
 void Fillhead::handleClearErrors() {
     m_comms.sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
+
+    // First, reset the software state of all components.
     m_injector.reset();
     m_injectorValve.reset();
     m_vacuumValve.reset();
     m_vacuum.resetState();
+
+    // Next, disable and immediately re-enable all motors. This hardware cycle is
+    // required by the ClearCore motor drivers to clear a latched fault condition.
+    m_injector.disable();
+    m_injectorValve.disable();
+    m_vacuumValve.disable();
+    Delay_ms(10); // A brief delay to ensure the disable signal is processed.
+    m_injector.enable();
+    m_injectorValve.enable();
+    m_vacuumValve.enable();
+
     m_mainState = STATE_STANDBY;
     m_comms.sendStatus(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
 }

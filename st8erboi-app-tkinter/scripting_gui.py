@@ -322,7 +322,14 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
         modified_star = "*" if script_editor.text.edit_modified() else "";
         root.title(f"{filename}{modified_star} - Multi-Device Controller")
 
-    script_editor.text.bind("<<Modified>>", lambda e: update_window_title())
+    def on_text_modified(event):
+        """Updates window title and selection highlight whenever the text is changed."""
+        update_window_title()
+        # Update the highlight to follow the cursor's current line
+        current_line = int(script_editor.text.index(tk.INSERT).split('.')[0])
+        update_selection_highlight(current_line)
+
+    script_editor.text.bind("<<Modified>>", on_text_modified)
 
     status_var = tk.StringVar(value="Idle")
 
@@ -551,18 +558,18 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
 
     def update_selection_highlight(line_num):
         nonlocal last_selection_highlight
-        if last_selection_highlight != -1: script_editor.tag_remove("selection_highlight",
-                                                                    f"{last_selection_highlight}.0",
-                                                                    f"{last_selection_highlight}.end")
-        script_editor.tag_add("selection_highlight", f"{line_num}.0", f"{line_num}.end");
-        last_selection_highlight = line_num
+        # Remove the highlight from all lines first to ensure only one is ever highlighted.
+        script_editor.tag_remove("selection_highlight", "1.0", tk.END)
+        if line_num != -1:
+            script_editor.tag_add("selection_highlight", f"{line_num}.0", f"{line_num}.end")
+            last_selection_highlight = line_num
 
     def on_line_click(event):
-        index = script_editor.text.index(f"@{event.x},{event.y}");
-        line_num = int(index.split('.')[0]);
+        index = script_editor.text.index(f"@{event.x},{event.y}")
+        line_num = int(index.split('.')[0])
         update_selection_highlight(line_num)
 
-    script_editor.bind("<Button-1>", on_line_click);
+    script_editor.text.bind("<Button-1>", on_line_click)
     update_selection_highlight(1)
 
     # --- Control Buttons ---
