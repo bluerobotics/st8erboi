@@ -34,6 +34,11 @@ class CommsController {
 	IpAddress getGuiIp() const { return m_guiIp; }
 	uint16_t getGuiPort() const { return m_guiPort; }
 
+	// Setters
+	void setGuiDiscovered(bool discovered) { m_guiDiscovered = discovered; }
+	void setGuiIp(const IpAddress& ip) { m_guiIp = ip; }
+	void setGuiPort(uint16_t port) { m_guiPort = port; }
+
 	private:
 	void setupEthernet();
 	void processUdp();
