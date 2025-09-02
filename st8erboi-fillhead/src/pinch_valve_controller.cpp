@@ -188,10 +188,7 @@ void PinchValve::updateState() {
 			break;
 
 		case VALVE_OPENING:
-		case VALVE_JOGGING: // Opening and Jogging have the same logic
 			switch(m_opPhase) {
-				case PHASE_START:
-					break;
 				case PHASE_WAIT_TO_START:
 					if (m_motor->StatusReg().bit.StepsActive) {
 						m_opPhase = PHASE_MOVING;
@@ -202,18 +199,41 @@ void PinchValve::updateState() {
 					}
 					break;
 				case PHASE_MOVING:
-					if (checkTorqueLimit()) { // Safety check
+					if (checkTorqueLimit()) { // Safety check during open
 						m_state = VALVE_OPERATION_ERROR;
 						m_opPhase = PHASE_IDLE;
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						// Success
-						if (m_state == VALVE_OPENING) {
-							m_state = VALVE_OPEN;
-						} else {
-							m_state = VALVE_IDLE;
-						}
+						m_state = VALVE_OPEN; // Success
 						m_opPhase = PHASE_IDLE;
-						m_comms->sendStatus(STATUS_PREFIX_DONE, "Move complete.");
+						m_comms->sendStatus(STATUS_PREFIX_DONE, "Open complete.");
+					}
+					break;
+				default:
+					m_state = VALVE_IDLE;
+					m_opPhase = PHASE_IDLE;
+					break;
+			}
+			break;
+
+		case VALVE_JOGGING:
+			switch(m_opPhase) {
+				case PHASE_WAIT_TO_START:
+					if (m_motor->StatusReg().bit.StepsActive) {
+						m_opPhase = PHASE_MOVING;
+					} else if (Milliseconds() - m_moveStartTime > 500) {
+						m_state = VALVE_OPERATION_ERROR;
+						m_opPhase = PHASE_IDLE;
+						m_comms->sendStatus(STATUS_PREFIX_ERROR, "Move failed: Motor did not start.");
+					}
+					break;
+				case PHASE_MOVING:
+					if (checkTorqueLimit()) { // Expected stop for jog
+						m_state = VALVE_IDLE;
+						m_opPhase = PHASE_IDLE;
+					} else if (!m_motor->StatusReg().bit.StepsActive) {
+						m_state = VALVE_IDLE; // Success
+						m_opPhase = PHASE_IDLE;
+						m_comms->sendStatus(STATUS_PREFIX_DONE, "Jog complete.");
 					}
 					break;
 				default:
@@ -360,10 +380,36 @@ void PinchValve::moveSteps(long steps, int velocity_sps, int accel_sps2) {
 	}
 }
 
-void PinchValve::enable() { m_motor->EnableRequest(true); }
-void PinchValve::disable() { m_motor->EnableRequest(false); }
-void PinchValve::abort() { m_motor->MoveStopDecel(); m_state = VALVE_IDLE; }
-void PinchValve::reset() { if (m_motor->StatusReg().bit.StepsActive) { m_motor->MoveStopDecel(); } m_state = VALVE_IDLE; }
+void PinchValve::enable() {
+	m_motor->EnableRequest(true);
+	char msg[64];
+	snprintf(msg, sizeof(msg), "%s motor enabled.", m_name);
+	m_comms->sendStatus(STATUS_PREFIX_INFO, msg);
+}
+
+void PinchValve::disable() {
+	m_motor->EnableRequest(false);
+	char msg[64];
+	snprintf(msg, sizeof(msg), "%s motor disabled.", m_name);
+	m_comms->sendStatus(STATUS_PREFIX_INFO, msg);
+}
+
+void PinchValve::abort() {
+	if (m_motor->StatusReg().bit.StepsActive) {
+		m_motor->MoveStopDecel();
+	}
+	reset();
+}
+
+void PinchValve::reset() {
+	if (m_motor->StatusReg().bit.StepsActive) {
+		m_motor->MoveStopDecel();
+	}
+	m_state = VALVE_IDLE;
+	m_homingPhase = HOMING_PHASE_IDLE;
+	m_opPhase = PHASE_IDLE;
+	m_firstTorqueReading = true;
+}
 
 /**
  * @brief Gets the instantaneous, raw torque value from the motor.

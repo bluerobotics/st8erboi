@@ -146,8 +146,6 @@ Command CommsController::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
 	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS;
-	if (strncmp(msg, CMD_STR_SET_PEER_IP, strlen(CMD_STR_SET_PEER_IP)) == 0) return CMD_SET_PEER_IP;
-	if (strcmp(msg, CMD_STR_CLEAR_PEER_IP) == 0) return CMD_CLEAR_PEER_IP;
 
 	// Injector Motion Commands
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;

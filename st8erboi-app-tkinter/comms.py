@@ -27,6 +27,7 @@ except OSError as e:
 
 # MODIFIED: Added a threading lock to prevent race conditions on the socket.
 socket_lock = threading.Lock()
+devices_lock = threading.Lock()
 
 devices = {
     "fillhead": {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0},
@@ -64,7 +65,8 @@ def discover(device_key, gui_refs):
 def send_to_device(device_key, msg, gui_refs):
     """Sends a message to a specific device if its IP is known."""
     terminal_cb_func = gui_refs.get('terminal_cb')
-    device_ip = devices[device_key].get("ip")
+    with devices_lock:
+        device_ip = devices[device_key].get("ip")
     if device_ip:
         # MODIFIED: Added a lock to ensure thread-safe socket access.
         with socket_lock:
@@ -83,39 +85,41 @@ def monitor_connections(gui_refs):
     terminal_cb = gui_refs.get('terminal_cb')
     while True:
         now = time.time()
-        for key, device in devices.items():
-            prev_conn_status = device["connected"]
+        with devices_lock:
+            for key, device in devices.items():
+                prev_conn_status = device["connected"]
 
-            if prev_conn_status and (now - device["last_rx"]) > TIMEOUT_THRESHOLD:
-                device["connected"] = False
-                device["ip"] = None
+                if prev_conn_status and (now - device["last_rx"]) > TIMEOUT_THRESHOLD:
+                    device["connected"] = False
+                    device["ip"] = None
 
-                if prev_conn_status and not device["connected"]:
-                    status_text = f"🔌 {key.capitalize()} Disconnected"
-                    log_to_terminal(status_text, terminal_cb)
-                    gui_refs[f'status_var_{key}'].set(status_text)
+                    if prev_conn_status and not device["connected"]:
+                        status_text = f"🔌 {key.capitalize()} Disconnected"
+                        log_to_terminal(status_text, terminal_cb)
+                        gui_refs[f'status_var_{key}'].set(status_text)
 
-            if not device["connected"]:
-                if now - device["last_discovery_attempt"] > DISCOVERY_INTERVAL:
-                    discover(key, gui_refs)
-                    device["last_discovery_attempt"] = now
+                if not device["connected"]:
+                    if now - device["last_discovery_attempt"] > DISCOVERY_INTERVAL:
+                        discover(key, gui_refs)
+                        device["last_discovery_attempt"] = now
 
         time.sleep(HEARTBEAT_INTERVAL)
 
 
 def handle_connection(device_key, source_ip, gui_refs):
     """Handles the logic for a new or existing connection."""
-    device = devices[device_key]
+    with devices_lock:
+        device = devices[device_key]
 
-    if not device["connected"] or device["ip"] != source_ip:
-        device["ip"] = source_ip
-        device["connected"] = True
+        if not device["connected"] or device["ip"] != source_ip:
+            device["ip"] = source_ip
+            device["connected"] = True
 
-        status_text = f"✅ {device_key.capitalize()} Connected ({source_ip})"
-        log_to_terminal(status_text, gui_refs.get('terminal_cb'))
-        gui_refs[f'status_var_{device_key}'].set(status_text)
+            status_text = f"✅ {device_key.capitalize()} Connected ({source_ip})"
+            log_to_terminal(status_text, gui_refs.get('terminal_cb'))
+            gui_refs[f'status_var_{device_key}'].set(status_text)
 
-    device["last_rx"] = time.time()
+        device["last_rx"] = time.time()
 
 
 # --- Parser Functions ---

@@ -170,6 +170,13 @@ void Fillhead::dispatchCommand(const Message& msg) {
     switch (command) {
         // --- System-Level Commands (Handled by Fillhead) ---
         case CMD_DISCOVER: {
+            // This is a special case. The discover command is broadcast, so we might
+            // receive one intended for the gantry. If the command string doesn't
+            // match ours, we should just silently ignore it.
+            if (strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
+                return; // Not for us, so exit quietly.
+            }
+
             char* portStr = strstr(msg.buffer, "PORT=");
             if (portStr) {
                 m_comms.setGuiIp(msg.remoteIp);

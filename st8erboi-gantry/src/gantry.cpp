@@ -183,6 +183,13 @@ void Gantry::handleMessage(const Message& msg) {
 
         // --- Miscellaneous Commands ---
         case CMD_DISCOVER: {
+            // This is a special case. The discover command is broadcast, so we might
+            // receive one intended for the fillhead. If the command string doesn't
+            // match ours, we should just silently ignore it.
+            if (strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
+                return; // Not for us, so exit quietly.
+            }
+
             // Extract the GUI's listening port from the discovery message.
             char* portStr = strstr(msg.buffer, "PORT=");
             if (portStr) {

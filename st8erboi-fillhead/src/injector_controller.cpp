@@ -686,6 +686,14 @@ void Injector::fullyResetActiveDispenseOperation() {
 const char* Injector::getTelemetryString() {
     float displayTorque0 = getSmoothedTorque(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
     float displayTorque1 = getSmoothedTorque(m_motorB, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
+
+    // When motors are idle, the driver reports a sentinel value. Convert this to 0 for telemetry.
+    if (displayTorque0 == TORQUE_SENTINEL_INVALID_VALUE) {
+        displayTorque0 = 0.0f;
+    }
+    if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) {
+        displayTorque1 = 0.0f;
+    }
     
     long current_pos_steps_m0 = m_motorA->PositionRefCommanded();
     float machine_pos_mm = (float)(current_pos_steps_m0 - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;

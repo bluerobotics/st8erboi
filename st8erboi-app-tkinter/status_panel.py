@@ -40,15 +40,6 @@ def create_status_bar(parent, shared_gui_refs):
 
         return tracer
 
-    def make_injector_axis_tracer(var1, var2, labels_to_color):
-        def tracer(*args):
-            is_homed = var1.get() == "Homed" and var2.get() == "Homed"
-            color = "lightgreen" if is_homed else "#db2828"
-            for label in labels_to_color:
-                label.config(fg=color)
-
-        return tracer
-
     def make_torque_tracer(double_var, string_var):
         def tracer(*args):
             try:
@@ -120,11 +111,16 @@ def create_status_bar(parent, shared_gui_refs):
     injector_torque_widget = create_torque_widget(injector_dist_frame, shared_gui_refs['torque0_var'], bar_height)
     injector_torque_widget.grid(row=0, column=2, rowspan=2, sticky='ns', padx=(10, 0))
 
-    injector_tracer = make_injector_axis_tracer(shared_gui_refs['homed0_var'], shared_gui_refs['homed1_var'],
-                                                [machine_label, cartridge_label])
-    shared_gui_refs['homed0_var'].trace_add('write', injector_tracer)
-    shared_gui_refs['homed1_var'].trace_add('write', injector_tracer)
-    injector_tracer()
+    # Create and attach independent tracers for machine and cartridge homing status.
+    machine_homed_var = shared_gui_refs['homed0_var']
+    machine_label.tracer = make_homed_tracer(machine_homed_var, machine_label)
+    machine_homed_var.trace_add('write', machine_label.tracer)
+    machine_label.tracer()
+
+    cartridge_homed_var = shared_gui_refs['homed1_var']
+    cartridge_label.tracer = make_homed_tracer(cartridge_homed_var, cartridge_label)
+    cartridge_homed_var.trace_add('write', cartridge_label.tracer)
+    cartridge_label.tracer()
 
     # --- Pinch Axes ---
     # MODIFIED: Updated to use new, specific variable names for pinch valves.
