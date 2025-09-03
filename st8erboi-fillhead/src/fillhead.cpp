@@ -34,11 +34,11 @@ Fillhead::Fillhead() :
     // The CommsController object MUST be constructed first.
     m_comms(),
     // Pass the comms pointer to all sub-controllers that need it.
-    m_injector(&MOTOR_INJECTOR_A, &MOTOR_INJECTOR_B, &m_comms),
-    m_injectorValve("inj_valve", &MOTOR_INJECTION_VALVE, &m_comms),
-    m_vacuumValve("vac_valve", &MOTOR_VACUUM_VALVE, &m_comms),
-    m_heater(&m_comms),
-    m_vacuum(&m_comms)
+    m_injector(&MOTOR_INJECTOR_A, &MOTOR_INJECTOR_B, this),
+    m_injectorValve("inj_valve", &MOTOR_INJECTION_VALVE, this),
+    m_vacuumValve("vac_valve", &MOTOR_VACUUM_VALVE, this),
+    m_heater(this),
+    m_vacuum(this)
 {
     // Initialize the main system state.
     m_mainState = STATE_STANDBY;
@@ -66,7 +66,7 @@ void Fillhead::setup() {
     m_vacuumValve.setup();
     m_heater.setup();
     m_vacuum.setup();
-    m_comms.sendStatus(STATUS_PREFIX_INFO, "Fillhead system setup complete. All components initialized.");
+    m_comms.reportEvent(STATUS_PREFIX_INFO, "Fillhead system setup complete. All components initialized.");
 }
 
 /**
@@ -128,7 +128,7 @@ void Fillhead::updateState() {
         if (m_injector.isInFault() || m_injectorValve.isInFault() || m_vacuumValve.isInFault()) {
             if (m_mainState != STATE_ERROR) {
                 m_mainState = STATE_ERROR;
-                m_comms.sendStatus(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Use CLEAR_ERRORS to reset.");
+                m_comms.reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Use CLEAR_ERRORS to reset.");
             }
         }
         // If no faults, determine if the system is busy or in standby.
@@ -161,7 +161,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
     // If the system is in an error state, block most commands.
     if (m_mainState == STATE_ERROR) {
         if (command != CMD_CLEAR_ERRORS && command != CMD_DISABLE && command != CMD_DISCOVER) {
-            m_comms.sendStatus(STATUS_PREFIX_ERROR, "Command ignored: System is in ERROR state. Send CLEAR_ERRORS to reset.");
+            m_comms.reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System is in ERROR state. Send CLEAR_ERRORS to reset.");
             return;
         }
     }
@@ -188,7 +188,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
                 m_comms.setGuiIp(msg.remoteIp);
                 m_comms.setGuiPort(atoi(portStr + 5));
                 m_comms.setGuiDiscovered(true);
-                m_comms.sendStatus(STATUS_PREFIX_DISCOVERY, "FILLHEAD DISCOVERED");
+                m_comms.reportEvent(STATUS_PREFIX_DISCOVERY, "FILLHEAD DISCOVERED");
             }
             break;
         }
@@ -246,7 +246,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
         // --- Default/Unknown ---
         case CMD_UNKNOWN:
         default:
-            m_comms.sendStatus(STATUS_PREFIX_ERROR, "Unknown command sent to Fillhead.");
+            m_comms.reportEvent(STATUS_PREFIX_ERROR, "Unknown command sent to Fillhead.");
             break;
     }
 }
@@ -298,9 +298,9 @@ void Fillhead::enable() {
         m_injector.enable();
         m_injectorValve.enable();
         m_vacuumValve.enable();
-        m_comms.sendStatus(STATUS_PREFIX_DONE, "System ENABLE complete. Now in STANDBY state.");
+        m_comms.reportEvent(STATUS_PREFIX_DONE, "System ENABLE complete. Now in STANDBY state.");
     } else {
-        m_comms.sendStatus(STATUS_PREFIX_INFO, "System already enabled.");
+        m_comms.reportEvent(STATUS_PREFIX_INFO, "System already enabled.");
     }
 }
 
@@ -313,26 +313,26 @@ void Fillhead::disable() {
     m_injector.disable();
     m_injectorValve.disable();
     m_vacuumValve.disable();
-    m_comms.sendStatus(STATUS_PREFIX_DONE, "System DISABLE complete.");
+    m_comms.reportEvent(STATUS_PREFIX_DONE, "System DISABLE complete.");
 }
 
 /**
  * @brief Halts all motion and resets the system state to standby.
  */
 void Fillhead::abort() {
-    m_comms.sendStatus(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
+    m_comms.reportEvent(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
     m_injector.abortMove();
     m_injectorValve.abort();
     m_vacuumValve.abort();
     standbyMode(); // Reset states after stopping motion.
-    m_comms.sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
+    m_comms.reportEvent(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
 /**
  * @brief Resets any error states, clears motor faults, and returns the system to standby.
  */
 void Fillhead::clearErrors() {
-    m_comms.sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
+    m_comms.reportEvent(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
 
     // First, reset the software state of all components.
     m_injector.reset();
@@ -351,7 +351,7 @@ void Fillhead::clearErrors() {
     m_vacuumValve.enable();
 
     m_mainState = STATE_STANDBY;
-    m_comms.sendStatus(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
+    m_comms.reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
 }
 
 /**
@@ -363,7 +363,19 @@ void Fillhead::standbyMode() {
     m_vacuumValve.reset();
     m_vacuum.resetState();
     m_mainState = STATE_STANDBY;
-    m_comms.sendStatus(STATUS_PREFIX_INFO, "System is in STANDBY state.");
+    m_comms.reportEvent(STATUS_PREFIX_INFO, "System is in STANDBY state.");
+}
+
+/**
+ * @brief Public interface to send a status message.
+ * @details This wrapper method allows owned objects (like an Injector) to send
+ * status messages (INFO, DONE, ERROR) through the Fillhead's CommsController
+ * without needing a direct pointer to it.
+ * @param statusType The prefix for the message (e.g., "INFO: ").
+ * @param message The content of the message to send.
+ */
+void Fillhead::reportEvent(const char* statusType, const char* message) {
+    m_comms.reportEvent(statusType, message);
 }
 
 

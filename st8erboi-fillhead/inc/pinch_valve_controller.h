@@ -5,6 +5,8 @@
 #include "ClearCore.h"
 #include "commands.h"
 
+class Fillhead; // Forward declaration
+
 /**
  * @enum PinchValveState
  * @brief Defines the main operational states of a pinch valve.
@@ -35,9 +37,9 @@ public:
 	 * @brief Constructs a new PinchValve object.
 	 * @param name A string identifier for the valve (e.g., "InjectionValve").
 	 * @param motor A pointer to the ClearCore MotorDriver object for this valve.
-	 * @param comms A pointer to the CommsController for sending messages.
+	 * @param controller A pointer to the main Fillhead controller.
 	 */
-	PinchValve(const char* name, MotorDriver* motor, CommsController* comms);
+	PinchValve(const char* name, MotorDriver* motor, Fillhead* controller);
 
 	/**
 	 * @brief Initializes the pinch valve motor and configuration.
@@ -151,6 +153,13 @@ private:
 	bool checkTorqueLimit();
 
 	/**
+	 * @brief Formats and sends a status message via the main Fillhead controller.
+	 * @param statusType The prefix for the message (e.g., "INFO: ").
+	 * @param message The content of the message to send.
+	 */
+	void reportEvent(const char* statusType, const char* message);
+
+	/**
 	 * @enum OperatingPhase
 	 * @brief Defines the sub-states for simple motion operations like open, close, or jog.
 	 */
@@ -189,8 +198,8 @@ private:
 	const char* m_name;
 	/// @brief Pointer to the motor driver.
 	MotorDriver* m_motor;
-	/// @brief Pointer to the communications controller.
-	CommsController* m_comms;
+	/// @brief Pointer to the main Fillhead controller.
+	Fillhead* m_controller;
 	/// @brief The main state of the pinch valve.
 	PinchValveState m_state;
 	/// @brief The current phase of the homing sequence.

@@ -116,7 +116,7 @@ float Axis::getPositionMm() const {
 
 void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torque, MoveType moveType) {
 	if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
-		sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
+		reportEvent(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
 		return;
 	}
 	if (isMoving()) {
@@ -124,7 +124,7 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 	}
 
 	if (!m_homed) {
-		sendStatus(STATUS_PREFIX_ERROR, "Cannot MOVE: Axis must be homed first.");
+		reportEvent(STATUS_PREFIX_ERROR, "Cannot MOVE: Axis must be homed first.");
 		return;
 	}
 
@@ -145,7 +145,7 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 		char errorMsg[128];
 		snprintf(errorMsg, sizeof(errorMsg), "Move command to %.2fmm exceeds limits [%.2f, %.2f].",
 		finalTargetPosMm, m_minPosMm, m_maxPosMm);
-		sendStatus(STATUS_PREFIX_ERROR, errorMsg);
+		reportEvent(STATUS_PREFIX_ERROR, errorMsg);
 		return;
 	}
 
@@ -155,7 +155,7 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 		if (m_activeCommand) {
 			char doneMsg[64];
 			snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeCommand);
-			sendStatus(STATUS_PREFIX_DONE, doneMsg);
+			reportEvent(STATUS_PREFIX_DONE, doneMsg);
 			m_activeCommand = nullptr; // Clear the command after completion
 		}
 		return; // Exit the function, remaining in standby
@@ -186,7 +186,7 @@ void Axis::move(const char* args) {
 		moveType = ABSOLUTE;
 	}
 	else {
-		sendStatus(STATUS_PREFIX_ERROR, "Invalid MOVE format. Use [ABS|INC] <pos> <vel> <accel> <torque>");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid MOVE format. Use [ABS|INC] <pos> <vel> <accel> <torque>");
 		return;
 	}
 
@@ -196,21 +196,21 @@ void Axis::move(const char* args) {
 	
 	char infoMsg[128];
 	snprintf(infoMsg, sizeof(infoMsg), "%s initiated", m_activeCommand);
-	sendStatus(STATUS_PREFIX_INFO, infoMsg);
+	reportEvent(STATUS_PREFIX_INFO, infoMsg);
 	startMove(target_mm, vel_mms, accel_mms2, torque, moveType);
 }
 
 void Axis::home(const char* args) {
 	if (!m_homingSensor1) {
-		sendStatus(STATUS_PREFIX_ERROR, "Homing not configured for this axis.");
+		reportEvent(STATUS_PREFIX_ERROR, "Homing not configured for this axis.");
 		return;
 	}
 	if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
-		sendStatus(STATUS_PREFIX_ERROR, "Cannot start homing: Motor in fault");
+		reportEvent(STATUS_PREFIX_ERROR, "Cannot start homing: Motor in fault");
 		return;
 	}
 	if (isMoving()) {
-		sendStatus(STATUS_PREFIX_ERROR, "Cannot start homing: Axis already moving");
+		reportEvent(STATUS_PREFIX_ERROR, "Cannot start homing: Axis already moving");
 		return;
 	}
 	
@@ -226,7 +226,7 @@ void Axis::home(const char* args) {
 
 	char infoMsg[128];
 	snprintf(infoMsg, sizeof(infoMsg), "%s initiated with max travel of %.2f mm", m_activeCommand, max_dist_mm);
-	sendStatus(STATUS_PREFIX_INFO, infoMsg);
+	reportEvent(STATUS_PREFIX_INFO, infoMsg);
 
 	m_homed = false;
 	m_state = STATE_HOMING;
@@ -252,7 +252,7 @@ void Axis::updateState() {
 		
 		case STATE_STARTING_MOVE:
 		if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
-			sendStatus(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
+			reportEvent(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
 			m_state = STATE_STANDBY;
 			return;
 		}
@@ -264,14 +264,14 @@ void Axis::updateState() {
 		case STATE_MOVING:
 		if (m_limitSensor && m_limitSensor->State()) {
 			abort();
-			sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to limit switch trigger.");
+			reportEvent(STATUS_PREFIX_ERROR, "MOVE aborted due to limit switch trigger.");
 			m_state = STATE_STANDBY;
 			m_activeCommand = nullptr;
 			break;
 		}
 		if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
 			abort();
-			sendStatus(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit.");
+			reportEvent(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit.");
 			m_state = STATE_STANDBY;
 			m_activeCommand = nullptr;
 		}
@@ -279,7 +279,7 @@ void Axis::updateState() {
 			if (m_activeCommand) {
 				char doneMsg[64];
 				snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeCommand);
-				sendStatus(STATUS_PREFIX_DONE, doneMsg);
+				reportEvent(STATUS_PREFIX_DONE, doneMsg);
 				m_activeCommand = nullptr;
 			}
 			m_state = STATE_STANDBY;
@@ -289,7 +289,7 @@ void Axis::updateState() {
 		case STATE_HOMING: {
 			if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
 				abort();
-				sendStatus(STATUS_PREFIX_ERROR, "Homing failed: Motor in fault.");
+				reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motor in fault.");
 				m_state = STATE_STANDBY;
 				homingPhase = HOMING_NONE;
 				m_activeCommand = nullptr;
@@ -298,7 +298,7 @@ void Axis::updateState() {
 
 			switch (homingPhase) {
 				case RAPID_SEARCH_START: {
-					sendStatus(STATUS_PREFIX_INFO, "Homing: Starting rapid search.");
+					reportEvent(STATUS_PREFIX_INFO, "Homing: Starting rapid search.");
 					long rapid_search_steps = -m_homingDistanceSteps;
 					if (strcmp(m_name, "Z") == 0) {
 						rapid_search_steps = m_homingDistanceSteps;
@@ -319,20 +319,20 @@ void Axis::updateState() {
 					if (sensor1_triggered && !m_motor1_homed) {
 						m_motor1->MoveStopAbrupt();
 						m_motor1_homed = true;
-						sendStatus(STATUS_PREFIX_INFO, "Homing: Motor 1 sensor hit.");
+						reportEvent(STATUS_PREFIX_INFO, "Homing: Motor 1 sensor hit.");
 					}
 					if (m_motor2 && sensor2_triggered && !m_motor2_homed) {
 						m_motor2->MoveStopAbrupt();
 						m_motor2_homed = true;
-						sendStatus(STATUS_PREFIX_INFO, "Homing: Motor 2 sensor hit.");
+						reportEvent(STATUS_PREFIX_INFO, "Homing: Motor 2 sensor hit.");
 					}
 
 					if (m_motor1_homed && (m_motor2 == nullptr || m_motor2_homed)) {
-						sendStatus(STATUS_PREFIX_INFO, "Homing: Rapid search complete.");
+						reportEvent(STATUS_PREFIX_INFO, "Homing: Rapid search complete.");
 						homingPhase = BACKOFF_START;
 						} else if (!isMoving()) {
 						abort();
-						sendStatus(STATUS_PREFIX_ERROR, "Homing failed: Axis stopped before sensor was triggered.");
+						reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Axis stopped before sensor was triggered.");
 						m_state = STATE_STANDBY;
 						homingPhase = HOMING_NONE;
 					}
@@ -340,7 +340,7 @@ void Axis::updateState() {
 				}
 				
 				case BACKOFF_START: {
-					sendStatus(STATUS_PREFIX_INFO, "Homing: Starting backoff.");
+					reportEvent(STATUS_PREFIX_INFO, "Homing: Starting backoff.");
 					long backoff_steps = m_homingBackoffSteps;
 					if (strcmp(m_name, "Z") == 0) {
 						backoff_steps = -m_homingBackoffSteps;
@@ -356,13 +356,13 @@ void Axis::updateState() {
 				break;
 				case BACKOFF_MOVING:
 				if (!isMoving()) {
-					sendStatus(STATUS_PREFIX_INFO, "Homing: Backoff complete.");
+					reportEvent(STATUS_PREFIX_INFO, "Homing: Backoff complete.");
 					homingPhase = SLOW_SEARCH_START;
 				}
 				break;
 				
 				case SLOW_SEARCH_START: {
-					sendStatus(STATUS_PREFIX_INFO, "Homing: Starting slow search.");
+					reportEvent(STATUS_PREFIX_INFO, "Homing: Starting slow search.");
 					m_motor1_homed = false;
 					m_motor2_homed = false;
 					long slow_search_steps = -m_homingBackoffSteps * 2;
@@ -392,11 +392,11 @@ void Axis::updateState() {
 					}
 
 					if (m_motor1_homed && (m_motor2 == nullptr || m_motor2_homed)) {
-						sendStatus(STATUS_PREFIX_INFO, "Homing: Precise position found. Moving to offset.");
+						reportEvent(STATUS_PREFIX_INFO, "Homing: Precise position found. Moving to offset.");
 						homingPhase = SET_OFFSET_START;
 						} else if (!isMoving()) {
 						abort();
-						sendStatus(STATUS_PREFIX_ERROR, "Homing failed during slow search.");
+						reportEvent(STATUS_PREFIX_ERROR, "Homing failed during slow search.");
 						m_state = STATE_STANDBY;
 						homingPhase = HOMING_NONE;
 					}
@@ -419,7 +419,7 @@ void Axis::updateState() {
 				break;
 				case SET_OFFSET_MOVING:
 				if (!isMoving()) {
-					sendStatus(STATUS_PREFIX_INFO, "Homing: Offset position reached.");
+					reportEvent(STATUS_PREFIX_INFO, "Homing: Offset position reached.");
 					homingPhase = SET_ZERO;
 				}
 				break;
@@ -432,7 +432,7 @@ void Axis::updateState() {
 				if (m_activeCommand) {
 					char doneMsg[64];
 					snprintf(doneMsg, sizeof(doneMsg), "%s complete. Current position: %.2f", m_activeCommand, getPositionMm());
-					sendStatus(STATUS_PREFIX_DONE, doneMsg);
+					reportEvent(STATUS_PREFIX_DONE, doneMsg);
 					m_activeCommand = nullptr;
 				}
 				m_state = STATE_STANDBY;
@@ -441,7 +441,7 @@ void Axis::updateState() {
 
 				default:
 				abort();
-				sendStatus(STATUS_PREFIX_ERROR, "Unknown homing phase, aborting.");
+				reportEvent(STATUS_PREFIX_ERROR, "Unknown homing phase, aborting.");
 				m_state = STATE_STANDBY;
 				homingPhase = HOMING_NONE;
 				break;
@@ -475,10 +475,10 @@ Axis::AxisState Axis::getState() const {
 	return m_state;
 }
 
-void Axis::sendStatus(const char* statusType, const char* message) {
+void Axis::reportEvent(const char* statusType, const char* message) {
 	char fullMsg[128];
 	snprintf(fullMsg, sizeof(fullMsg), "Axis %s: %s", m_name, message);
-	m_controller->sendStatus(statusType, fullMsg);
+	m_controller->reportEvent(statusType, fullMsg);
 }
 
 bool Axis::isEnabled() {

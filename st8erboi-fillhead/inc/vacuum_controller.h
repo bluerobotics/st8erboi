@@ -4,6 +4,8 @@
 #include "comms_controller.h"
 #include "commands.h"
 
+class Fillhead; // Forward declaration
+
 /**
  * @enum VacuumState
  * @brief Defines the operational state of the vacuum system.
@@ -29,10 +31,9 @@ class VacuumController {
 	public:
 	/**
 	 * @brief Constructs a new VacuumController object.
-	 * @param comms A pointer to the CommsController instance for communication tasks
-	 *              like sending status messages and telemetry.
+	 * @param controller A pointer to the main Fillhead controller for communication tasks.
 	 */
-	VacuumController(CommsController* comms);
+	VacuumController(Fillhead* controller);
 
 	/**
 	 * @brief Initializes the hardware and software components for the vacuum controller.
@@ -84,8 +85,15 @@ class VacuumController {
 	bool isBusy() const;
 
 	private:
-	/// @brief Pointer to the CommsController for sending messages.
-	CommsController* m_comms;
+	/**
+	 * @brief Formats and sends a status message via the main Fillhead controller.
+	 * @param statusType The prefix for the message (e.g., "INFO: ").
+	 * @param message The content of the message to send.
+	 */
+	void reportEvent(const char* statusType, const char* message);
+	
+	/// @brief Pointer to the main Fillhead controller for sending messages.
+	Fillhead* m_controller;
 	/// @brief The current operational state of the vacuum system.
 	VacuumState m_state;
 	/// @brief The raw vacuum pressure reading from the sensor in PSIG.

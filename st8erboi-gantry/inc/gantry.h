@@ -73,7 +73,7 @@ public:
      * @param statusType The prefix for the message (e.g., "INFO: ").
      * @param message The content of the message to send.
      */
-    void sendStatus(const char* statusType, const char* message);
+    void reportEvent(const char* statusType, const char* message);
 
 private:
     //================================================================================
@@ -87,17 +87,6 @@ private:
      * @param msg The message object received from the communications queue.
      */
     void message(const Message& msg);
-
-    /**
-     * @brief Sets the IP address of the peer device for peer-to-peer communication.
-     * @param msg The full command message containing the IP address.
-     */
-    void setPeerIp(const char* msg);
-
-    /**
-     * @brief Clears the stored peer IP address.
-     */
-    void clearPeerIp();
 
     /**
      * @brief Aborts all motion on all axes immediately.

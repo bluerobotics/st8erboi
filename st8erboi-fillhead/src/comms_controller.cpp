@@ -91,7 +91,7 @@ void CommsController::processTxQueue() {
 	}
 }
 
-void CommsController::sendStatus(const char* statusType, const char* message) {
+void CommsController::reportEvent(const char* statusType, const char* message) {
 	char fullMsg[MAX_MESSAGE_LENGTH];
 	snprintf(fullMsg, sizeof(fullMsg), "%s%s", statusType, message);
 	

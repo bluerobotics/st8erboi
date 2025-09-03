@@ -4,6 +4,8 @@
 #include "comms_controller.h"
 #include "commands.h"
 
+class Fillhead; // Forward declaration
+
 /**
  * @enum HomingState
  * @brief Defines the active homing operation for the injector motors.
@@ -63,9 +65,9 @@ public:
      * @brief Constructs a new Injector object.
      * @param motorA Pointer to the primary ClearCore motor driver.
      * @param motorB Pointer to the secondary (ganged) ClearCore motor driver.
-     * @param comms Pointer to the CommsController for sending messages.
+     * @param controller Pointer to the main Fillhead controller.
      */
-    Injector(MotorDriver* motorA, MotorDriver* motorB, CommsController* comms);
+    Injector(MotorDriver* motorA, MotorDriver* motorB, Fillhead* controller);
 
     /**
      * @brief Initializes the injector motors and configuration.
@@ -131,6 +133,7 @@ private:
     bool checkTorqueLimit();
     void finalizeAndResetActiveDispenseOperation(bool success);
     void fullyResetActiveDispenseOperation();
+    void reportEvent(const char* statusType, const char* message);
 
     void jogMove(const char* args);
     void machineHome();
@@ -143,7 +146,7 @@ private:
     void cancelOperation();
     void setTorqueOffset(const char* args);
     
-    CommsController* m_comms;   ///< Pointer to the communications controller.
+    Fillhead* m_controller;      ///< Pointer to the main Fillhead controller.
     MotorDriver* m_motorA;      ///< Pointer to the primary motor driver.
     MotorDriver* m_motorB;      ///< Pointer to the secondary motor driver.
 

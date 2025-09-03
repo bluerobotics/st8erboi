@@ -1,9 +1,10 @@
 #include "heater_controller.h"
+#include "fillhead.h"
 #include <stdio.h>
 #include <stdlib.h>
 
-HeaterController::HeaterController(CommsController* comms) {
-	m_comms = comms;
+HeaterController::HeaterController(Fillhead* controller) {
+	m_controller = controller;
 	m_heaterState = HEATER_OFF;
 	m_temperatureCelsius = 0.0f;
 	m_smoothedTemperatureCelsius = 0.0f;
@@ -52,9 +53,9 @@ void HeaterController::heaterOn() {
 	if (m_heaterState != HEATER_PID_ACTIVE) {
 		resetPID(); // Reset PID terms before starting
 		m_heaterState = HEATER_PID_ACTIVE;
-		m_comms->sendStatus(STATUS_PREFIX_DONE, "HEATER_ON: PID control activated.");
+		reportEvent(STATUS_PREFIX_DONE, "HEATER_ON: PID control activated.");
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_INFO, "HEATER_ON ignored: PID was already active.");
+		reportEvent(STATUS_PREFIX_INFO, "HEATER_ON ignored: PID was already active.");
 	}
 }
 
@@ -63,9 +64,9 @@ void HeaterController::heaterOff() {
 		m_heaterState = HEATER_OFF;
 		PIN_HEATER_RELAY.State(false); // Ensure relay is off
 		m_pid_output = 0.0f;
-		m_comms->sendStatus(STATUS_PREFIX_DONE, "HEATER_OFF: PID control deactivated.");
+		reportEvent(STATUS_PREFIX_DONE, "HEATER_OFF: PID control deactivated.");
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_INFO, "HEATER_OFF ignored: Heater was already off.");
+		reportEvent(STATUS_PREFIX_INFO, "HEATER_OFF ignored: Heater was already off.");
 	}
 }
 
@@ -73,10 +74,10 @@ void HeaterController::setGains(const char* args) {
 	if (sscanf(args, "%f %f %f", &m_pid_kp, &m_pid_ki, &m_pid_kd) == 3) {
 		char response[128];
 		snprintf(response, sizeof(response), "Heater gains set: P=%.2f, I=%.2f, D=%.2f", m_pid_kp, m_pid_ki, m_pid_kd);
-		m_comms->sendStatus(STATUS_PREFIX_DONE, response);
+		reportEvent(STATUS_PREFIX_DONE, response);
 		resetPID(); // Reset integral and derivative terms after changing gains
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D");
 	}
 }
 
@@ -86,9 +87,9 @@ void HeaterController::setSetpoint(const char* args) {
 		m_pid_setpoint = newSetpoint;
 		char response[128];
 		snprintf(response, sizeof(response), "Heater setpoint changed to %.1f C", m_pid_setpoint);
-		m_comms->sendStatus(STATUS_PREFIX_DONE, response);
+		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid setpoint. Must be between 20 and 200 C.");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid setpoint. Must be between 20 and 200 C.");
 	}
 }
 
@@ -151,6 +152,12 @@ void HeaterController::resetPID() {
 	m_pid_last_error = 0.0f;
 	m_pid_output = 0.0f;
 	m_pid_last_time = Milliseconds();
+}
+
+void HeaterController::reportEvent(const char* statusType, const char* message) {
+	char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
+	snprintf(fullMsg, sizeof(fullMsg), "Heater: %s", message);
+	m_controller->reportEvent(statusType, fullMsg);
 }
 
 const char* HeaterController::getTelemetryString() {

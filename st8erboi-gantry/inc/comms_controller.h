@@ -25,7 +25,7 @@ class CommsController {
 	// Queue Management
 	bool enqueueRx(const char* msg, const IpAddress& ip, uint16_t port);
 	bool dequeueRx(Message& msg);
-	void sendStatus(const char* statusType, const char* message);
+	void reportEvent(const char* statusType, const char* message);
 	bool enqueueTx(const char* msg, const IpAddress& ip, uint16_t port);
 	Command parseCommand(const char* msg);
 

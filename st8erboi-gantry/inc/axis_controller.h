@@ -48,7 +48,7 @@ public:
 	void moveSteps(long steps, int velSps, int accelSps2, int torque);
 	bool checkTorqueLimit(MotorDriver* motor);
 	float getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
-	void sendStatus(const char* statusType, const char* message);
+	void reportEvent(const char* statusType, const char* message);
 
 	Gantry* m_controller;
 	const char* m_name;

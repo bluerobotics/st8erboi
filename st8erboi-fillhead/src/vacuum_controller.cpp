@@ -1,9 +1,10 @@
 #include "vacuum_controller.h"
+#include "fillhead.h"
 #include <cstdio>
 #include <cstdlib>
 
-VacuumController::VacuumController(CommsController* comms) {
-	m_comms = comms;
+VacuumController::VacuumController(Fillhead* controller) {
+	m_controller = controller;
 	m_state = VACUUM_OFF;
 	m_vacuumPressurePsig = 0.0f;
 	m_smoothedVacuumPsig = 0.0f;
@@ -36,7 +37,7 @@ void VacuumController::handleCommand(Command cmd, const char* args) {
 	// Prevent starting a new operation if one is already in progress (except for turning off)
 	if (m_state != VACUUM_OFF && m_state != VACUUM_ACTIVE_HOLD) {
 		if (cmd == CMD_VACUUM_ON || cmd == CMD_VACUUM_LEAK_TEST) {
-			m_comms->sendStatus(STATUS_PREFIX_ERROR, "Vacuum command ignored: An operation is already in progress.");
+			reportEvent(STATUS_PREFIX_ERROR, "Vacuum command ignored: An operation is already in progress.");
 			return;
 		}
 	}
@@ -56,7 +57,7 @@ void VacuumController::handleCommand(Command cmd, const char* args) {
 }
 
 void VacuumController::vacuumOn() {
-	m_comms->sendStatus(STATUS_PREFIX_START, "VACUUM_ON received. Actively holding target pressure.");
+	reportEvent(STATUS_PREFIX_START, "VACUUM_ON received. Actively holding target pressure.");
 	m_state = VACUUM_ACTIVE_HOLD;
 	PIN_VACUUM_RELAY.State(true);
 	PIN_VACUUM_VALVE_RELAY.State(true); // Assuming valve should be open
@@ -64,15 +65,15 @@ void VacuumController::vacuumOn() {
 
 void VacuumController::vacuumOff() {
 	if (m_state == VACUUM_OFF) {
-		m_comms->sendStatus(STATUS_PREFIX_INFO, "VACUUM_OFF ignored: System is already OFF.");
+		reportEvent(STATUS_PREFIX_INFO, "VACUUM_OFF ignored: System is already OFF.");
 		return;
 	}
 	resetState();
-	m_comms->sendStatus(STATUS_PREFIX_DONE, "VACUUM_OFF complete.");
+	reportEvent(STATUS_PREFIX_DONE, "VACUUM_OFF complete.");
 }
 
 void VacuumController::leakTest() {
-	m_comms->sendStatus(STATUS_PREFIX_START, "LEAK_TEST initiated.");
+	reportEvent(STATUS_PREFIX_START, "LEAK_TEST initiated.");
 	m_state = VACUUM_PULLDOWN;
 	m_stateStartTimeMs = Milliseconds();
 	PIN_VACUUM_RELAY.State(true);
@@ -91,13 +92,13 @@ void VacuumController::updateState() {
 		if (m_vacuumPressurePsig <= m_targetPsig) {
 			PIN_VACUUM_RELAY.State(false);      // Pump off
 			PIN_VACUUM_VALVE_RELAY.State(false);  // Close valve to seal system
-			m_comms->sendStatus(STATUS_PREFIX_INFO, "Leak Test: Target reached. Pump off. Settling...");
+			reportEvent(STATUS_PREFIX_INFO, "Leak Test: Target reached. Pump off. Settling...");
 			m_state = VACUUM_SETTLING;
 			m_stateStartTimeMs = Milliseconds();
 			} else if (elapsed_sec > m_rampTimeoutSec) {
 			m_state = VACUUM_ERROR;
 			PIN_VACUUM_RELAY.State(false);
-			m_comms->sendStatus(STATUS_PREFIX_ERROR, "LEAK_TEST FAILED: Did not reach target pressure in time.");
+			reportEvent(STATUS_PREFIX_ERROR, "LEAK_TEST FAILED: Did not reach target pressure in time.");
 		}
 	}
 	else if (m_state == VACUUM_SETTLING) {
@@ -105,7 +106,7 @@ void VacuumController::updateState() {
 			m_leakTestStartPressure = m_smoothedVacuumPsig;
 			char startMsg[STATUS_MESSAGE_BUFFER_SIZE];
 			snprintf(startMsg, sizeof(startMsg), "Leak Test: Starting measurement at %.3f PSI.", m_leakTestStartPressure);
-			m_comms->sendStatus(STATUS_PREFIX_INFO, startMsg);
+			reportEvent(STATUS_PREFIX_INFO, startMsg);
 			m_state = VACUUM_LEAK_TESTING;
 			m_stateStartTimeMs = Milliseconds();
 		}
@@ -116,11 +117,11 @@ void VacuumController::updateState() {
 			m_state = VACUUM_ERROR;
 			char errorMsg[STATUS_MESSAGE_BUFFER_SIZE];
 			snprintf(errorMsg, sizeof(errorMsg), "LEAK_TEST FAILED. Loss of %.3f PSI exceeded limit.", pressure_delta);
-			m_comms->sendStatus(STATUS_PREFIX_ERROR, errorMsg);
+			reportEvent(STATUS_PREFIX_ERROR, errorMsg);
 			} else if (elapsed_sec > m_leakTestDurationSec) {
 			char passMsg[STATUS_MESSAGE_BUFFER_SIZE];
 			snprintf(passMsg, sizeof(passMsg), "LEAK_TEST PASSED. Pressure loss was %.3f PSI.", pressure_delta);
-			m_comms->sendStatus(STATUS_PREFIX_DONE, passMsg);
+			reportEvent(STATUS_PREFIX_DONE, passMsg);
 			resetState();
 		}
 	}
@@ -138,9 +139,9 @@ void VacuumController::setTarget(const char* args) {
 		m_targetPsig = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
 		snprintf(response, sizeof(response), "Vacuum target set to %.2f PSIG.", m_targetPsig);
-		m_comms->sendStatus(STATUS_PREFIX_DONE, response);
+		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid vacuum target. Must be between 0 and -15.");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid vacuum target. Must be between 0 and -15.");
 	}
 }
 
@@ -150,9 +151,9 @@ void VacuumController::setTimeout(const char* args) {
 		m_rampTimeoutSec = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
 		snprintf(response, sizeof(response), "Vacuum ramp timeout set to %.1f seconds.", m_rampTimeoutSec);
-		m_comms->sendStatus(STATUS_PREFIX_DONE, response);
+		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid timeout. Must be between 0.5 and 60.0 seconds.");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid timeout. Must be between 0.5 and 60.0 seconds.");
 	}
 }
 
@@ -162,9 +163,9 @@ void VacuumController::setLeakDelta(const char* args) {
 		m_leakTestDeltaPsig = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
 		snprintf(response, sizeof(response), "Leak test delta P set to %.3f PSI.", m_leakTestDeltaPsig);
-		m_comms->sendStatus(STATUS_PREFIX_DONE, response);
+		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid leak delta. Must be between 0 and 5 PSI.");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid leak delta. Must be between 0 and 5 PSI.");
 	}
 }
 
@@ -174,9 +175,9 @@ void VacuumController::setLeakDuration(const char* args) {
 		m_leakTestDurationSec = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
 		snprintf(response, sizeof(response), "Leak test duration set to %.1f seconds.", m_leakTestDurationSec);
-		m_comms->sendStatus(STATUS_PREFIX_DONE, response);
+		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
-		m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid leak duration. Must be between 1.0 and 120.0 seconds.");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid leak duration. Must be between 1.0 and 120.0 seconds.");
 	}
 }
 
@@ -195,6 +196,12 @@ void VacuumController::updateVacuum() {
 		m_smoothedVacuumPsig = (EWMA_ALPHA_SENSORS * raw_psig) + ((1.0f - EWMA_ALPHA_SENSORS) * m_smoothedVacuumPsig);
 	}
 	m_vacuumPressurePsig = m_smoothedVacuumPsig + VACUUM_PSIG_OFFSET;
+}
+
+void VacuumController::reportEvent(const char* statusType, const char* message) {
+	char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
+	snprintf(fullMsg, sizeof(fullMsg), "Vacuum: %s", message);
+	m_controller->reportEvent(statusType, fullMsg);
 }
 
 const char* VacuumController::getTelemetryString() {

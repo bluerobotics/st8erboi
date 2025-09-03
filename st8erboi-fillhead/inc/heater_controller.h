@@ -4,6 +4,8 @@
 #include "comms_controller.h"
 #include "commands.h"
 
+class Fillhead; // Forward declaration
+
 /**
  * @enum HeaterState
  * @brief Defines the operational state of the heater.
@@ -25,10 +27,9 @@ class HeaterController {
 	public:
 	/**
 	 * @brief Constructs a new HeaterController object.
-	 * @param comms A pointer to the CommsController instance for communication tasks
-	 *              like sending status messages.
+	 * @param controller A pointer to the main Fillhead controller for communication tasks.
 	 */
-	HeaterController(CommsController* comms);
+	HeaterController(Fillhead* controller);
 
 	/**
 	 * @brief Initializes the hardware and software for the heater controller.
@@ -66,8 +67,8 @@ class HeaterController {
 	const char* getTelemetryString();
 
 	private:
-	/// @brief Pointer to the CommsController for sending messages.
-	CommsController* m_comms;
+	/// @brief Pointer to the main Fillhead controller for sending messages.
+	Fillhead* m_controller;
 	/// @brief The current operational state of the heater (ON/OFF).
 	HeaterState m_heaterState;
 	/// @brief The raw temperature reading from the thermocouple in Celsius.
@@ -100,6 +101,13 @@ class HeaterController {
 	 * This is typically called when the heater is turned on or the gains are changed.
 	 */
 	void resetPID();
+
+	/**
+	 * @brief Formats and sends a status message via the main Fillhead controller.
+	 * @param statusType The prefix for the message (e.g., "INFO: ").
+	 * @param message The content of the message to send.
+	 */
+	void reportEvent(const char* statusType, const char* message);
 
 	/**
 	 * @brief Turns the heater on and enables the PID control loop.

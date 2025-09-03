@@ -53,6 +53,16 @@ public:
      */
     void loop();
 
+    /**
+     * @brief Public interface to send a status message.
+     * @details This wrapper method allows owned objects (like an Injector) to send
+     * status messages (INFO, DONE, ERROR) through the Fillhead's CommsController
+     * without needing a direct pointer to it.
+     * @param statusType The prefix for the message (e.g., "INFO: ").
+     * @param message The content of the message to send.
+     */
+    void reportEvent(const char* statusType, const char* message);
+
 private:
     /**
      * @brief Updates the main system state and the state machines of all sub-controllers.

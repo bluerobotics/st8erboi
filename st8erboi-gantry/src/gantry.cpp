@@ -95,8 +95,8 @@ void Gantry::loop() {
  * @param statusType The prefix for the message (e.g., "INFO: ").
  * @param message The content of the message to send.
  */
-void Gantry::sendStatus(const char* statusType, const char* message) {
-    m_comms.sendStatus(statusType, message);
+void Gantry::reportEvent(const char* statusType, const char* message) {
+    m_comms.reportEvent(statusType, message);
 }
 
 /**
@@ -149,8 +149,6 @@ void Gantry::message(const Message& msg) {
 
     switch(command) {
         // --- System & Communication Commands ---
-        case CMD_SET_PEER_IP:   setPeerIp(msg.buffer); break;
-        case CMD_CLEAR_PEER_IP: clearPeerIp(); break;
         case CMD_ABORT:         abortAll(); break;
 
         // --- Axis Motion Commands ---
@@ -166,27 +164,27 @@ void Gantry::message(const Message& msg) {
         // --- Axis Enable/Disable Commands ---
         case CMD_ENABLE_X:
             xAxis.enable();
-            sendStatus(STATUS_PREFIX_DONE, "ENABLE_X complete.");
+            reportEvent(STATUS_PREFIX_DONE, "ENABLE_X complete.");
             break;
         case CMD_DISABLE_X:
             xAxis.disable();
-            sendStatus(STATUS_PREFIX_DONE, "DISABLE_X complete.");
+            reportEvent(STATUS_PREFIX_DONE, "DISABLE_X complete.");
             break;
         case CMD_ENABLE_Y:
             yAxis.enable();
-            sendStatus(STATUS_PREFIX_DONE, "ENABLE_Y complete.");
+            reportEvent(STATUS_PREFIX_DONE, "ENABLE_Y complete.");
             break;
         case CMD_DISABLE_Y:
             yAxis.disable();
-            sendStatus(STATUS_PREFIX_DONE, "DISABLE_Y complete.");
+            reportEvent(STATUS_PREFIX_DONE, "DISABLE_Y complete.");
             break;
         case CMD_ENABLE_Z:
             zAxis.enable();
-            sendStatus(STATUS_PREFIX_DONE, "ENABLE_Z complete.");
+            reportEvent(STATUS_PREFIX_DONE, "ENABLE_Z complete.");
             break;
         case CMD_DISABLE_Z:
             zAxis.disable();
-            sendStatus(STATUS_PREFIX_DONE, "DISABLE_Z complete.");
+            reportEvent(STATUS_PREFIX_DONE, "DISABLE_Z complete.");
             break;
 
         // --- Miscellaneous Commands ---
@@ -197,7 +195,7 @@ void Gantry::message(const Message& msg) {
                 m_comms.setGuiIp(msg.remoteIp);
                 m_comms.setGuiPort(atoi(portStr + 5));
                 m_comms.setGuiDiscovered(true);
-                sendStatus(STATUS_PREFIX_DISCOVERY, "GANTRY DISCOVERED");
+                reportEvent(STATUS_PREFIX_DISCOVERY, "GANTRY DISCOVERED");
             }
             break;
         }
@@ -206,22 +204,6 @@ void Gantry::message(const Message& msg) {
             // For robustness, unknown commands are silently ignored.
             break;
     }
-}
-
-/**
- * @brief Handles the SET_PEER_IP command.
- * @param msg The full message string containing the peer's IP address.
- */
-void Gantry::setPeerIp(const char* msg) {
-    const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
-    m_comms.setPeerIp(IpAddress(ipStr));
-}
-
-/**
- * @brief Handles the CLEAR_PEER_IP command.
- */
-void Gantry::clearPeerIp() {
-    m_comms.clearPeerIp();
 }
 
 /**
@@ -265,7 +247,7 @@ void Gantry::abortAll() {
     xAxis.abort();
     yAxis.abort();
     zAxis.abort();
-    sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
+    reportEvent(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
 //================================================================================

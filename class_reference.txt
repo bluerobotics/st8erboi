@@ -5,7 +5,7 @@
     - Gantry
     - setup
     - loop
-    - sendStatus
+    - reportEvent
 - Private
     - message
     - abortAll
@@ -36,7 +36,7 @@
     - moveSteps
     - checkTorqueLimit
     - getRawTorque
-    - sendStatus
+    - reportEvent
 
 ### CommsController (Gantry)
 - Public
@@ -45,7 +45,7 @@
     - update
     - enqueueRx
     - dequeueRx
-    - sendStatus
+    - reportEvent
     - enqueueTx
     - parseCommand
     - isGuiDiscovered
@@ -68,6 +68,7 @@
     - Fillhead
     - setup
     - loop
+    - reportEvent
 - Private
     - updateState
     - dispatchCommand
@@ -98,6 +99,7 @@
     - checkTorqueLimit
     - finalizeAndResetActiveDispenseOperation
     - fullyResetActiveDispenseOperation
+    - reportEvent
     - jogMove
     - machineHome
     - cartridgeHome
@@ -132,6 +134,7 @@
     - getSmoothedTorque
     - getInstantaneousTorque
     - checkTorqueLimit
+    - reportEvent
 
 ### HeaterController
 - Public
@@ -143,6 +146,7 @@
     - getTelemetryString
 - Private
     - resetPID
+    - reportEvent
     - heaterOn
     - heaterOff
     - setGains
@@ -159,6 +163,7 @@
     - resetState
     - isBusy
 - Private
+    - reportEvent
     - vacuumOn
     - vacuumOff
     - leakTest
@@ -175,7 +180,7 @@
     - enqueueRx
     - dequeueRx
     - enqueueTx
-    - sendStatus
+    - reportEvent
     - parseCommand
     - isGuiDiscovered
     - getGuiIp
