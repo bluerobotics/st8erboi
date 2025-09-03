@@ -192,7 +192,7 @@ class ScriptRunner:
                             if default_val is not None:
                                 full_args.append(str(default_val))
                             elif not param_def.get("optional"):
-                                self.status_callback(f"Error: Missing required parameter for {command_word}", line_num)
+                                self.status_callback(f"Error on L{line_num}: Missing required parameter '{param_def['name']}' for {command_word}.", line_num)
                                 self.is_running = False
                                 break
 
@@ -203,7 +203,7 @@ class ScriptRunner:
                     if send_func:
                         send_func(final_command_str)
                         # Add VACUUM_LEAK_TEST to the list of commands that we wait for a DONE message
-                        if "MOVE" in command_word or "HOME" in command_word or "VACUUM_LEAK_TEST" in command_word:
+                        if "MOVE" in command_word or "HOME" in command_word or "VACUUM_LEAK_TEST" in command_word or "INJECT_STATOR" in command_word or "INJECT_ROTOR" in command_word:
                             commands_to_wait_for.append(command_word)
                 time.sleep(0.05)
 

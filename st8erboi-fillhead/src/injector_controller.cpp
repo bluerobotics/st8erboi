@@ -315,7 +315,12 @@ void Injector::handleCommand(Command cmd, const char* args) {
         case CMD_CARTRIDGE_HOME_MOVE:       cartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_HOME:    moveToCartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: moveToCartridgeRetract(args); break;
-        case CMD_INJECT_MOVE:               injectMove(args); break;
+        case CMD_INJECT_STATOR:
+            initiateInjectMove(args, STATOR_PISTON_A_DIAMETER_MM, STATOR_PISTON_B_DIAMETER_MM, CMD_STR_INJECT_STATOR);
+            break;
+        case CMD_INJECT_ROTOR:
+            initiateInjectMove(args, ROTOR_PISTON_A_DIAMETER_MM, ROTOR_PISTON_B_DIAMETER_MM, CMD_STR_INJECT_ROTOR);
+            break;
         case CMD_PAUSE_INJECTION:           pauseOperation(); break;
         case CMD_RESUME_INJECTION:          resumeOperation(); break;
         case CMD_CANCEL_INJECTION:          cancelOperation(); break;
@@ -494,19 +499,38 @@ void Injector::moveToCartridgeRetract(const char* args) {
 }
 
 /**
- * @brief Handles the INJECT_MOVE command.
+ * @brief Initiates an injection move with dynamically calculated parameters.
+ * @param args The command arguments, containing volume and optional overrides.
+ * @param piston_a_diam The diameter of the 'A' side piston in mm.
+ * @param piston_b_diam The diameter of the 'B' side piston in mm.
+ * @param command_str The string name of the command being executed, for logging.
  */
-void Injector::injectMove(const char* args) {
-    float volume_ml, speed_ml_s, accel_sps2, steps_per_ml;
-    int torque_percent;
+void Injector::initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str) {
+    float volume_ml = 0.0f;
+    // Optional parameters with firmware-defined defaults
+    float speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
+    float accel_sps2 = (float)m_feedDefaultAccelSPS2;
+    int torque_percent = m_feedDefaultTorquePercent;
 
-    if (std::sscanf(args, "%f %f %f %f %d", &volume_ml, &speed_ml_s, &accel_sps2, &steps_per_ml, &torque_percent) == 5) {
-        if (steps_per_ml <= 0.0001f) { m_comms->sendStatus(STATUS_PREFIX_ERROR, "Error: Steps/ml must be positive."); return; }
+    int parsed_count = std::sscanf(args, "%f %f %f %d", &volume_ml, &speed_ml_s, &accel_sps2, &torque_percent);
+
+    if (parsed_count >= 1) { // Only volume is required
+        // --- Calculate steps/ml based on piston geometry ---
+        float radius_a = piston_a_diam / 2.0f;
+        float radius_b = piston_b_diam / 2.0f;
+        float area_a = M_PI * radius_a * radius_a;
+        float area_b = M_PI * radius_b * radius_b;
+        float total_area_mm2 = area_a + area_b;
+        float ml_per_mm = total_area_mm2 / 1000.0f; // 1ml = 1000mm^3
+        float steps_per_ml = STEPS_PER_MM_INJECTOR / ml_per_mm;
+
+        // Basic validation
         if (torque_percent <= 0 || torque_percent > 100) torque_percent = m_feedDefaultTorquePercent;
         if (volume_ml <= 0) { m_comms->sendStatus(STATUS_PREFIX_ERROR, "Error: Inject volume must be positive."); return; }
-        if (speed_ml_s <= 0) { m_comms->sendStatus(STATUS_PREFIX_ERROR, "Error: Inject speed must be positive."); return; }
+        if (speed_ml_s <= 0) speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
         if (accel_sps2 <= 0) accel_sps2 = (float)m_feedDefaultAccelSPS2;
 
+        // Setup and execute the move
         fullyResetActiveDispenseOperation();
         m_state = STATE_FEEDING;
         m_feedState = FEED_INJECT_STARTING;
@@ -518,15 +542,21 @@ void Injector::injectMove(const char* args) {
         m_active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml);
         m_active_op_accel_sps2 = (int)accel_sps2;
         m_active_op_torque_percent = torque_percent;
-        m_activeFeedCommand = CMD_STR_INJECT_MOVE;
+        m_activeFeedCommand = command_str;
         
-        m_comms->sendStatus(STATUS_PREFIX_START, "INJECT_MOVE initiated.");
+        char start_msg[128];
+        snprintf(start_msg, sizeof(start_msg), "%s initiated. (steps/ml: %.2f)", command_str, steps_per_ml);
+        m_comms->sendStatus(STATUS_PREFIX_START, start_msg);
+
         m_torqueLimit = (float)m_active_op_torque_percent;
         startMove(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2);
-        } else {
-        m_comms->sendStatus(STATUS_PREFIX_ERROR, "Invalid INJECT_MOVE format. Expected 5 params.");
+    } else {
+        char error_msg[128];
+        snprintf(error_msg, sizeof(error_msg), "Invalid %s format. At least 1 parameter (volume) is required.", command_str);
+        m_comms->sendStatus(STATUS_PREFIX_ERROR, error_msg);
     }
 }
+
 
 /**
  * @brief Handles the PAUSE_INJECTION command.

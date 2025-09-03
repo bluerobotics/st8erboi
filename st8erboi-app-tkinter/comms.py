@@ -71,8 +71,7 @@ def send_to_device(device_key, msg, gui_refs):
         # MODIFIED: Added a lock to ensure thread-safe socket access.
         with socket_lock:
             try:
-                if "REQUEST_TELEM" not in msg:
-                    log_to_terminal(f"[CMD SENT to {device_key.upper()}]: {msg}", terminal_cb_func)
+                log_to_terminal(f"[CMD SENT to {device_key.upper()}]: {msg}", terminal_cb_func)
                 sock.sendto(msg.encode(), (device_ip, CLEARCORE_PORT))
             except Exception as e:
                 log_to_terminal(f"UDP send error to {device_key} ({device_ip}): {e}", terminal_cb_func)

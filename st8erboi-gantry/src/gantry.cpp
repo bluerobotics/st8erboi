@@ -68,7 +68,7 @@ void Gantry::loop() {
     // 2. Dequeue and process a single command from the Rx queue.
     Message msg;
     if (m_comms.dequeueRx(msg)) {
-        handleMessage(msg);
+        message(msg);
     }
     
     // 3. Update the internal state machines of each axis.
@@ -133,7 +133,13 @@ void Gantry::publishTelemetry() {
  * to the appropriate handler function or Axis object.
  * @param msg The message object received from the communications queue.
  */
-void Gantry::handleMessage(const Message& msg) {
+void Gantry::message(const Message& msg) {
+    // The DISCOVER command is broadcast, so we'll receive messages not intended for us.
+    // If the message is a discovery command but not OUR discovery command, ignore it.
+    if (strncmp(msg.buffer, "DISCOVER_", 9) == 0 && strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
+        return; // This is a discovery command for another device.
+    }
+
     // Parse the command string into a GantryCommand enum.
     Command command = m_comms.parseCommand(msg.buffer);
 
@@ -143,17 +149,19 @@ void Gantry::handleMessage(const Message& msg) {
 
     switch(command) {
         // --- System & Communication Commands ---
+        case CMD_SET_PEER_IP:   setPeerIp(msg.buffer); break;
+        case CMD_CLEAR_PEER_IP: clearPeerIp(); break;
         case CMD_ABORT:         abortAll(); break;
 
         // --- Axis Motion Commands ---
-        case CMD_MOVE_X: xAxis.handleMove(args); break;
-        case CMD_MOVE_Y: yAxis.handleMove(args); break;
-        case CMD_MOVE_Z: zAxis.handleMove(args); break;
+        case CMD_MOVE_X: xAxis.move(args); break;
+        case CMD_MOVE_Y: yAxis.move(args); break;
+        case CMD_MOVE_Z: zAxis.move(args); break;
 
         // --- Axis Homing Commands ---
-        case CMD_HOME_X: xAxis.handleHome(args); break;
-        case CMD_HOME_Y: yAxis.handleHome(args); break;
-        case CMD_HOME_Z: zAxis.handleHome(args); break;
+        case CMD_HOME_X: xAxis.home(args); break;
+        case CMD_HOME_Y: yAxis.home(args); break;
+        case CMD_HOME_Z: zAxis.home(args); break;
 
         // --- Axis Enable/Disable Commands ---
         case CMD_ENABLE_X:
@@ -183,13 +191,6 @@ void Gantry::handleMessage(const Message& msg) {
 
         // --- Miscellaneous Commands ---
         case CMD_DISCOVER: {
-            // This is a special case. The discover command is broadcast, so we might
-            // receive one intended for the fillhead. If the command string doesn't
-            // match ours, we should just silently ignore it.
-            if (strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
-                return; // Not for us, so exit quietly.
-            }
-
             // Extract the GUI's listening port from the discovery message.
             char* portStr = strstr(msg.buffer, "PORT=");
             if (portStr) {
@@ -205,6 +206,22 @@ void Gantry::handleMessage(const Message& msg) {
             // For robustness, unknown commands are silently ignored.
             break;
     }
+}
+
+/**
+ * @brief Handles the SET_PEER_IP command.
+ * @param msg The full message string containing the peer's IP address.
+ */
+void Gantry::setPeerIp(const char* msg) {
+    const char* ipStr = msg + strlen(CMD_STR_SET_PEER_IP);
+    m_comms.setPeerIp(IpAddress(ipStr));
+}
+
+/**
+ * @brief Handles the CLEAR_PEER_IP command.
+ */
+void Gantry::clearPeerIp() {
+    m_comms.clearPeerIp();
 }
 
 /**

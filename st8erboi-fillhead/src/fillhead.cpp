@@ -150,6 +150,12 @@ void Fillhead::updateState() {
  * handles system-level commands itself.
  */
 void Fillhead::dispatchCommand(const Message& msg) {
+    // The DISCOVER command is broadcast, so we'll receive messages not intended for us.
+    // If the message is a discovery command but not OUR discovery command, ignore it.
+    if (strncmp(msg.buffer, "DISCOVER_", 9) == 0 && strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
+        return; // This is a discovery command for another device.
+    }
+
     Command command = m_comms.parseCommand(msg.buffer);
     
     // If the system is in an error state, block most commands.
@@ -186,10 +192,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
             }
             break;
         }
-        case CMD_ENABLE:        handleEnable(); break;
-        case CMD_DISABLE:       handleDisable(); break;
-        case CMD_ABORT:         handleAbort(); break;
-        case CMD_CLEAR_ERRORS:  handleClearErrors(); break;
+        case CMD_ENABLE:        enable(); break;
+        case CMD_DISABLE:       disable(); break;
+        case CMD_ABORT:         abort(); break;
+        case CMD_CLEAR_ERRORS:  clearErrors(); break;
 
         // --- Injector Motor Commands (Delegated to Injector) ---
         case CMD_JOG_MOVE:
@@ -286,7 +292,7 @@ void Fillhead::publishTelemetry() {
 /**
  * @brief Enables all motors and places the system in a ready state.
  */
-void Fillhead::handleEnable() {
+void Fillhead::enable() {
     if (m_mainState == STATE_DISABLED) {
         m_mainState = STATE_STANDBY;
         m_injector.enable();
@@ -301,8 +307,8 @@ void Fillhead::handleEnable() {
 /**
  * @brief Disables all motors and stops all operations.
  */
-void Fillhead::handleDisable() {
-    handleAbort(); // Safest to abort any motion first.
+void Fillhead::disable() {
+    abort(); // Safest to abort any motion first.
     m_mainState = STATE_DISABLED;
     m_injector.disable();
     m_injectorValve.disable();
@@ -313,19 +319,19 @@ void Fillhead::handleDisable() {
 /**
  * @brief Halts all motion and resets the system state to standby.
  */
-void Fillhead::handleAbort() {
+void Fillhead::abort() {
     m_comms.sendStatus(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
     m_injector.abortMove();
     m_injectorValve.abort();
     m_vacuumValve.abort();
-    handleStandbyMode(); // Reset states after stopping motion.
+    standbyMode(); // Reset states after stopping motion.
     m_comms.sendStatus(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
 /**
  * @brief Resets any error states, clears motor faults, and returns the system to standby.
  */
-void Fillhead::handleClearErrors() {
+void Fillhead::clearErrors() {
     m_comms.sendStatus(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
 
     // First, reset the software state of all components.
@@ -351,7 +357,7 @@ void Fillhead::handleClearErrors() {
 /**
  * @brief Resets all component states to their default/idle configuration.
  */
-void Fillhead::handleStandbyMode() {
+void Fillhead::standbyMode() {
     m_injector.reset();
     m_injectorValve.reset();
     m_vacuumValve.reset();

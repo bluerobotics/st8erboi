@@ -127,6 +127,13 @@
 #define PINCH_JOG_DEFAULT_VEL_MMS           5.0f      // Default velocity (mm/s) for pinch valve jog moves.
 #define PINCH_JOG_DEFAULT_ACCEL_MMSS        25.0f     // Default acceleration (mm/s^2) for pinch valve jog moves.
 
+// --- Injection Defaults ---
+#define INJECT_DEFAULT_SPEED_MLS            0.5f      // Default injection speed in ml/s.
+#define STATOR_PISTON_A_DIAMETER_MM         75.0f
+#define STATOR_PISTON_B_DIAMETER_MM         33.0f
+#define ROTOR_PISTON_A_DIAMETER_MM          33.0f
+#define ROTOR_PISTON_B_DIAMETER_MM          33.0f
+
 // --- Feed Defaults ---
 #define FEED_DEFAULT_TORQUE_PERCENT         30        // Default torque limit (%) for feed/inject moves.
 #define FEED_DEFAULT_VELOCITY_MMS           6.25f     // Default velocity (mm/s) for feed/inject moves.

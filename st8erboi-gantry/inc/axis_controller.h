@@ -29,8 +29,8 @@ public:
 	// Made public to be accessible by Gantry
 	
 	void updateState();
-	void handleMove(const char* args);
-	void handleHome(const char* args);
+	void move(const char* args);
+	void home(const char* args);
 	void abort();
 	void enable();
 	void disable();

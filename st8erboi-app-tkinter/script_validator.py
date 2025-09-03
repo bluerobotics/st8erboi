@@ -7,27 +7,19 @@ Also contains the script validation logic.
 
 COMMANDS = {
     # --- Fillhead Commands (Formerly Injector) ---
-    "INJECT_MOVE": {
+    "INJECT_STATOR": {
         "device": "fillhead",
         "params": [
-            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000},
-            {"name": "Speed(ml/s)", "type": float, "min": 0.01, "max": 10, "optional": True, "default": 0.1},
-            {"name": "Accel(sps^2)", "type": float, "min": 100, "max": 100000, "optional": True, "default": 5000},
-            {"name": "Steps/ml", "type": float, "min": 0, "max": 1000000},
-            {"name": "Torque(%)", "type": float, "min": 0, "max": 100, "optional": True, "default": 50}
+            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000}
         ],
-        "help": "Executes a precision injection move based on volume."
+        "help": "Injects a specific volume using the Stator (5:1) cartridge settings."
     },
-    "PURGE_MOVE": {
+    "INJECT_ROTOR": {
         "device": "fillhead",
         "params": [
-            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000},
-            {"name": "Speed(ml/s)", "type": float, "min": 0.01, "max": 10, "optional": True, "default": 0.5},
-            {"name": "Accel(sps^2)", "type": float, "min": 100, "max": 100000, "optional": True, "default": 5000},
-            {"name": "Steps/ml", "type": float, "min": 0, "max": 1000000},
-            {"name": "Torque(%)", "type": float, "min": 0, "max": 100, "optional": True, "default": 50}
+            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000}
         ],
-        "help": "Executes a purge move to expel a certain volume of material."
+        "help": "Injects a specific volume using the Rotor (1:1) cartridge settings."
     },
     "SET_HEATER_SETPOINT": {
         "device": "fillhead",

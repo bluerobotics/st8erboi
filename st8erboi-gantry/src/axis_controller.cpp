@@ -169,7 +169,7 @@ void Axis::startMove(float target_mm, float vel_mms, float accel_mms2, int torqu
 }
 
 
-void Axis::handleMove(const char* args) {
+void Axis::move(const char* args) {
 	MoveType moveType = ABSOLUTE;
 	float target_mm, vel_mms, accel_mms2;
 	int torque;
@@ -200,7 +200,7 @@ void Axis::handleMove(const char* args) {
 	startMove(target_mm, vel_mms, accel_mms2, torque, moveType);
 }
 
-void Axis::handleHome(const char* args) {
+void Axis::home(const char* args) {
 	if (!m_homingSensor1) {
 		sendStatus(STATUS_PREFIX_ERROR, "Homing not configured for this axis.");
 		return;

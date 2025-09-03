@@ -252,7 +252,7 @@ void PinchValve::updateState() {
 /**
  * @brief Routes a command to the appropriate handler function.
  */
-void PinchValve::handleCommand(Command cmd, const char* args) {
+void PinchValve::command(Command cmd, const char* args) {
 	if (m_state != VALVE_IDLE && m_state != VALVE_OPEN && m_state != VALVE_CLOSED) {
 		char errorMsg[128];
 		snprintf(errorMsg, sizeof(errorMsg), "%s is busy. Command ignored.", m_name);

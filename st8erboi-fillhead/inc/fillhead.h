@@ -97,11 +97,9 @@ private:
     uint32_t m_lastSensorSampleTime;
 
     // --- Top-Level Command Handlers ---
-    void handleEnable();
-    void handleDisable();
-    void handleAbort();
-    void handleClearErrors();
-    void handleStandbyMode();
-    void handleSetPeerIp(const char* msg);
-    void handleClearPeerIp();
+    void enable();
+    void disable();
+    void abort();
+    void clearErrors();
+    void standbyMode();
 };

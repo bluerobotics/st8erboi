@@ -86,18 +86,18 @@ private:
      * to the appropriate handler function or Axis object.
      * @param msg The message object received from the communications queue.
      */
-    void handleMessage(const Message& msg);
+    void message(const Message& msg);
 
     /**
-     * @brief Handles the SET_PEER_IP command.
-     * @param msg The full message string containing the peer's IP address.
+     * @brief Sets the IP address of the peer device for peer-to-peer communication.
+     * @param msg The full command message containing the IP address.
      */
-    void handleSetPeerIp(const char* msg);
+    void setPeerIp(const char* msg);
 
     /**
-     * @brief Handles the CLEAR_PEER_IP command.
+     * @brief Clears the stored peer IP address.
      */
-    void handleClearPeerIp();
+    void clearPeerIp();
 
     /**
      * @brief Aborts all motion on all axes immediately.
