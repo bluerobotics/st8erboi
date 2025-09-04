@@ -163,7 +163,8 @@ src/injector_controller.d src/injector_controller.o: \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
  ../../libClearCore/inc/XBeeDriver.h ../inc/comms_controller.h \
  ../../libClearCore/inc/EthernetUdp.h ../../libClearCore/inc/IpAddress.h \
- ../inc/commands.h
+ ../inc/commands.h ../inc/fillhead.h ../inc/pinch_valve_controller.h \
+ ../inc/heater_controller.h ../inc/vacuum_controller.h
 
 ../inc/injector_controller.h:
 
@@ -514,3 +515,11 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 ../../libClearCore/inc/IpAddress.h:
 
 ../inc/commands.h:
+
+../inc/fillhead.h:
+
+../inc/pinch_valve_controller.h:
+
+../inc/heater_controller.h:
+
+../inc/vacuum_controller.h:

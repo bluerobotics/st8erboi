@@ -12,7 +12,8 @@ enum MainState : uint8_t {
 	STATE_STANDBY,       // System is idle and ready to accept commands.
 	STATE_BUSY,          // A non-error operation is in progress.
 	STATE_ERROR,         // A fault has occurred, typically a motor fault.
-	STATE_DISABLED       // System is disabled; motors will not move.
+	STATE_DISABLED,       // System is disabled; motors will not move.
+	STATE_CLEARING_ERRORS // A special state to manage the non-blocking error recovery process.
 };
 
 /**

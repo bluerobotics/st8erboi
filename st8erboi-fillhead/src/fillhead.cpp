@@ -123,21 +123,49 @@ void Fillhead::updateState() {
     m_vacuum.updateState();
 
     // Now, update the main Fillhead state based on the sub-controller states.
-    if (m_mainState != STATE_DISABLED) {
-        // Check for motor faults. This has the highest priority.
-        if (m_injector.isInFault() || m_injectorValve.isInFault() || m_vacuumValve.isInFault()) {
-            if (m_mainState != STATE_ERROR) {
+    switch (m_mainState) {
+        case STATE_STANDBY:
+        case STATE_BUSY: {
+            // In normal operation, constantly monitor for faults.
+            if (m_injector.isInFault() || m_injectorValve.isInFault() || m_vacuumValve.isInFault()) {
                 m_mainState = STATE_ERROR;
-                m_comms.reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Use CLEAR_ERRORS to reset.");
+                reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Use CLEAR_ERRORS to reset.");
+                break; // Transition to error state and exit.
             }
+
+            // If no faults, update the state based on whether any component is busy.
+            if (m_injector.isBusy() || m_injectorValve.isBusy() || m_vacuumValve.isBusy() || m_vacuum.isBusy()) {
+                m_mainState = STATE_BUSY;
+            } else {
+                m_mainState = STATE_STANDBY;
+            }
+            break;
         }
-        // If no faults, determine if the system is busy or in standby.
-        else if (m_injector.isBusy() || m_injectorValve.isBusy() || m_vacuumValve.isBusy() || m_vacuum.isBusy()) {
-            m_mainState = STATE_BUSY;
+
+        case STATE_CLEARING_ERRORS: {
+            // Wait for all components to finish their reset sequences.
+            if (!m_injector.isBusy() && !m_injectorValve.isBusy() && !m_vacuumValve.isBusy() && !m_vacuum.isBusy()) {
+                // Now it's safe to cycle motor power.
+                m_injector.disable();
+                m_injectorValve.disable();
+                m_vacuumValve.disable();
+                Delay_ms(10); // Hardware requires a brief delay.
+                m_injector.enable();
+                m_injectorValve.enable();
+                m_vacuumValve.enable();
+
+                // Recovery is complete.
+                m_mainState = STATE_STANDBY;
+                reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
+            }
+            break;
         }
-        else {
-            m_mainState = STATE_STANDBY;
-        }
+
+        case STATE_ERROR:
+        case STATE_DISABLED:
+            // These are terminal states. No logic is performed here.
+            // They are only exited by explicit commands (CLEAR_ERRORS, ENABLE).
+            break;
     }
 }
 
@@ -331,26 +359,18 @@ void Fillhead::abort() {
  * @brief Resets any error states, clears motor faults, and returns the system to standby.
  */
 void Fillhead::clearErrors() {
-    m_comms.reportEvent(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
+    reportEvent(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
 
-    // First, reset the software state of all components.
+    // First, reset the software state of all components. This will trigger a non-blocking
+    // stop of any moving parts.
     m_injector.reset();
     m_injectorValve.reset();
     m_vacuumValve.reset();
     m_vacuum.resetState();
 
-    // Next, disable and immediately re-enable all motors. This hardware cycle is
-    // required by the ClearCore motor drivers to clear a latched fault condition.
-    m_injector.disable();
-    m_injectorValve.disable();
-    m_vacuumValve.disable();
-    Delay_ms(10); // A brief delay to ensure the disable signal is processed.
-    m_injector.enable();
-    m_injectorValve.enable();
-    m_vacuumValve.enable();
-
-    m_mainState = STATE_STANDBY;
-    m_comms.reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
+    // Now, enter the error clearing state. The main updateState loop will handle
+    // waiting for the components to become idle before cycling motor power.
+    m_mainState = STATE_CLEARING_ERRORS;
 }
 
 /**

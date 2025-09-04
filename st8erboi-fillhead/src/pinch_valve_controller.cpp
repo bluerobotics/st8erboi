@@ -491,7 +491,7 @@ const char* PinchValve::getTelemetryString() {
 }
 
 bool PinchValve::isBusy() const {
-	return m_state == VALVE_HOMING || m_state == VALVE_OPENING || m_state == VALVE_CLOSING || m_state == VALVE_JOGGING;
+	return m_state == VALVE_HOMING || m_state == VALVE_OPENING || m_state == VALVE_CLOSING || m_state == VALVE_JOGGING || m_state == VALVE_RESETTING;
 }
 
 bool PinchValve::isInFault() const {
