@@ -19,6 +19,7 @@ enum PinchValveState {
 	VALVE_JOGGING,          ///< The valve is performing a manual jog move.
 	VALVE_OPEN,             ///< The valve is stationary in the fully open position.
 	VALVE_CLOSED,           ///< The valve is stationary in the fully closed position.
+	VALVE_RESETTING,        ///< The valve is waiting for motion to stop before completing a reset.
 	VALVE_OPERATION_ERROR,  ///< An error occurred during an operation (e.g., timeout, torque limit).
 	VALVE_MOTOR_FAULT       ///< The motor driver has reported a fault.
 };

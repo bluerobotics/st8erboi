@@ -305,7 +305,7 @@ void Injector::handleCommand(Command cmd, const char* args) {
     }
 	
     if (m_state != STATE_STANDBY &&
-    (cmd == CMD_JOG_MOVE || cmd == CMD_MACHINE_HOME_MOVE || cmd == CMD_CARTRIDGE_HOME_MOVE || cmd == CMD_INJECT_MOVE)) {
+    (cmd == CMD_JOG_MOVE || cmd == CMD_MACHINE_HOME_MOVE || cmd == CMD_CARTRIDGE_HOME_MOVE || cmd == CMD_INJECT_STATOR || cmd == CMD_INJECT_ROTOR)) {
         reportEvent(STATUS_PREFIX_ERROR, "Injector command ignored: Another operation is in progress.");
         return;
     }

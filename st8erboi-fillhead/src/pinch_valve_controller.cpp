@@ -46,6 +46,16 @@ void PinchValve::updateState() {
 			m_opPhase = PHASE_IDLE;
 			break;
 
+		case VALVE_RESETTING:
+			// This state is used to wait for motor motion to stop before finishing a reset.
+			if (!m_motor->StatusReg().bit.StepsActive) {
+				m_state = VALVE_IDLE;
+				m_homingPhase = HOMING_PHASE_IDLE;
+				m_opPhase = PHASE_IDLE;
+				m_firstTorqueReading = true;
+			}
+			break;
+
 		case VALVE_HOMING: {
 			// Homing logic remains the same...
 			if (Milliseconds() - m_homingStartTime > MAX_HOMING_DURATION_MS) {
@@ -253,7 +263,7 @@ void PinchValve::updateState() {
 /**
  * @brief Routes a command to the appropriate handler function.
  */
-void PinchValve::command(Command cmd, const char* args) {
+void PinchValve::handleCommand(Command cmd, const char* args) {
 	if (m_state != VALVE_IDLE && m_state != VALVE_OPEN && m_state != VALVE_CLOSED) {
 		char errorMsg[128];
 		snprintf(errorMsg, sizeof(errorMsg), "%s is busy. Command ignored.", m_name);
@@ -397,19 +407,24 @@ void PinchValve::disable() {
 
 void PinchValve::abort() {
 	if (m_motor->StatusReg().bit.StepsActive) {
-		m_motor->MoveStopDecel();
+		m_motor->MoveStopAbrupt();
 	}
 	reset();
 }
 
 void PinchValve::reset() {
 	if (m_motor->StatusReg().bit.StepsActive) {
-		m_motor->MoveStopDecel();
+		m_motor->MoveStopAbrupt();
+		// Enter a temporary state to wait for the motor to physically stop moving.
+		// This prevents a race condition in the CLEAR_ERRORS sequence.
+		m_state = VALVE_RESETTING;
+	} else {
+		// If the motor is already stopped, we can reset the state immediately.
+		m_state = VALVE_IDLE;
+		m_homingPhase = HOMING_PHASE_IDLE;
+		m_opPhase = PHASE_IDLE;
+		m_firstTorqueReading = true;
 	}
-	m_state = VALVE_IDLE;
-	m_homingPhase = HOMING_PHASE_IDLE;
-	m_opPhase = PHASE_IDLE;
-	m_firstTorqueReading = true;
 }
 
 /**

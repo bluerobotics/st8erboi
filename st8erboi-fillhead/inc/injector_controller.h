@@ -140,7 +140,7 @@ private:
     void cartridgeHome();
     void moveToCartridgeHome();
     void moveToCartridgeRetract(const char* args);
-    void injectMove(const char* args);
+    void initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str);
     void pauseOperation();
     void resumeOperation();
     void cancelOperation();
