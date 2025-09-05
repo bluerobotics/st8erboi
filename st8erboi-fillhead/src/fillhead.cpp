@@ -231,6 +231,8 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_CARTRIDGE_HOME_MOVE:
         case CMD_MOVE_TO_CARTRIDGE_HOME:
         case CMD_MOVE_TO_CARTRIDGE_RETRACT:
+        case CMD_INJECT_STATOR:
+        case CMD_INJECT_ROTOR:
         case CMD_PAUSE_INJECTION:
         case CMD_RESUME_INJECTION:
         case CMD_CANCEL_INJECTION:
