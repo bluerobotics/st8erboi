@@ -149,8 +149,8 @@ Command CommsController::parseCommand(const char* msg) {
 
 	// Injector Motion Commands
 	if (strncmp(msg, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
-	if (strncmp(msg, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
-	if (strncmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
+	if (strcmp(msg, CMD_STR_MACHINE_HOME_MOVE) == 0) return CMD_MACHINE_HOME_MOVE;
+	if (strcmp(msg, CMD_STR_CARTRIDGE_HOME_MOVE) == 0) return CMD_CARTRIDGE_HOME_MOVE;
 	if (strncmp(msg, CMD_STR_INJECT_STATOR, strlen(CMD_STR_INJECT_STATOR)) == 0) return CMD_INJECT_STATOR;
 	if (strncmp(msg, CMD_STR_INJECT_ROTOR, strlen(CMD_STR_INJECT_ROTOR)) == 0) return CMD_INJECT_ROTOR;
 	if (strcmp(msg, CMD_STR_MOVE_TO_CARTRIDGE_HOME) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
