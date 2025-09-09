@@ -332,11 +332,11 @@ void Fillhead::publishTelemetry() {
         m_vacuumValve.getTelemetryString(),
         m_heater.getTelemetryString(),
         m_vacuum.getTelemetryString(),
-		m_injector.getStateString(),
-		m_injectorValve.getStateString(),
-		m_vacuumValve.getStateString(),
-		m_heater.getStateString(),
-		m_vacuum.getStateString()
+		m_injector.getState(),
+		m_injectorValve.getState(),
+		m_vacuumValve.getState(),
+		m_heater.getState(),
+		m_vacuum.getState()
     );
 
     // Enqueue the message for sending.
@@ -374,12 +374,12 @@ void Fillhead::disable() {
  * @brief Halts all motion and resets the system state to standby.
  */
 void Fillhead::abort() {
-    m_comms.reportEvent(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
+    reportEvent(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
     m_injector.abortMove();
     m_injectorValve.abort();
     m_vacuumValve.abort();
-    standbyMode(); // Reset states after stopping motion.
-    m_comms.reportEvent(STATUS_PREFIX_DONE, "ABORT complete.");
+    standby(); // This now resets all sub-controller states.
+    reportEvent(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
 /**
@@ -392,38 +392,31 @@ void Fillhead::clearErrors() {
     m_injector.abortMove();
     m_injectorValve.abort();
     m_vacuumValve.abort();
-    m_vacuum.resetState();
 
     // Power cycle the motors to clear hardware faults.
     m_injector.disable();
     m_injectorValve.disable();
     m_vacuumValve.disable();
-    Delay_ms(100); // A longer delay to ensure motors fully power down.
+    Delay_ms(100);
     m_injector.enable();
     m_injectorValve.enable();
     m_vacuumValve.enable();
-
-    // Now, fully reset the software state of all components to ensure they are idle.
-    m_injector.reset();
-    m_injectorValve.reset();
-    m_vacuumValve.reset();
-    m_vacuum.resetState();
     
     // The system is now fully reset and ready.
-    m_mainState = STATE_STANDBY;
-    reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
+    standby();
+    reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete.");
 }
 
-/**
- * @brief Resets all component states to their default/idle configuration.
- */
-void Fillhead::standbyMode() {
+void Fillhead::standby() {
+    // Reset all sub-controllers to their idle states.
     m_injector.reset();
     m_injectorValve.reset();
     m_vacuumValve.reset();
     m_vacuum.resetState();
+
+    // Set the main state and report.
     m_mainState = STATE_STANDBY;
-    m_comms.reportEvent(STATUS_PREFIX_INFO, "System is in STANDBY state.");
+    reportEvent(STATUS_PREFIX_INFO, "System is in STANDBY state.");
 }
 
 /**

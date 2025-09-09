@@ -112,5 +112,5 @@ private:
     void disable();
     void abort();
     void clearErrors();
-    void standbyMode();
+    void standby();
 };

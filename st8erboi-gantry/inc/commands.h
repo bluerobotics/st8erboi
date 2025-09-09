@@ -6,6 +6,9 @@
 // --- General Commands ---
 #define CMD_STR_DISCOVER "DISCOVER_GANTRY"
 #define CMD_STR_ABORT "ABORT"
+#define CMD_STR_ENABLE "ENABLE"
+#define CMD_STR_DISABLE "DISABLE"
+#define CMD_STR_CLEAR_ERRORS "CLEAR_ERRORS"
 
 // --- Gantry Motion Commands ---
 #define CMD_STR_MOVE_X "MOVE_X "
@@ -34,6 +37,9 @@ typedef enum {
 	CMD_UNKNOWN,
 	CMD_DISCOVER,
 	CMD_ABORT,
+    CMD_ENABLE,
+    CMD_DISABLE,
+    CMD_CLEAR_ERRORS,
 	CMD_MOVE_X,
 	CMD_MOVE_Y,
 	CMD_MOVE_Z,

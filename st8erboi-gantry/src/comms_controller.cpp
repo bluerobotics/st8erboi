@@ -126,6 +126,9 @@ Command CommsController::parseCommand(const char* msg) {
 
 	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;
+	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
+	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
+	if (strcmp(msg, CMD_STR_CLEAR_ERRORS) == 0) return CMD_CLEAR_ERRORS;
 	if (strncmp(msg, CMD_STR_MOVE_X, strlen(CMD_STR_MOVE_X)) == 0) return CMD_MOVE_X;
 	if (strncmp(msg, CMD_STR_MOVE_Y, strlen(CMD_STR_MOVE_Y)) == 0) return CMD_MOVE_Y;
 	if (strncmp(msg, CMD_STR_MOVE_Z, strlen(CMD_STR_MOVE_Z)) == 0) return CMD_MOVE_Z;
@@ -138,5 +141,6 @@ Command CommsController::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_DISABLE_Y) == 0) return CMD_DISABLE_Y;
 	if (strcmp(msg, CMD_STR_ENABLE_Z) == 0) return CMD_ENABLE_Z;
 	if (strcmp(msg, CMD_STR_DISABLE_Z) == 0) return CMD_DISABLE_Z;
+
 	return CMD_UNKNOWN;
 }

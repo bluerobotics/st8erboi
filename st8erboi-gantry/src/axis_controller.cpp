@@ -45,8 +45,14 @@ void Axis::setup(Gantry* controller, MotorDriver* motor2, float stepsPerMm, floa
 }
 
 void Axis::enable() {
+	m_motor1->VelMax(MAX_VEL);
+	m_motor1->AccelMax(MAX_ACC);
 	m_motor1->EnableRequest(true);
-	if (m_motor2) m_motor2->EnableRequest(true);
+	if (m_motor2) {
+		m_motor2->VelMax(MAX_VEL);
+		m_motor2->AccelMax(MAX_ACC);
+		m_motor2->EnableRequest(true);
+	}
 	if (m_zBrake) m_zBrake->State(true); // sinking current = z axis is unlocked
 }
 
@@ -458,20 +464,29 @@ void Axis::abort() {
 	m_activeCommand = nullptr;
 }
 
+void Axis::reset() {
+    if (isMoving()) {
+        abort();
+    }
+    m_state = STATE_STANDBY;
+    homingPhase = HOMING_NONE;
+    m_activeCommand = nullptr;
+}
+
 bool Axis::isMoving() {
 	bool motor1Moving = m_motor1->StatusReg().bit.StepsActive;
 	bool motor2Moving = m_motor2 ? m_motor2->StatusReg().bit.StepsActive : false;
 	return motor1Moving || motor2Moving;
 }
 
-const char* Axis::getStateString() {
+const char* Axis::getState() {
 	if (m_state == STATE_HOMING) return "Homing";
 	if (m_state == STATE_MOVING) return "Moving";
 	if (m_state == STATE_STARTING_MOVE) return "Starting";
 	return "Standby";
 }
 
-Axis::AxisState Axis::getState() const {
+Axis::AxisState Axis::getStateEnum() const {
 	return m_state;
 }
 

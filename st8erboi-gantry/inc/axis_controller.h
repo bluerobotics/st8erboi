@@ -34,10 +34,11 @@ public:
 	void abort();
 	void enable();
 	void disable();
+    void reset();
 	bool isMoving();
 	bool isHomed() { return m_homed; }
-	const char* getStateString();
-	AxisState getState() const;
+	const char* getState();
+	AxisState getStateEnum() const;
 	float getPositionMm() const;
 	float getSmoothedTorque();
 	bool isEnabled();

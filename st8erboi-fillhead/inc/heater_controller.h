@@ -70,7 +70,7 @@ class HeaterController {
 	 * @brief Gets the current state of the heater as a string.
 	 * @return A const char* representing the current state.
 	 */
-	const char* getStateString() const;
+	const char* getState() const;
 
 private:
 	/// @brief Pointer to the main Fillhead controller for sending messages.

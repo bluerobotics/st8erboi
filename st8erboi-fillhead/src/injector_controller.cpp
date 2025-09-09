@@ -780,7 +780,7 @@ bool Injector::isBusy() const {
     return m_state != STATE_STANDBY;
 }
 
-const char* Injector::getStateString() const {
+const char* Injector::getState() const {
     switch (m_state) {
         case STATE_STANDBY:     return "Standby";
         case STATE_HOMING:      return "Homing";

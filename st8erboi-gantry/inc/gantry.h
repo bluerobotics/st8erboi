@@ -86,12 +86,32 @@ private:
      * to the appropriate handler function or Axis object.
      * @param msg The message object received from the communications queue.
      */
-    void message(const Message& msg);
+    void dispatchCommand(const Message& msg);
 
     /**
      * @brief Aborts all motion on all axes immediately.
      */
-    void abortAll();
+    void abort();
+    
+    /**
+     * @brief Enables all gantry axes.
+     */
+    void enable();
+
+    /**
+     * @brief Disables all gantry axes.
+     */
+    void disable();
+
+    /**
+     * @brief Resets all axes after a fault condition.
+     */
+    void clearErrors();
+
+    /**
+     * @brief Sets the gantry to standby mode.
+     */
+    void standby();
 
     /**
      * @brief Assembles and queues a telemetry packet for transmission.
@@ -106,13 +126,13 @@ private:
      * @details Consolidates the status of all axes into a single, high-level
      * GantryState (e.g., if any axis is moving, the whole gantry is MOVING).
      */
-    void updateGantryState();
+    void updateState();
 
     /**
      * @brief Converts the current GantryState enum to a human-readable string.
      * @return A const char* representing the current state (e.g., "STANDBY").
      */
-    const char* getGantryStateString();
+    const char* getState();
 
     //================================================================================
     // Member Variables

@@ -215,7 +215,7 @@ bool VacuumController::isBusy() const {
     return m_state != VACUUM_OFF && m_state != VACUUM_ERROR;
 }
 
-const char* VacuumController::getStateString() const {
+const char* VacuumController::getState() const {
 	switch (m_state) {
 		case VACUUM_OFF:            return "Off";
 		case VACUUM_PULLDOWN:       return "Pulldown";

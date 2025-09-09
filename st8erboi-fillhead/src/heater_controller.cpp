@@ -167,10 +167,10 @@ const char* HeaterController::getTelemetryString() {
 	return m_telemetryBuffer;
 }
 
-const char* HeaterController::getStateString() const {
+const char* HeaterController::getState() const {
 	switch (m_heaterState) {
 		case HEATER_OFF:        return "Off";
-		case HEATER_PID_ACTIVE: return "PID Active";
+		case HEATER_PID_ACTIVE: return "Active";
 		default:                return "Unknown";
 	}
 }

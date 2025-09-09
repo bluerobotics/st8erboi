@@ -529,7 +529,7 @@ bool PinchValve::isOpen() const {
 	return m_isHomed && (m_state == VALVE_OPEN || m_state == VALVE_IDLE);
 }
 
-const char* PinchValve::getStateString() const {
+const char* PinchValve::getState() const {
 	switch (m_state) {
 		case VALVE_IDLE:            return "Idle";
 		case VALVE_HOMING:          return "Homing";

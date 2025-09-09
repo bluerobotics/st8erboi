@@ -19,7 +19,7 @@ Gantry::Gantry()
     : xAxis(&MotorX, "X"),
       yAxis(&MotorY1, "Y"), // Using Y1 as the primary motor for the Y-axis
       zAxis(&MotorZ, "Z") {
-    m_state = GANTRY_STANDBY;
+    standby();
     m_lastTelemetryTime = 0;
 }
 
@@ -68,7 +68,7 @@ void Gantry::loop() {
     // 2. Dequeue and process a single command from the Rx queue.
     Message msg;
     if (m_comms.dequeueRx(msg)) {
-        message(msg);
+        dispatchCommand(msg);
     }
     
     // 3. Update the internal state machines of each axis.
@@ -77,7 +77,7 @@ void Gantry::loop() {
     zAxis.updateState();
 
     // 4. Update the overall gantry state based on the axis states.
-    updateGantryState();
+    updateState();
 
     // 5. Publish telemetry at a fixed interval if the GUI is connected.
     uint32_t now = Milliseconds();
@@ -118,10 +118,10 @@ void Gantry::publishTelemetry() {
         "y_p:%.2f,y_t:%.2f,y_e:%d,y_h:%d,y_st:%s,"
         "z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d,z_st:%s",
         TELEM_PREFIX,
-        getGantryStateString(),
-        xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(), xAxis.getStateString(),
-        yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(), yAxis.getStateString(),
-        zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(), zAxis.getStateString());
+        getState(),
+        xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(), xAxis.getState(),
+        yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(), yAxis.getState(),
+        zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(), zAxis.getState());
 
     // Enqueue the formatted string for transmission.
     m_comms.enqueueTx(m_telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
@@ -133,7 +133,7 @@ void Gantry::publishTelemetry() {
  * to the appropriate handler function or Axis object.
  * @param msg The message object received from the communications queue.
  */
-void Gantry::message(const Message& msg) {
+void Gantry::dispatchCommand(const Message& msg) {
     // The DISCOVER command is broadcast, so we'll receive messages not intended for us.
     // If the message is a discovery command but not OUR discovery command, ignore it.
     if (strncmp(msg.buffer, "DISCOVER_", 9) == 0 && strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
@@ -149,7 +149,10 @@ void Gantry::message(const Message& msg) {
 
     switch(command) {
         // --- System & Communication Commands ---
-        case CMD_ABORT:         abortAll(); break;
+        case CMD_ABORT:         abort(); break;
+        case CMD_ENABLE:        enable(); break;
+        case CMD_DISABLE:       disable(); break;
+        case CMD_CLEAR_ERRORS:  clearErrors(); break;
 
         // --- Axis Motion Commands ---
         case CMD_MOVE_X: xAxis.move(args); break;
@@ -160,7 +163,7 @@ void Gantry::message(const Message& msg) {
         case CMD_HOME_X: xAxis.home(args); break;
         case CMD_HOME_Y: yAxis.home(args); break;
         case CMD_HOME_Z: zAxis.home(args); break;
-
+        
         // --- Axis Enable/Disable Commands ---
         case CMD_ENABLE_X:
             xAxis.enable();
@@ -217,9 +220,9 @@ void Gantry::message(const Message& msg) {
  * @details Consolidates the status of all axes into a single, high-level
  * GantryState (e.g., if any axis is moving, the whole gantry is MOVING).
  */
-void Gantry::updateGantryState() {
+void Gantry::updateState() {
     // Homing takes precedence over all other states.
-    if (xAxis.getState() == Axis::STATE_HOMING || yAxis.getState() == Axis::STATE_HOMING || zAxis.getState() == Axis::STATE_HOMING) {
+    if (xAxis.getStateEnum() == Axis::STATE_HOMING || yAxis.getStateEnum() == Axis::STATE_HOMING || zAxis.getStateEnum() == Axis::STATE_HOMING) {
         m_state = GANTRY_HOMING;
         return;
     }
@@ -236,7 +239,7 @@ void Gantry::updateGantryState() {
  * @brief Converts the current GantryState enum to a human-readable string.
  * @return A const char* representing the current state (e.g., "STANDBY").
  */
-const char* Gantry::getGantryStateString() {
+const char* Gantry::getState() {
     switch (m_state) {
         case GANTRY_STANDBY: return "STANDBY";
         case GANTRY_HOMING:  return "HOMING";
@@ -249,11 +252,52 @@ const char* Gantry::getGantryStateString() {
 /**
  * @brief Aborts all motion on all axes immediately.
  */
-void Gantry::abortAll() {
+void Gantry::abort() {
     xAxis.abort();
     yAxis.abort();
     zAxis.abort();
     reportEvent(STATUS_PREFIX_DONE, "ABORT complete.");
+}
+
+void Gantry::clearErrors() {
+    reportEvent(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all axes...");
+
+    // First, abort any active motion to ensure a clean state.
+    abort();
+
+    // Power cycle the motors to clear hardware faults.
+    disable();
+    Delay_ms(100);
+    enable();
+    
+    // The system is now fully reset and ready.
+    standby();
+    reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete.");
+}
+
+void Gantry::standby() {
+    // Reset all axes to their idle states.
+    xAxis.reset();
+    yAxis.reset();
+    zAxis.reset();
+
+    // Set the main state and report.
+    m_state = GANTRY_STANDBY;
+    reportEvent(STATUS_PREFIX_INFO, "System is in STANDBY state.");
+}
+
+void Gantry::enable() {
+    xAxis.enable();
+    yAxis.enable();
+    zAxis.enable();
+    reportEvent(STATUS_PREFIX_DONE, "ENABLE complete.");
+}
+
+void Gantry::disable() {
+    xAxis.disable();
+    yAxis.disable();
+    zAxis.disable();
+    reportEvent(STATUS_PREFIX_DONE, "DISABLE complete.");
 }
 
 //================================================================================

@@ -7,11 +7,15 @@
     - loop
     - reportEvent
 - Private
-    - message
-    - abortAll
+    - dispatchCommand
+    - abort
+    - enable
+    - disable
+    - clearErrors
+    - standby
     - publishTelemetry
-    - updateGantryState
-    - getGantryStateString
+    - updateState
+    - getState
 
 ### Axis
 - Public
@@ -24,10 +28,11 @@
     - abort
     - enable
     - disable
+    - reset
     - isMoving
     - isHomed
-    - getStateString
     - getState
+    - getStateEnum
     - getPositionMm
     - getSmoothedTorque
     - isEnabled
@@ -77,7 +82,7 @@
     - disable
     - abort
     - clearErrors
-    - standbyMode
+    - standby
 
 ### Injector
 - Public
@@ -92,6 +97,7 @@
     - reset
     - isInFault
     - isBusy
+    - getState
 - Private
     - startMove
     - isMoving
@@ -105,7 +111,7 @@
     - cartridgeHome
     - moveToCartridgeHome
     - moveToCartridgeRetract
-    - injectMove
+    - initiateInjectMove
     - pauseOperation
     - resumeOperation
     - cancelOperation
@@ -126,9 +132,11 @@
     - abort
     - reset
     - isHomed
+    - isOpen
     - getTelemetryString
     - isInFault
     - isBusy
+    - getState
 - Private
     - moveSteps
     - getSmoothedTorque
@@ -144,6 +152,7 @@
     - updateState
     - handleCommand
     - getTelemetryString
+    - getState
 - Private
     - resetPID
     - reportEvent
@@ -162,6 +171,7 @@
     - getTelemetryString
     - resetState
     - isBusy
+    - getState
 - Private
     - reportEvent
     - vacuumOn
