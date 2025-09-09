@@ -166,3 +166,11 @@ const char* HeaterController::getTelemetryString() {
 	(int)m_heaterState, m_pid_setpoint, m_temperatureCelsius, m_pid_output);
 	return m_telemetryBuffer;
 }
+
+const char* HeaterController::getStateString() const {
+	switch (m_heaterState) {
+		case HEATER_OFF:        return "Off";
+		case HEATER_PID_ACTIVE: return "PID Active";
+		default:                return "Unknown";
+	}
+}

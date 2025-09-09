@@ -28,8 +28,8 @@ PinchValve::PinchValve(const char* name, MotorDriver* motor, Fillhead* controlle
 void PinchValve::setup() {
 	m_motor->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	m_motor->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	m_motor->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
-	m_motor->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+	m_motor->VelMax(PINCH_DEFAULT_VEL_MAX_SPS);
+	m_motor->AccelMax(PINCH_DEFAULT_ACCEL_MAX_SPS2);
 	m_motor->EnableRequest(true);
 }
 
@@ -71,7 +71,7 @@ void PinchValve::updateState() {
 			switch (m_homingPhase) {
 				case INITIAL_BACKOFF_START:
 					reportEvent(STATUS_PREFIX_INFO, "Homing: Performing initial backoff.");
-					m_torqueLimit = PINCH_HOMING_BACKOFF_TORQUE_PERCENT;
+					m_torqueLimit = m_homingBackoffTorque;
 					moveSteps(-m_homingBackoffSteps, m_homingUnifiedSps, m_homingAccelSps2);
 					m_homingPhase = INITIAL_BACKOFF_WAIT_TO_START;
 					break;
@@ -90,7 +90,7 @@ void PinchValve::updateState() {
 					break;
 				case RAPID_SEARCH_START:
 					reportEvent(STATUS_PREFIX_INFO, "Homing: Starting rapid search.");
-					m_torqueLimit = PINCH_HOMING_SEARCH_TORQUE_PERCENT;
+					m_torqueLimit = m_homingSearchTorque;
 					moveSteps(m_homingDistanceSteps, m_homingUnifiedSps, m_homingAccelSps2);
 					m_homingPhase = RAPID_SEARCH_WAIT_TO_START;
 					break;
@@ -107,7 +107,7 @@ void PinchValve::updateState() {
 					break;
 				case BACKOFF_START:
 					reportEvent(STATUS_PREFIX_INFO, "Homing: Backing off hard stop.");
-					m_torqueLimit = PINCH_HOMING_BACKOFF_TORQUE_PERCENT;
+					m_torqueLimit = m_homingBackoffTorque;
 					moveSteps(-m_homingBackoffSteps, m_homingUnifiedSps, m_homingAccelSps2);
 					m_homingPhase = BACKOFF_WAIT_TO_START;
 					break;
@@ -119,7 +119,7 @@ void PinchValve::updateState() {
 					break;
 				case SLOW_SEARCH_START:
 					reportEvent(STATUS_PREFIX_INFO, "Homing: Starting slow search.");
-					m_torqueLimit = PINCH_HOMING_SEARCH_TORQUE_PERCENT;
+					m_torqueLimit = m_homingSearchTorque;
 					moveSteps(m_homingBackoffSteps * 2, m_homingUnifiedSps, m_homingAccelSps2);
 					m_homingPhase = SLOW_SEARCH_WAIT_TO_START;
 					break;
@@ -136,7 +136,7 @@ void PinchValve::updateState() {
 					break;
 				case SET_OFFSET_START:
 					reportEvent(STATUS_PREFIX_INFO, "Homing: Moving to final offset.");
-					m_torqueLimit = PINCH_HOMING_BACKOFF_TORQUE_PERCENT;
+					m_torqueLimit = m_homingBackoffTorque;
 					moveSteps(-m_homingFinalOffsetSteps, m_homingUnifiedSps, m_homingAccelSps2);
 					m_homingPhase = SET_OFFSET_WAIT_TO_START;
 					break;
@@ -272,9 +272,17 @@ void PinchValve::handleCommand(Command cmd, const char* args) {
 	}
 
 	switch(cmd) {
-		case CMD_INJECTION_VALVE_HOME:
-		case CMD_VACUUM_VALVE_HOME:
-			home();
+		case CMD_INJECTION_VALVE_HOME_UNTUBED:
+			home(false);
+			break;
+		case CMD_INJECTION_VALVE_HOME_TUBED:
+			home(true);
+			break;
+		case CMD_VACUUM_VALVE_HOME_UNTUBED:
+			home(false);
+			break;
+		case CMD_VACUUM_VALVE_HOME_TUBED:
+			home(true);
 			break;
 		case CMD_INJECTION_VALVE_OPEN:
 		case CMD_VACUUM_VALVE_OPEN:
@@ -296,20 +304,32 @@ void PinchValve::handleCommand(Command cmd, const char* args) {
 /**
  * @brief Initiates the homing sequence for the pinch valve.
  */
-void PinchValve::home() {
+void PinchValve::home(bool is_tubed) {
 	m_isHomed = false;
 	m_state = VALVE_HOMING;
 	m_homingPhase = INITIAL_BACKOFF_START;
 	m_homingStartTime = Milliseconds();
 
-	m_homingDistanceSteps = (long)(fabs(PINCH_HOMING_STROKE_MM) * STEPS_PER_MM_PINCH);
-	m_homingBackoffSteps = (long)(PINCH_VALVE_HOMING_BACKOFF_MM * STEPS_PER_MM_PINCH);
-	m_homingFinalOffsetSteps = (long)(PINCH_VALVE_FINAL_OFFSET_MM * STEPS_PER_MM_PINCH);
-	m_homingUnifiedSps = (int)fabs(PINCH_HOMING_UNIFIED_VEL_MMS * STEPS_PER_MM_PINCH);
-	m_homingAccelSps2 = (int)fabs(PINCH_HOMING_ACCEL_MMSS * STEPS_PER_MM_PINCH);
+	if (is_tubed) {
+		m_homingBackoffSteps = (long)(PINCH_VALVE_HOMING_BACKOFF_MM_TUBED * STEPS_PER_MM_PINCH);
+		m_homingDistanceSteps = (long)(fabs(PINCH_HOMING_TUBED_STROKE_MM) * STEPS_PER_MM_PINCH);
+		m_homingFinalOffsetSteps = (long)(PINCH_VALVE_TUBED_FINAL_OFFSET_MM * STEPS_PER_MM_PINCH);
+		m_homingUnifiedSps = (int)fabs(PINCH_HOMING_TUBED_UNIFIED_VEL_MMS * STEPS_PER_MM_PINCH);
+		m_homingAccelSps2 = (int)fabs(PINCH_HOMING_TUBED_ACCEL_MMSS * STEPS_PER_MM_PINCH);
+		m_homingSearchTorque = PINCH_HOMING_TUBED_SEARCH_TORQUE_PERCENT;
+		m_homingBackoffTorque = PINCH_HOMING_TUBED_BACKOFF_TORQUE_PERCENT;
+	} else {
+		m_homingBackoffSteps = (long)(PINCH_VALVE_HOMING_BACKOFF_MM_UNTUBED * STEPS_PER_MM_PINCH);
+		m_homingDistanceSteps = (long)(fabs(PINCH_HOMING_UNTUBED_STROKE_MM) * STEPS_PER_MM_PINCH);
+		m_homingFinalOffsetSteps = (long)(PINCH_VALVE_UNTUBED_FINAL_OFFSET_MM * STEPS_PER_MM_PINCH);
+		m_homingUnifiedSps = (int)fabs(PINCH_HOMING_UNTUBED_UNIFIED_VEL_MMS * STEPS_PER_MM_PINCH);
+		m_homingAccelSps2 = (int)fabs(PINCH_HOMING_UNTUBED_ACCEL_MMSS * STEPS_PER_MM_PINCH);
+		m_homingSearchTorque = PINCH_HOMING_UNTUBED_SEARCH_TORQUE_PERCENT;
+		m_homingBackoffTorque = PINCH_HOMING_UNTUBED_BACKOFF_TORQUE_PERCENT;
+	}
 
 	char msg[64];
-	snprintf(msg, sizeof(msg), "%s homing started.", m_name);
+	snprintf(msg, sizeof(msg), "%s homing started (%s).", m_name, is_tubed ? "tubed" : "untubed");
 	reportEvent(STATUS_PREFIX_INFO, msg);
 }
 
@@ -347,7 +367,7 @@ void PinchValve::close() {
 	m_moveStartTime = Milliseconds();
 	m_torqueLimit = PINCH_VALVE_PINCH_TORQUE_PERCENT;
 	
-	long long_move_steps = (long)(PINCH_HOMING_STROKE_MM * STEPS_PER_MM_PINCH);
+	long long_move_steps = (long)(PINCH_HOMING_UNTUBED_STROKE_MM * STEPS_PER_MM_PINCH);
 	int vel_sps = (int)(PINCH_VALVE_PINCH_VEL_MMS * STEPS_PER_MM_PINCH);
 	int accel_sps2 = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
 
@@ -393,6 +413,9 @@ void PinchValve::moveSteps(long steps, int velocity_sps, int accel_sps2) {
 
 void PinchValve::enable() {
 	m_motor->EnableRequest(true);
+	// Always set motor parameters on enable to ensure a known good state after a fault.
+	m_motor->VelMax(PINCH_DEFAULT_VEL_MAX_SPS);
+	m_motor->AccelMax(PINCH_DEFAULT_ACCEL_MAX_SPS2);
 	char msg[64];
 	snprintf(msg, sizeof(msg), "%s motor enabled.", m_name);
 	reportEvent(STATUS_PREFIX_INFO, msg);
@@ -496,4 +519,28 @@ bool PinchValve::isBusy() const {
 
 bool PinchValve::isInFault() const {
 	return m_motor->StatusReg().bit.MotorInFault;
+}
+
+bool PinchValve::isHomed() const {
+	return m_isHomed;
+}
+
+bool PinchValve::isOpen() const {
+	return m_isHomed && (m_state == VALVE_OPEN || m_state == VALVE_IDLE);
+}
+
+const char* PinchValve::getStateString() const {
+	switch (m_state) {
+		case VALVE_IDLE:            return "Idle";
+		case VALVE_HOMING:          return "Homing";
+		case VALVE_OPENING:         return "Opening";
+		case VALVE_CLOSING:         return "Closing";
+		case VALVE_JOGGING:         return "Jogging";
+		case VALVE_OPEN:            return "Open";
+		case VALVE_CLOSED:          return "Closed";
+		case VALVE_RESETTING:       return "Resetting";
+		case VALVE_OPERATION_ERROR: return "Op Error";
+		case VALVE_MOTOR_FAULT:     return "Fault";
+		default:                    return "Unknown";
+	}
 }

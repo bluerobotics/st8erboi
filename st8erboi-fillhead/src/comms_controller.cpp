@@ -160,13 +160,15 @@ Command CommsController::parseCommand(const char* msg) {
 	if (strcmp(msg, CMD_STR_CANCEL_INJECTION) == 0) return CMD_CANCEL_INJECTION;
 
 	// Injection Valve Commands
-	if (strcmp(msg, CMD_STR_INJECTION_VALVE_HOME) == 0) return CMD_INJECTION_VALVE_HOME;
+	if (strcmp(msg, CMD_STR_INJECTION_VALVE_HOME_UNTUBED) == 0) return CMD_INJECTION_VALVE_HOME_UNTUBED;
+	if (strcmp(msg, CMD_STR_INJECTION_VALVE_HOME_TUBED) == 0) return CMD_INJECTION_VALVE_HOME_TUBED;
 	if (strcmp(msg, CMD_STR_INJECTION_VALVE_OPEN) == 0) return CMD_INJECTION_VALVE_OPEN;
 	if (strcmp(msg, CMD_STR_INJECTION_VALVE_CLOSE) == 0) return CMD_INJECTION_VALVE_CLOSE;
 	if (strncmp(msg, CMD_STR_INJECTION_VALVE_JOG, strlen(CMD_STR_INJECTION_VALVE_JOG)) == 0) return CMD_INJECTION_VALVE_JOG;
 
 	// Vacuum Valve Commands
-	if (strcmp(msg, CMD_STR_VACUUM_VALVE_HOME) == 0) return CMD_VACUUM_VALVE_HOME;
+	if (strcmp(msg, CMD_STR_VACUUM_VALVE_HOME_UNTUBED) == 0) return CMD_VACUUM_VALVE_HOME_UNTUBED;
+	if (strcmp(msg, CMD_STR_VACUUM_VALVE_HOME_TUBED) == 0) return CMD_VACUUM_VALVE_HOME_TUBED;
 	if (strcmp(msg, CMD_STR_VACUUM_VALVE_OPEN) == 0) return CMD_VACUUM_VALVE_OPEN;
 	if (strcmp(msg, CMD_STR_VACUUM_VALVE_CLOSE) == 0) return CMD_VACUUM_VALVE_CLOSE;
 	if (strncmp(msg, CMD_STR_VACUUM_VALVE_JOG, strlen(CMD_STR_VACUUM_VALVE_JOG)) == 0) return CMD_VACUUM_VALVE_JOG;

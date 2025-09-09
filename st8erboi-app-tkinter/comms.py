@@ -162,10 +162,18 @@ def parse_fillhead_telemetry(msg, gui_refs):
             gui_refs['homed0_var'].set("Homed" if parts.get("inj_h_mach", "0") == "1" else "Not Homed")
         if 'homed1_var' in gui_refs:
             gui_refs['homed1_var'].set("Homed" if parts.get("inj_h_cart", "0") == "1" else "Not Homed")
-        # -------------------
 
-        # Pinch Valves
-        if 'inj_valve_pos_var' in gui_refs: gui_refs['inj_valve_pos_var'].set(parts.get("inj_valve_pos", "---"))
+        # --- Fillhead Component States ---
+        if 'fillhead_injector_state_var' in gui_refs: gui_refs['fillhead_injector_state_var'].set(parts.get("inj_st", "---"))
+        if 'fillhead_inj_valve_state_var' in gui_refs: gui_refs['fillhead_inj_valve_state_var'].set(parts.get("inj_v_st", "---"))
+        if 'fillhead_vac_valve_state_var' in gui_refs: gui_refs['fillhead_vac_valve_state_var'].set(parts.get("vac_v_st", "---"))
+        if 'fillhead_heater_state_var' in gui_refs: gui_refs['fillhead_heater_state_var'].set(parts.get("h_st_str", "---"))
+        if 'fillhead_vacuum_state_var' in gui_refs: gui_refs['fillhead_vacuum_state_var'].set(parts.get("vac_st_str", "---"))
+
+        # --- Pinch Valve States ---
+        # Note: Using specific keys like 'inj_valve_pos' from telemetry
+        if 'inj_valve_pos_var' in gui_refs: gui_refs['inj_valve_pos_var'].set(
+            parts.get("inj_valve_pos", "---"))
         if 'inj_valve_homed_var' in gui_refs: gui_refs['inj_valve_homed_var'].set(
             "Homed" if parts.get("inj_valve_homed", "0") == "1" else "Not Homed")
         if 'torque2_var' in gui_refs: gui_refs['torque2_var'].set(safe_float(parts.get('torque2', '0.0')))
@@ -177,8 +185,10 @@ def parse_fillhead_telemetry(msg, gui_refs):
         # Other System Status
         if 'machine_steps_var' in gui_refs: gui_refs['machine_steps_var'].set(parts.get("inj_mach_mm", "N/A"))
         if 'cartridge_steps_var' in gui_refs: gui_refs['cartridge_steps_var'].set(parts.get("inj_cart_mm", "N/A"))
-        if 'inject_dispensed_ml_var' in gui_refs: gui_refs['inject_dispensed_ml_var'].set(
-            f'{safe_float(parts.get("inj_disp_ml")):.2f} ml')
+        if 'inject_cumulative_ml_var' in gui_refs: gui_refs['inject_cumulative_ml_var'].set(
+            f'{safe_float(parts.get("inj_cumulative_ml")):.2f} ml')
+        if 'inject_active_ml_var' in gui_refs: gui_refs['inject_active_ml_var'].set(
+            f'{safe_float(parts.get("inj_active_ml")):.2f} ml')
 
         if 'temp_c_var' in gui_refs:
             gui_refs['temp_c_var'].set(f'{safe_float(parts.get("h_pv")):.1f} °C')
@@ -200,26 +210,22 @@ def parse_gantry_telemetry(msg, gui_refs):
         payload = msg.split("GANTRY_TELEM: ")[1]
         parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
-        if 'fh_state_var' in gui_refs: gui_refs['fh_state_var'].set(parts.get("gantry_state", "UNKNOWN"))
+        # Update Gantry State
+        if 'fh_state_var' in gui_refs: gui_refs['fh_state_var'].set(parts.get("gantry_state", "---"))
 
-        if 'fh_state_x_var' in gui_refs: gui_refs['fh_state_x_var'].set(parts.get("x_s", "UNKNOWN"))
-        if 'fh_state_y_var' in gui_refs: gui_refs['fh_state_y_var'].set(parts.get("y_s", "UNKNOWN"))
-        if 'fh_state_z_var' in gui_refs: gui_refs['fh_state_z_var'].set(parts.get("z_s", "UNKNOWN"))
+        # Update Axis States
+        axes = ['x', 'y', 'z']
+        fh_map = {'x': 'm0', 'y': 'm1', 'z': 'm3'}
 
-        axis_to_motor_map = {'x': [0], 'y': [1, 2], 'z': [3]}
-        for axis_prefix, motor_indices in axis_to_motor_map.items():
-            pos_val = parts.get(f'{axis_prefix}_p', '0.00')
-            torque_str = parts.get(f'{axis_prefix}_t', '0.0')
-            enabled_val = "Enabled" if parts.get(f'{axis_prefix}_e', '0') == "1" else "Disabled"
-            homed_val = "Homed" if parts.get(f'{axis_prefix}_h', '0') == "1" else "Not Homed"
-            for motor_index in motor_indices:
-                if f'fh_pos_m{motor_index}_var' in gui_refs: gui_refs[f'fh_pos_m{motor_index}_var'].set(
-                    f"{float(pos_val):.2f}")
-                if f'fh_torque_m{motor_index}_var' in gui_refs: gui_refs[f'fh_torque_m{motor_index}_var'].set(
-                    safe_float(torque_str))
-                if f'fh_enabled_m{motor_index}_var' in gui_refs: gui_refs[f'fh_enabled_m{motor_index}_var'].set(
-                    enabled_val)
-                if f'fh_homed_m{motor_index}_var' in gui_refs: gui_refs[f'fh_homed_m{motor_index}_var'].set(homed_val)
+        for i, axis in enumerate(axes):
+            key_suffix = fh_map[axis]
+            if f'fh_pos_{key_suffix}_var' in gui_refs: gui_refs[f'fh_pos_{key_suffix}_var'].set(parts.get(f"{axis}_p", "---"))
+            if f'fh_torque_{key_suffix}_var' in gui_refs: gui_refs[f'fh_torque_{key_suffix}_var'].set(safe_float(parts.get(f"{axis}_t", '0.0')))
+            if f'fh_enabled_{key_suffix}_var' in gui_refs: gui_refs[f'fh_enabled_{key_suffix}_var'].set("Enabled" if parts.get(f"{axis}_e", "0") == "1" else "Disabled")
+            if f'fh_homed_{key_suffix}_var' in gui_refs: gui_refs[f'fh_homed_{key_suffix}_var'].set("Homed" if parts.get(f"{axis}_h", "0") == "1" else "Not Homed")
+            
+            # --- New Axis State Parsing ---
+            if f'fh_state_{axis}_var' in gui_refs: gui_refs[f'fh_state_{axis}_var'].set(parts.get(f"{axis}_st", "---"))
 
     except Exception as e:
         log_to_terminal(f"Gantry telemetry parse error: {e} -> on msg: {msg}\n", gui_refs.get('terminal_cb'))

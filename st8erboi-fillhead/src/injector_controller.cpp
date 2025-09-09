@@ -56,6 +56,8 @@ Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, Fillhead* controlle
     m_firstTorqueReading1 = true;
     m_machineHomeReferenceSteps = 0;
     m_cartridgeHomeReferenceSteps = 0;
+    m_cumulative_dispensed_ml = 0.0f;
+    m_feedStartTime = 0;
 
     fullyResetActiveDispenseOperation();
     m_activeFeedCommand = nullptr;
@@ -237,14 +239,18 @@ void Injector::updateState() {
             }
 
             if (!isMoving() && m_feedState != FEED_INJECT_PAUSED) {
-                finalizeAndResetActiveDispenseOperation(true);
-                if (m_activeFeedCommand) {
-                    char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
-                    std::snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeFeedCommand);
-                    reportEvent(STATUS_PREFIX_DONE, doneMsg);
-                    m_activeFeedCommand = nullptr;
+                bool isStarting = (m_feedState == FEED_INJECT_STARTING);
+                uint32_t elapsed = Milliseconds() - m_feedStartTime;
+                
+                if (!isStarting || (isStarting && elapsed > MOVE_START_TIMEOUT_MS)) {
+                    if (m_activeFeedCommand) {
+                        char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
+                        std::snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeFeedCommand);
+                        reportEvent(STATUS_PREFIX_DONE, doneMsg);
+                    }
+                    finalizeAndResetActiveDispenseOperation(true);
+                    m_state = STATE_STANDBY;
                 }
-                m_state = STATE_STANDBY;
             }
 
             if ((m_feedState == FEED_INJECT_STARTING || m_feedState == FEED_INJECT_RESUMING) && isMoving()) {
@@ -252,12 +258,17 @@ void Injector::updateState() {
                 m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
             }
 
-            if (m_feedState == FEED_INJECT_PAUSED && !isMoving()) {
-                long current_pos = m_motorA->PositionRefCommanded();
-                long steps_moved_this_segment = current_pos - m_active_op_segment_initial_axis_steps;
+            if (m_feedState == FEED_INJECT_ACTIVE) {
                 if (m_active_op_steps_per_ml > 0.0001f) {
-                    float segment_dispensed_ml = std::abs(steps_moved_this_segment) / m_active_op_steps_per_ml;
-                    m_active_op_total_dispensed_ml += segment_dispensed_ml;
+                    long current_pos = m_motorA->PositionRefCommanded();
+                    long steps_moved_since_start = current_pos - m_active_op_initial_axis_steps;
+                    m_active_op_total_dispensed_ml = (float)std::abs(steps_moved_since_start) / m_active_op_steps_per_ml;
+                }
+            }
+
+            if (m_feedState == FEED_INJECT_PAUSED && !isMoving()) {
+                if (m_active_op_steps_per_ml > 0.0001f) {
+                    // m_active_op_total_dispensed_ml is now updated continuously, so we only need to calculate remaining steps here.
                     long total_steps_dispensed = (long)(m_active_op_total_dispensed_ml * m_active_op_steps_per_ml);
                     m_active_op_remaining_steps = m_active_op_total_target_steps - total_steps_dispensed;
                     if (m_active_op_remaining_steps < 0) m_active_op_remaining_steps = 0;
@@ -336,6 +347,14 @@ void Injector::handleCommand(Command cmd, const char* args) {
 void Injector::enable() {
     m_motorA->EnableRequest(true);
     m_motorB->EnableRequest(true);
+
+    // Always set motor parameters on enable to ensure a known good state after a fault,
+    // as the ClearCore driver may reset them to zero.
+    m_motorA->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
+    m_motorA->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+    m_motorB->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
+    m_motorB->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+    
     m_isEnabled = true;
     reportEvent(STATUS_PREFIX_INFO, "Injector motors enabled.");
 }
@@ -433,6 +452,7 @@ void Injector::machineHome() {
  * @brief Handles the CARTRIDGE_HOME_MOVE command.
  */
 void Injector::cartridgeHome() {
+    m_cumulative_dispensed_ml = 0.0f; // Reset cumulative dispensed volume on cartridge home
     m_homingDistanceSteps = (long)(fabs(INJECTOR_HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
     m_homingBackoffSteps = (long)(INJECTOR_HOMING_BACKOFF_MM * STEPS_PER_MM_INJECTOR);
     m_homingRapidSps = (int)fabs(INJECTOR_HOMING_RAPID_VEL_MMS * STEPS_PER_MM_INJECTOR);
@@ -544,7 +564,8 @@ void Injector::initiateInjectMove(const char* args, float piston_a_diam, float p
         m_active_op_accel_sps2 = (int)accel_sps2;
         m_active_op_torque_percent = torque_percent;
         m_activeFeedCommand = command_str;
-        
+        m_feedStartTime = Milliseconds();
+
         char start_msg[128];
         snprintf(start_msg, sizeof(start_msg), "%s initiated. (steps/ml: %.2f)", command_str, steps_per_ml);
         reportEvent(STATUS_PREFIX_START, start_msg);
@@ -646,14 +667,24 @@ bool Injector::isMoving() {
  * @brief Gets a smoothed torque value from a motor using an EWMA filter.
  */
 float Injector::getSmoothedTorque(MotorDriver *motor, float *smoothedValue, bool *firstRead) {
-    float currentRawTorque = motor->HlfbPercent();
-    if (currentRawTorque == TORQUE_SENTINEL_INVALID_VALUE) {
-        return TORQUE_SENTINEL_INVALID_VALUE;
+    // If the motor is not actively moving, torque is effectively zero.
+    if (!motor->StatusReg().bit.StepsActive) {
+        *firstRead = true; // Reset for the next move
+        return 0.0f;
     }
+
+    float currentRawTorque = motor->HlfbPercent();
+
+    // The driver may return the sentinel value if a reading is not available yet (e.g., at the start of a move).
+    // Treat it as "no data" and return 0 to avoid false torque limit trips.
+    if (currentRawTorque == TORQUE_SENTINEL_INVALID_VALUE) {
+        return 0.0f;
+    }
+
     if (*firstRead) {
         *smoothedValue = currentRawTorque;
         *firstRead = false;
-        } else {
+    } else {
         *smoothedValue = EWMA_ALPHA_TORQUE * currentRawTorque + (1.0f - EWMA_ALPHA_TORQUE) * (*smoothedValue);
     }
     return *smoothedValue + m_torqueOffset;
@@ -685,13 +716,10 @@ bool Injector::checkTorqueLimit() {
  * @brief Finalizes a dispense operation, calculating the total dispensed volume.
  */
 void Injector::finalizeAndResetActiveDispenseOperation(bool success) {
-    if (m_active_op_steps_per_ml > 0.0001f) {
-        long steps_moved_this_segment = m_motorA->PositionRefCommanded() - m_active_op_segment_initial_axis_steps;
-        float segment_dispensed_ml = (float)std::abs(steps_moved_this_segment) / m_active_op_steps_per_ml;
-        m_active_op_total_dispensed_ml += segment_dispensed_ml;
-    }
     if (success) {
+        // With the new polling logic in updateState, m_active_op_total_dispensed_ml should be up-to-date.
         m_last_completed_dispense_ml = m_active_op_total_dispensed_ml;
+        m_cumulative_dispensed_ml += m_active_op_total_dispensed_ml;
     }
     fullyResetActiveDispenseOperation();
 }
@@ -723,14 +751,6 @@ void Injector::reportEvent(const char* statusType, const char* message) {
 const char* Injector::getTelemetryString() {
     float displayTorque0 = getSmoothedTorque(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
     float displayTorque1 = getSmoothedTorque(m_motorB, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
-
-    // When motors are idle, the driver reports a sentinel value. Convert this to 0 for telemetry.
-    if (displayTorque0 == TORQUE_SENTINEL_INVALID_VALUE) {
-        displayTorque0 = 0.0f;
-    }
-    if (displayTorque1 == TORQUE_SENTINEL_INVALID_VALUE) {
-        displayTorque1 = 0.0f;
-    }
     
     long current_pos_steps_m0 = m_motorA->PositionRefCommanded();
     float machine_pos_mm = (float)(current_pos_steps_m0 - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
@@ -739,16 +759,18 @@ const char* Injector::getTelemetryString() {
     int enabled0 = m_motorA->StatusReg().bit.Enabled;
     int enabled1 = m_motorB->StatusReg().bit.Enabled;
 
+    float live_cumulative_ml = m_cumulative_dispensed_ml + m_active_op_total_dispensed_ml;
+
     std::snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
     "inj_t0:%.1f,inj_t1:%.1f,"
     "inj_h_mach:%d,inj_h_cart:%d,"
     "inj_mach_mm:%.2f,inj_cart_mm:%.2f,"
-    "inj_disp_ml:%.2f,inj_tgt_ml:%.2f,"
+    "inj_cumulative_ml:%.2f,inj_active_ml:%.2f,inj_tgt_ml:%.2f,"
     "enabled0:%d,enabled1:%d",
     displayTorque0, displayTorque1,
     (int)m_homingMachineDone, (int)m_homingCartridgeDone,
     machine_pos_mm, cartridge_pos_mm,
-    m_last_completed_dispense_ml, m_active_op_target_ml,
+    live_cumulative_ml, m_active_op_total_dispensed_ml, m_active_op_target_ml,
     enabled0, enabled1
     );
     return m_telemetryBuffer;
@@ -756,6 +778,17 @@ const char* Injector::getTelemetryString() {
 
 bool Injector::isBusy() const {
     return m_state != STATE_STANDBY;
+}
+
+const char* Injector::getStateString() const {
+    switch (m_state) {
+        case STATE_STANDBY:     return "Standby";
+        case STATE_HOMING:      return "Homing";
+        case STATE_JOGGING:     return "Jogging";
+        case STATE_FEEDING:     return "Feeding";
+        case STATE_MOTOR_FAULT: return "Fault";
+        default:                return "Unknown";
+    }
 }
 
 bool Injector::isInFault() const {

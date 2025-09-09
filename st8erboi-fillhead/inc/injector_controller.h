@@ -126,6 +126,12 @@ public:
      */
     bool isBusy() const;
 
+    /**
+     * @brief Gets the current state of the injector as a string.
+     * @return A const char* representing the current state.
+     */
+    const char* getStateString() const;
+
 private:
     void startMove(long steps, int velSps, int accelSps2);
     bool isMoving();
@@ -198,6 +204,7 @@ private:
     float m_smoothedTorqueValue0, m_smoothedTorqueValue1; ///< Smoothed torque values for each motor.
     bool m_firstTorqueReading0, m_firstTorqueReading1;   ///< Flags for initializing torque smoothing.
     int32_t m_machineHomeReferenceSteps, m_cartridgeHomeReferenceSteps; ///< Stored step counts for home positions.
+    float m_cumulative_dispensed_ml; // Cumulative dispensed volume since last cartridge home
     int m_feedDefaultTorquePercent; ///< Default torque for feed moves.
     long m_feedDefaultVelocitySPS;  ///< Default velocity for feed moves.
     long m_feedDefaultAccelSPS2;    ///< Default acceleration for feed moves.
@@ -222,6 +229,7 @@ private:
     int m_active_op_velocity_sps;           ///< Velocity for the current operation.
     int m_active_op_accel_sps2;             ///< Acceleration for the current operation.
     int m_active_op_torque_percent;         ///< Torque limit for the current operation.
+    uint32_t m_feedStartTime;               ///< Timestamp when a feed operation started.
     
     char m_telemetryBuffer[256]; ///< Buffer for the telemetry string.
 };

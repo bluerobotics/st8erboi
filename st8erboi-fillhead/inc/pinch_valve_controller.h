@@ -63,8 +63,10 @@ public:
 
 	/**
 	 * @brief Initiates the homing sequence for the valve.
+	 * @param is_tubed A boolean indicating whether the homing sequence should
+	 *                 use the backoff distance for a tubed or untubed state.
 	 */
-	void home();
+	void home(bool is_tubed);
 
 	/**
 	 * @brief Commands the valve to move to the fully open position.
@@ -109,6 +111,12 @@ public:
 	bool isHomed() const;
 
 	/**
+	 * @brief Checks if the valve is currently in the fully open state.
+	 * @return True if open, false otherwise.
+	 */
+	bool isOpen() const;
+
+	/**
 	 * @brief Gets the telemetry string for this valve.
 	 * @return A constant character pointer to the telemetry data string.
 	 */
@@ -125,6 +133,12 @@ public:
 	 * @return True if the valve is homing, opening, closing, or jogging.
 	 */
 	bool isBusy() const;
+
+	/**
+	 * @brief Gets the current state of the valve as a string.
+	 * @return A const char* representing the current state.
+	 */
+	const char* getStateString() const;
 
 private:
 	/**
@@ -231,4 +245,6 @@ private:
 	int m_homingUnifiedSps;
 	/// @brief The acceleration for homing moves, in steps per second squared.
 	int m_homingAccelSps2;
+	float m_homingSearchTorque;
+	float m_homingBackoffTorque;
 };

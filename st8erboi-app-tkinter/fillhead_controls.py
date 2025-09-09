@@ -170,10 +170,17 @@ def create_homing_controls(parent, send_cmd_func):
     pinch_home_btn_frame.grid_columnconfigure(0, weight=1)
     pinch_home_btn_frame.grid_columnconfigure(1, weight=1)
 
-    ttk.Button(pinch_home_btn_frame, text="Home Injection Valve", style='Small.TButton',
-               command=lambda: send_cmd_func("INJECTION_VALVE_HOME")).grid(row=0, column=0, sticky="ew", padx=(0, 2))
-    ttk.Button(pinch_home_btn_frame, text="Home Vacuum Valve", style='Small.TButton',
-               command=lambda: send_cmd_func("VACUUM_VALVE_HOME")).grid(row=0, column=1, sticky="ew", padx=(2, 0))
+    # Row 0: Untubed Homing
+    ttk.Button(pinch_home_btn_frame, text="Home Inj (Untubed)", style='Small.TButton',
+               command=lambda: send_cmd_func("INJECTION_VALVE_HOME_UNTUBED")).grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=(0,2))
+    ttk.Button(pinch_home_btn_frame, text="Home Vac (Untubed)", style='Small.TButton',
+               command=lambda: send_cmd_func("VACUUM_VALVE_HOME_UNTUBED")).grid(row=0, column=1, sticky="ew", padx=(2, 0), pady=(0,2))
+
+    # Row 1: Tubed Homing
+    ttk.Button(pinch_home_btn_frame, text="Home Inj (Tubed)", style='Small.TButton',
+               command=lambda: send_cmd_func("INJECTION_VALVE_HOME_TUBED")).grid(row=1, column=0, sticky="ew", padx=(0, 2))
+    ttk.Button(pinch_home_btn_frame, text="Home Vac (Tubed)", style='Small.TButton',
+               command=lambda: send_cmd_func("VACUUM_VALVE_HOME_TUBED")).grid(row=1, column=1, sticky="ew", padx=(2, 0))
 
 
 def _create_operation_ui(parent, op_name, op_command, send_cmd_func, ui_elements, variables):
@@ -203,10 +210,12 @@ def _create_operation_ui(parent, op_name, op_command, send_cmd_func, ui_elements
     tk.Label(op_status_frame, text="Est. Time:", bg=parent['bg'], fg='white', font=font_small).pack(side=tk.LEFT)
     tk.Label(op_status_frame, textvariable=variables[f'{op_prefix}_time_var'], bg=parent['bg'], fg='cyan',
              font=font_small).pack(side=tk.LEFT, padx=5)
-    tk.Label(op_status_frame, text="Dispensed:", bg=parent['bg'], fg='white', font=font_small).pack(side=tk.LEFT, padx=(10, 0))
-    # Note: Both Inject and Purge update the same 'inject_dispensed_ml_var' from telemetry
-    tk.Label(op_status_frame, textvariable=variables['inject_dispensed_ml_var'], bg=parent['bg'],
+    tk.Label(op_status_frame, text="Active Vol:", bg=parent['bg'], fg='white', font=font_small).pack(side=tk.LEFT, padx=(10, 0))
+    tk.Label(op_status_frame, textvariable=variables['inject_active_ml_var'], bg=parent['bg'],
              fg='lightgreen', font=font_small).pack(side=tk.LEFT, padx=5)
+    tk.Label(op_status_frame, text="Total Vol:", bg=parent['bg'], fg='white', font=font_small).pack(side=tk.LEFT, padx=(10, 0))
+    tk.Label(op_status_frame, textvariable=variables['inject_cumulative_ml_var'], bg=parent['bg'],
+             fg='yellow', font=font_small).pack(side=tk.LEFT, padx=5)
 
     # --- Operation Buttons ---
     op_btn_frame = tk.Frame(parent, bg=parent['bg'])
@@ -334,10 +343,11 @@ def create_fillhead_ancillary_controls(parent, send_fillhead_cmd, shared_gui_ref
     if 'inject_amount_ml_var' not in variables: variables['inject_amount_ml_var'] = tk.StringVar(value='0.1')
     if 'inject_speed_ml_s_var' not in variables: variables['inject_speed_ml_s_var'] = tk.StringVar(value='0.1')
     if 'inject_time_var' not in variables: variables['inject_time_var'] = tk.StringVar(value='---')
+    if 'inject_cumulative_ml_var' not in variables: variables['inject_cumulative_ml_var'] = tk.StringVar(value='---')
+    if 'inject_active_ml_var' not in variables: variables['inject_active_ml_var'] = tk.StringVar(value='---')
     if 'purge_amount_ml_var' not in variables: variables['purge_amount_ml_var'] = tk.StringVar(value='0.5')
     if 'purge_speed_ml_s_var' not in variables: variables['purge_speed_ml_s_var'] = tk.StringVar(value='0.5')
     if 'purge_time_var' not in variables: variables['purge_time_var'] = tk.StringVar(value='---')
-    if 'purge_dispensed_ml_var' not in variables: variables['purge_dispensed_ml_var'] = tk.StringVar(value='---')
 
 
     ancillary_frame = tk.Frame(parent, bg="#2a2d3b")

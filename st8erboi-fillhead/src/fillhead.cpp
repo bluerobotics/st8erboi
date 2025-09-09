@@ -184,11 +184,11 @@ void Fillhead::dispatchCommand(const Message& msg) {
         return; // This is a discovery command for another device.
     }
 
-    Command command = m_comms.parseCommand(msg.buffer);
+    Command command_enum = m_comms.parseCommand(msg.buffer);
     
     // If the system is in an error state, block most commands.
     if (m_mainState == STATE_ERROR) {
-        if (command != CMD_CLEAR_ERRORS && command != CMD_DISABLE && command != CMD_DISCOVER) {
+        if (command_enum != CMD_CLEAR_ERRORS && command_enum != CMD_DISABLE && command_enum != CMD_DISCOVER) {
             m_comms.reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System is in ERROR state. Send CLEAR_ERRORS to reset.");
             return;
         }
@@ -200,8 +200,16 @@ void Fillhead::dispatchCommand(const Message& msg) {
         args++; // Move pointer past the space to the start of the arguments.
     }
 
+    // Check if the command is an injection command and if the valve is ready.
+    if (command_enum == CMD_INJECT_STATOR || command_enum == CMD_INJECT_ROTOR) {
+        if (!m_injectorValve.isHomed() || !m_injectorValve.isOpen()) {
+            reportEvent(STATUS_PREFIX_ERROR, "Injection command ignored: Injector valve is not homed and open.");
+            return;
+        }
+    }
+
     // --- Master Command Delegation Switchboard ---
-    switch (command) {
+    switch (command_enum) {
         // --- System-Level Commands (Handled by Fillhead) ---
         case CMD_DISCOVER: {
             // This is a special case. The discover command is broadcast, so we might
@@ -236,21 +244,32 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_PAUSE_INJECTION:
         case CMD_RESUME_INJECTION:
         case CMD_CANCEL_INJECTION:
-            m_injector.handleCommand(command, args);
+            // These are injector commands.
+            m_injector.handleCommand(command_enum, args);
             break;
 
         // --- Pinch Valve Commands (Delegated to respective PinchValve) ---
-        case CMD_INJECTION_VALVE_HOME:
+        case CMD_INJECTION_VALVE_HOME_UNTUBED:
+            m_injectorValve.handleCommand(command_enum, args);
+            break;
+        case CMD_INJECTION_VALVE_HOME_TUBED:
+            m_injectorValve.handleCommand(command_enum, args);
+            break;
         case CMD_INJECTION_VALVE_OPEN:
         case CMD_INJECTION_VALVE_CLOSE:
         case CMD_INJECTION_VALVE_JOG:
-            m_injectorValve.handleCommand(command, args);
+            m_injectorValve.handleCommand(command_enum, args);
             break;
-        case CMD_VACUUM_VALVE_HOME:
+        case CMD_VACUUM_VALVE_HOME_UNTUBED:
+            m_vacuumValve.handleCommand(command_enum, args);
+            break;
+        case CMD_VACUUM_VALVE_HOME_TUBED:
+            m_vacuumValve.handleCommand(command_enum, args);
+            break;
         case CMD_VACUUM_VALVE_OPEN:
         case CMD_VACUUM_VALVE_CLOSE:
         case CMD_VACUUM_VALVE_JOG:
-            m_vacuumValve.handleCommand(command, args);
+            m_vacuumValve.handleCommand(command_enum, args);
             break;
 
         // --- Heater Commands (Delegated to HeaterController) ---
@@ -258,7 +277,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_HEATER_OFF:
         case CMD_SET_HEATER_GAINS:
         case CMD_SET_HEATER_SETPOINT:
-            m_heater.handleCommand(command, args);
+            m_heater.handleCommand(command_enum, args);
             break;
 
         // --- Vacuum Commands (Delegated to VacuumController) ---
@@ -269,7 +288,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_SET_VACUUM_TIMEOUT_S:
         case CMD_SET_LEAK_TEST_DELTA:
         case CMD_SET_LEAK_TEST_DURATION_S:
-            m_vacuum.handleCommand(command, args);
+            m_vacuum.handleCommand(command_enum, args);
             break;
 
         // --- Default/Unknown ---
@@ -304,14 +323,20 @@ void Fillhead::publishTelemetry() {
         "%s," // Injection Valve Telemetry
         "%s," // Vacuum Valve Telemetry
         "%s," // Heater Telemetry
-        "%s", // Vacuum Telemetry
+        "%s," // Vacuum Telemetry
+		"inj_st:%s,inj_v_st:%s,vac_v_st:%s,h_st_str:%s,vac_st_str:%s",
         TELEM_PREFIX,
         mainStateStr,
         m_injector.getTelemetryString(),
         m_injectorValve.getTelemetryString(),
         m_vacuumValve.getTelemetryString(),
         m_heater.getTelemetryString(),
-        m_vacuum.getTelemetryString()
+        m_vacuum.getTelemetryString(),
+		m_injector.getStateString(),
+		m_injectorValve.getStateString(),
+		m_vacuumValve.getStateString(),
+		m_heater.getStateString(),
+		m_vacuum.getStateString()
     );
 
     // Enqueue the message for sending.
@@ -363,16 +388,30 @@ void Fillhead::abort() {
 void Fillhead::clearErrors() {
     reportEvent(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
 
-    // First, reset the software state of all components. This will trigger a non-blocking
-    // stop of any moving parts.
+    // Abort any active motion first to ensure a clean state.
+    m_injector.abortMove();
+    m_injectorValve.abort();
+    m_vacuumValve.abort();
+    m_vacuum.resetState();
+
+    // Power cycle the motors to clear hardware faults.
+    m_injector.disable();
+    m_injectorValve.disable();
+    m_vacuumValve.disable();
+    Delay_ms(100); // A longer delay to ensure motors fully power down.
+    m_injector.enable();
+    m_injectorValve.enable();
+    m_vacuumValve.enable();
+
+    // Now, fully reset the software state of all components to ensure they are idle.
     m_injector.reset();
     m_injectorValve.reset();
     m_vacuumValve.reset();
     m_vacuum.resetState();
-
-    // Now, enter the error clearing state. The main updateState loop will handle
-    // waiting for the components to become idle before cycling motor power.
-    m_mainState = STATE_CLEARING_ERRORS;
+    
+    // The system is now fully reset and ready.
+    m_mainState = STATE_STANDBY;
+    reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
 }
 
 /**

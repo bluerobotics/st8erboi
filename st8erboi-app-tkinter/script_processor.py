@@ -202,8 +202,14 @@ class ScriptRunner:
                     send_func = self.command_funcs.get(f"send_{device}")
                     if send_func:
                         send_func(final_command_str)
-                        # Add VACUUM_LEAK_TEST to the list of commands that we wait for a DONE message
-                        if "MOVE" in command_word or "HOME" in command_word or "VACUUM_LEAK_TEST" in command_word or "INJECT_STATOR" in command_word or "INJECT_ROTOR" in command_word:
+                        # Add any command that elicits a "_DONE" response to this list.
+                        if "MOVE" in command_word or \
+                           "HOME" in command_word or \
+                           "OPEN" in command_word or \
+                           "CLOSE" in command_word or \
+                           "VACUUM_LEAK_TEST" in command_word or \
+                           "INJECT_STATOR" in command_word or \
+                           "INJECT_ROTOR" in command_word:
                             commands_to_wait_for.append(command_word)
                 time.sleep(0.05)
 
@@ -261,9 +267,9 @@ class ScriptRunner:
                     # messages don't contain the original command string.
                     if command_to_check == "VACUUM_LEAK_TEST" and "LEAK_TEST" in msg and "PASSED" in msg:
                         is_complete = True
-                    elif command_to_check == "INJECTION_VALVE_HOME" and "inj_valve" in msg and "DONE" in msg:
+                    elif (command_to_check == "INJECTION_VALVE_HOME_UNTUBED" or command_to_check == "INJECTION_VALVE_HOME_TUBED") and "inj_valve" in msg and "DONE" in msg:
                         is_complete = True
-                    elif command_to_check == "VACUUM_VALVE_HOME" and "vac_valve" in msg and "DONE" in msg:
+                    elif (command_to_check == "VACUUM_VALVE_HOME_UNTUBED" or command_to_check == "VACUUM_VALVE_HOME_TUBED") and "vac_valve" in msg and "DONE" in msg:
                         is_complete = True
                     # Generic fallback for other commands like MOVE_X, HOME_Y, etc.
                     elif command_to_check in msg and "DONE" in msg:

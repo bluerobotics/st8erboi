@@ -501,6 +501,9 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
             script_runner.stop()
         command_funcs['abort']()
 
+        # Explicitly clear any lingering execution highlight immediately.
+        script_editor.tag_remove("exec_highlight", "1.0", tk.END)
+
         # Send CLEAR_ERRORS to both devices. Gantry will ignore it for now.
         command_funcs['send_fillhead']("CLEAR_ERRORS")
         command_funcs['send_gantry']("CLEAR_ERRORS")

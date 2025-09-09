@@ -84,6 +84,12 @@ class VacuumController {
 	 */
 	bool isBusy() const;
 
+	/**
+	 * @brief Gets the current state of the vacuum system as a string.
+	 * @return A const char* representing the current state.
+	 */
+	const char* getStateString() const;
+
 	private:
 	/**
 	 * @brief Formats and sends a status message via the main Fillhead controller.

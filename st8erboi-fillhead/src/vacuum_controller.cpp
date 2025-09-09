@@ -214,3 +214,15 @@ const char* VacuumController::getTelemetryString() {
 bool VacuumController::isBusy() const {
     return m_state != VACUUM_OFF && m_state != VACUUM_ERROR;
 }
+
+const char* VacuumController::getStateString() const {
+	switch (m_state) {
+		case VACUUM_OFF:            return "Off";
+		case VACUUM_PULLDOWN:       return "Pulldown";
+		case VACUUM_SETTLING:       return "Settling";
+		case VACUUM_LEAK_TESTING:   return "Leak Test";
+		case VACUUM_ACTIVE_HOLD:    return "Hold";
+		case VACUUM_ERROR:          return "Error";
+		default:                    return "Unknown";
+	}
+}

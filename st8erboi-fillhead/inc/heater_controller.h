@@ -66,7 +66,13 @@ class HeaterController {
 	 */
 	const char* getTelemetryString();
 
-	private:
+	/**
+	 * @brief Gets the current state of the heater as a string.
+	 * @return A const char* representing the current state.
+	 */
+	const char* getStateString() const;
+
+private:
 	/// @brief Pointer to the main Fillhead controller for sending messages.
 	Fillhead* m_controller;
 	/// @brief The current operational state of the heater (ON/OFF).

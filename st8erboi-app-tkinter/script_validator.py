@@ -45,22 +45,24 @@ COMMANDS = {
         "params": [],
         "help": "Homes the injector against the cartridge using hardcoded parameters from firmware."
     },
-    "INJECTION_VALVE_HOME": {"device": "fillhead", "params": [], "help": "Homes the injection pinch valve."},
-    "INJECTION_VALVE_OPEN": {"device": "fillhead", "params": [], "help": "Opens the injection pinch valve."},
     "INJECTION_VALVE_CLOSE": {"device": "fillhead", "params": [], "help": "Closes the injection pinch valve."},
+    "INJECTION_VALVE_HOME_TUBED": {"device": "fillhead", "params": [], "help": "Homes the injection pinch valve with a tube installed."},
+    "INJECTION_VALVE_HOME_UNTUBED": {"device": "fillhead", "params": [], "help": "Homes the injection pinch valve without a tube installed."},
     "INJECTION_VALVE_JOG": {
         "device": "fillhead",
         "params": [{"name": "Dist(mm)", "type": float, "min": -50, "max": 50}],
         "help": "Jogs the injection pinch valve by a relative distance."
     },
-    "VACUUM_VALVE_HOME": {"device": "fillhead", "params": [], "help": "Homes the vacuum pinch valve."},
-    "VACUUM_VALVE_OPEN": {"device": "fillhead", "params": [], "help": "Opens the vacuum pinch valve."},
+    "INJECTION_VALVE_OPEN": {"device": "fillhead", "params": [], "help": "Opens the injection pinch valve."},
     "VACUUM_VALVE_CLOSE": {"device": "fillhead", "params": [], "help": "Closes the vacuum pinch valve."},
+    "VACUUM_VALVE_HOME_TUBED": {"device": "fillhead", "params": [], "help": "Homes the vacuum pinch valve with a tube installed."},
+    "VACUUM_VALVE_HOME_UNTUBED": {"device": "fillhead", "params": [], "help": "Homes the vacuum pinch valve without a tube installed."},
     "VACUUM_VALVE_JOG": {
         "device": "fillhead",
         "params": [{"name": "Dist(mm)", "type": float, "min": -50, "max": 50}],
         "help": "Jogs the vacuum pinch valve by a relative distance."
     },
+    "VACUUM_VALVE_OPEN": {"device": "fillhead", "params": [], "help": "Opens the vacuum pinch valve."},
     "MOVE_TO_CARTRIDGE_HOME": {"device": "fillhead", "params": [],
                                "help": "Moves the injector to the zero position of the cartridge."},
     "PAUSE_INJECTION": {"device": "fillhead", "params": [], "help": "Pauses an ongoing injection or purge."},

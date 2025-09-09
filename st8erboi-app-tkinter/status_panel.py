@@ -105,7 +105,7 @@ def create_status_bar(parent, shared_gui_refs):
     cartridge_label = tk.Label(injector_dist_frame, text="Cartridge:", bg=injector_dist_frame['bg'],
                                font=font_medium_readout)
     cartridge_label.grid(row=1, column=0, sticky='w')
-    tk.Label(injector_dist_frame, textvariable=shared_gui_refs['inject_dispensed_ml_var'], bg=injector_dist_frame['bg'],
+    tk.Label(injector_dist_frame, textvariable=shared_gui_refs['cartridge_steps_var'], bg=injector_dist_frame['bg'],
              fg='white', font=font_medium_readout, anchor='e').grid(row=1, column=1, sticky='ew', padx=5)
 
     injector_torque_widget = create_torque_widget(injector_dist_frame, shared_gui_refs['torque0_var'], bar_height)
@@ -170,21 +170,64 @@ def create_status_bar(parent, shared_gui_refs):
         row=1, column=0, sticky='e', padx=5, pady=3)
     tk.Label(status_grid, textvariable=shared_gui_refs['fh_state_var'], bg=sys_status_frame['bg'], fg="yellow",
              font=font_state_value).grid(row=1, column=1, sticky='w')
-    ttk.Separator(status_grid, orient='horizontal').grid(row=2, column=0, columnspan=2, sticky='ew', pady=8)
-    tk.Label(status_grid, text="Vacuum:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(row=3,
+    
+    # --- Gantry Axis States ---
+    gantry_states_frame = tk.Frame(status_grid, bg=sys_status_frame['bg'])
+    gantry_states_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=2, padx=20)
+    gantry_states_frame.grid_columnconfigure((0, 1, 2), weight=1)
+    
+    tk.Label(gantry_states_frame, text="X:", bg=sys_status_frame['bg'], fg="yellow").grid(row=0, column=0, sticky='e')
+    tk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_x_var'], bg=sys_status_frame['bg'], fg="white").grid(row=0, column=1, sticky='w')
+    tk.Label(gantry_states_frame, text="Y:", bg=sys_status_frame['bg'], fg="yellow").grid(row=1, column=0, sticky='e')
+    tk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_y_var'], bg=sys_status_frame['bg'], fg="white").grid(row=1, column=1, sticky='w')
+    tk.Label(gantry_states_frame, text="Z:", bg=sys_status_frame['bg'], fg="yellow").grid(row=2, column=0, sticky='e')
+    tk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_z_var'], bg=sys_status_frame['bg'], fg="white").grid(row=2, column=1, sticky='w')
+
+    ttk.Separator(status_grid, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=8)
+    
+    # --- Fillhead Component States ---
+    fillhead_states_frame = tk.Frame(status_grid, bg=sys_status_frame['bg'])
+    fillhead_states_frame.grid(row=4, column=0, columnspan=2, sticky='ew', pady=(2, 0), padx=20)
+    fillhead_states_frame.grid_columnconfigure(1, weight=1)
+
+    # Define a consistent color scheme
+    fillhead_label_color = "#87CEEB"
+    
+    # Data for fillhead components
+    fillhead_components = [
+        ("Injector:", 'fillhead_injector_state_var'),
+        ("Inject Valve:", 'fillhead_inj_valve_state_var'),
+        ("Vac Valve:", 'fillhead_vac_valve_state_var'),
+        ("Heater:", 'fillhead_heater_state_var'),
+        ("Vacuum:", 'fillhead_vacuum_state_var')
+    ]
+
+    for i, (label_text, var_key) in enumerate(fillhead_components):
+        tk.Label(fillhead_states_frame, text=label_text, bg=sys_status_frame['bg'], fg=fillhead_label_color).grid(row=i, column=0, sticky='e', padx=(0, 5))
+        tk.Label(fillhead_states_frame, textvariable=shared_gui_refs[var_key], bg=sys_status_frame['bg'], fg="white").grid(row=i, column=1, sticky='w')
+
+    ttk.Separator(status_grid, orient='horizontal').grid(row=5, column=0, columnspan=2, sticky='ew', pady=8)
+
+
+    tk.Label(status_grid, text="Vacuum:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(row=6,
                                                                                                               column=0,
                                                                                                               sticky='e',
                                                                                                               padx=5,
                                                                                                               pady=2)
     tk.Label(status_grid, textvariable=shared_gui_refs['vacuum_psig_var'], bg=sys_status_frame['bg'], fg="#aaddff",
-             font=font_status_value).grid(row=3, column=1, sticky='w')
+             font=font_status_value).grid(row=6, column=1, sticky='w')
     tk.Label(status_grid, text="Heater Temp:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
-        row=4, column=0, sticky='e', padx=5, pady=2)
+        row=7, column=0, sticky='e', padx=5, pady=2)
     tk.Label(status_grid, textvariable=shared_gui_refs['temp_c_var'], bg=sys_status_frame['bg'], fg="orange",
-             font=font_status_value).grid(row=4, column=1, sticky='w')
-    tk.Label(status_grid, text="Dispensed (ml):", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
-        row=5, column=0, sticky='e', padx=5, pady=2)
-    tk.Label(status_grid, textvariable=shared_gui_refs['cartridge_steps_var'], bg=sys_status_frame['bg'],
-             fg="lightgreen", font=font_status_value).grid(row=5, column=1, sticky='w')
+             font=font_status_value).grid(row=7, column=1, sticky='w')
+    tk.Label(status_grid, text="Dispensed (Active):", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
+        row=8, column=0, sticky='e', padx=5, pady=2)
+    tk.Label(status_grid, textvariable=shared_gui_refs['inject_active_ml_var'], bg=sys_status_frame['bg'],
+             fg="lightgreen", font=font_status_value).grid(row=8, column=1, sticky='w')
+    tk.Label(status_grid, text="Dispensed (Total):", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
+        row=9, column=0, sticky='e', padx=5, pady=2)
+    tk.Label(status_grid, textvariable=shared_gui_refs['inject_cumulative_ml_var'], bg=sys_status_frame['bg'],
+             fg="yellow", font=font_status_value).grid(row=9, column=1, sticky='w')
+
 
     return status_bar_container

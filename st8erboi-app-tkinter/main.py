@@ -45,7 +45,17 @@ def main():
         'homed1_var': tk.StringVar(value='Not Homed'),
         'machine_steps_var': tk.StringVar(value='---'),
         'cartridge_steps_var': tk.StringVar(value='---'),
-        'inject_dispensed_ml_var': tk.StringVar(value='---'),
+        'heater_mode_var': tk.StringVar(value='---'),
+        'vacuum_state_var': tk.StringVar(value='---'),
+        'inject_cumulative_ml_var': tk.StringVar(value='---'),
+        'inject_active_ml_var': tk.StringVar(value='---'),
+
+        # --- Fillhead Component States ---
+        'fillhead_injector_state_var': tk.StringVar(value='---'),
+        'fillhead_inj_valve_state_var': tk.StringVar(value='---'),
+        'fillhead_vac_valve_state_var': tk.StringVar(value='---'),
+        'fillhead_heater_state_var': tk.StringVar(value='---'),
+        'fillhead_vacuum_state_var': tk.StringVar(value='---'),
 
         # --- Fillhead Torque Values ---
         'torque0_var': tk.DoubleVar(value=0.0),

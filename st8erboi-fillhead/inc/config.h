@@ -15,7 +15,7 @@
 //==================================================================================================
 // System Behavior
 //==================================================================================================
-#define STATUS_MESSAGE_BUFFER_SIZE      128       // Standard buffer size for status and error messages.
+#define STATUS_MESSAGE_BUFFER_SIZE      256       // Standard buffer size for status and error messages.
 #define POST_ABORT_DELAY_MS             100       // Delay in milliseconds after an abort to allow motors to settle.
 
 //==================================================================================================
@@ -24,8 +24,8 @@
 #define INJECTOR_PITCH_MM_PER_REV       5.0f      // Linear travel (in mm) of the injector plunger for one full motor revolution.
 #define PINCH_PITCH_MM_PER_REV          2.0f      // Linear travel (in mm) of the pinch valve actuator for one full motor revolution.
 #define PULSES_PER_REV                  800       // Number of step pulses required for one full motor revolution (microstepping dependent).
-#define STEPS_PER_MM_INJECTOR           (PULSES_PER_REV / INJECTOR_PITCH_MM_PER_REV) // Calculated steps per millimeter for the injector axis.
-#define STEPS_PER_MM_PINCH              (PULSES_PER_REV / PINCH_PITCH_MM_PER_REV)    // Calculated steps per millimeter for the pinch valve axes.
+#define STEPS_PER_MM_INJECTOR           (PULSES_PER_REV / INJECTOR_PITCH_MM_PER_REV)   // Calculated steps/mm for the main injector drive.
+#define STEPS_PER_MM_PINCH              (PULSES_PER_REV / PINCH_PITCH_MM_PER_REV)      // Calculated steps/mm for the pinch valve mechanism.
 #define MAX_HOMING_DURATION_MS          100000    // Maximum time (in milliseconds) a homing operation is allowed to run before timing out.
 
 //==================================================================================================
@@ -89,6 +89,12 @@
 #define MOTOR_DEFAULT_ACCEL_MAX_MMSS        625.0f    // Default maximum acceleration for motors in mm/s^2.
 #define MOTOR_DEFAULT_VEL_MAX_SPS           (int)(MOTOR_DEFAULT_VEL_MAX_MMS * STEPS_PER_MM_INJECTOR)
 #define MOTOR_DEFAULT_ACCEL_MAX_SPS2        (int)(MOTOR_DEFAULT_ACCEL_MAX_MMSS * STEPS_PER_MM_INJECTOR)
+#define PINCH_DEFAULT_VEL_MAX_SPS           (int)(MOTOR_DEFAULT_VEL_MAX_MMS * STEPS_PER_MM_PINCH)
+#define PINCH_DEFAULT_ACCEL_MAX_SPS2        (int)(MOTOR_DEFAULT_ACCEL_MAX_MMSS * STEPS_PER_MM_PINCH)
+
+// --- Timeouts ---
+#define MOVE_START_TIMEOUT_MS           (250)
+
 
 // --- Initialization Defaults ---
 #define DEFAULT_INJECTOR_TORQUE_LIMIT       20.0f     // Default torque limit (%) for injector motors.
@@ -98,31 +104,41 @@
 #define INJECTOR_HOMING_STROKE_MM           500.0f
 #define INJECTOR_HOMING_RAPID_VEL_MMS       5.0f
 #define INJECTOR_HOMING_TOUCH_VEL_MMS       1.0f
-#define INJECTOR_HOMING_BACKOFF_VEL_MMS     5.0f
+#define INJECTOR_HOMING_BACKOFF_VEL_MMS     1.0f
 #define INJECTOR_HOMING_ACCEL_MMSS          100.0f
 #define INJECTOR_HOMING_SEARCH_TORQUE_PERCENT 10.0f
 #define INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT 40.0f
 #define INJECTOR_HOMING_BACKOFF_MM          1.0f
 
-// --- Pinch Valve Homing Defaults ---
-#define PINCH_HOMING_STROKE_MM              50.0f
-#define PINCH_HOMING_UNIFIED_VEL_MMS        1.0f // The single speed for all homing moves.
-#define PINCH_HOMING_ACCEL_MMSS             100.0f
-#define PINCH_HOMING_SEARCH_TORQUE_PERCENT  10.0f
-#define PINCH_HOMING_BACKOFF_TORQUE_PERCENT 50.0f
-#define PINCH_VALVE_HOMING_BACKOFF_MM       0.5f      // Distance (mm) for the initial and intermediate backoffs.
-#define PINCH_VALVE_FINAL_OFFSET_MM         9.0f      // Distance (mm) for the final offset from the hard stop.
+// --- Pinch Valve Homing (Untubed) ---
+#define PINCH_HOMING_UNTUBED_STROKE_MM              50.0f
+#define PINCH_HOMING_UNTUBED_UNIFIED_VEL_MMS        1.0f
+#define PINCH_HOMING_UNTUBED_ACCEL_MMSS             100.0f
+#define PINCH_HOMING_UNTUBED_SEARCH_TORQUE_PERCENT  15.0f
+#define PINCH_HOMING_UNTUBED_BACKOFF_TORQUE_PERCENT 50.0f
+#define PINCH_VALVE_UNTUBED_FINAL_OFFSET_MM         9.0f
+#define PINCH_VALVE_HOMING_BACKOFF_MM_UNTUBED 0.5f
+
+// --- Pinch Valve Homing (Tubed) ---
+#define PINCH_HOMING_TUBED_STROKE_MM              50.0f
+#define PINCH_HOMING_TUBED_UNIFIED_VEL_MMS        1.0f
+#define PINCH_HOMING_TUBED_ACCEL_MMSS             100.0f
+#define PINCH_HOMING_TUBED_SEARCH_TORQUE_PERCENT  60.0f  // Higher torque for pinching the tube
+#define PINCH_HOMING_TUBED_BACKOFF_TORQUE_PERCENT 80.0f
+#define PINCH_VALVE_TUBED_FINAL_OFFSET_MM         6.0f
+#define PINCH_VALVE_HOMING_BACKOFF_MM_TUBED 0.5f
+
 
 // --- Pinch Valve Operation Defaults (NEW) ---
-#define PINCH_VALVE_PINCH_TORQUE_PERCENT    50.0f     // Target torque for closing the valve.
-#define PINCH_VALVE_PINCH_VEL_MMS           2.0f      // Speed for the closing (pinching) move.
+#define PINCH_VALVE_PINCH_TORQUE_PERCENT    75.0f     // Target torque for closing the valve.
+#define PINCH_VALVE_PINCH_VEL_MMS           1.0f      // Speed for the closing (pinching) move.
 #define PINCH_VALVE_OPEN_VEL_MMS            10.0f     // Speed for the opening move (returning to home).
 #define PINCH_VALVE_OPEN_ACCEL_MMSS         50.0f     // Acceleration for the opening move.
 
 
 // --- Jogging Defaults ---
 #define JOG_DEFAULT_TORQUE_PERCENT          30        // Default torque limit (%) for jog moves.
-#define JOG_DEFAULT_VEL_MMS                 2.0f      // Default velocity (mm/s) for jog moves.
+#define JOG_DEFAULT_VEL_MMS                 1.0f      // Default velocity (mm/s) for jog moves.
 #define JOG_DEFAULT_ACCEL_MMSS              10.0f     // Default acceleration (mm/s^2) for jog moves.
 #define PINCH_JOG_DEFAULT_VEL_MMS           5.0f      // Default velocity (mm/s) for pinch valve jog moves.
 #define PINCH_JOG_DEFAULT_ACCEL_MMSS        25.0f     // Default acceleration (mm/s^2) for pinch valve jog moves.

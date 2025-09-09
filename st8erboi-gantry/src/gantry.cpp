@@ -114,14 +114,14 @@ void Gantry::publishTelemetry() {
     snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
         "%s"
         "gantry_state:%s,"
-        "x_p:%.2f,x_t:%.2f,x_e:%d,x_h:%d,"
-        "y_p:%.2f,y_t:%.2f,y_e:%d,y_h:%d,"
-        "z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d",
+        "x_p:%.2f,x_t:%.2f,x_e:%d,x_h:%d,x_st:%s,"
+        "y_p:%.2f,y_t:%.2f,y_e:%d,y_h:%d,y_st:%s,"
+        "z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d,z_st:%s",
         TELEM_PREFIX,
         getGantryStateString(),
-        xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(),
-        yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(),
-        zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed());
+        xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(), xAxis.getStateString(),
+        yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(), yAxis.getStateString(),
+        zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(), zAxis.getStateString());
 
     // Enqueue the formatted string for transmission.
     m_comms.enqueueTx(m_telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
@@ -189,6 +189,12 @@ void Gantry::message(const Message& msg) {
 
         // --- Miscellaneous Commands ---
         case CMD_DISCOVER: {
+            // This is a special case. The discover command is broadcast, so we might
+            // receive one intended for the fillhead. If the command string doesn't
+            // match ours, we should just silently ignore it.
+            if (strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
+                return; // Not for us, so exit quietly.
+            }
             // Extract the GUI's listening port from the discovery message.
             char* portStr = strstr(msg.buffer, "PORT=");
             if (portStr) {
