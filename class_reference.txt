@@ -7,12 +7,12 @@
     - loop
     - reportEvent
 - Private
-    - dispatchCommand
     - abort
     - enable
     - disable
     - clearErrors
     - standby
+    - dispatchCommand
     - publishTelemetry
     - updateState
     - getState
@@ -75,14 +75,14 @@
     - loop
     - reportEvent
 - Private
-    - updateState
-    - dispatchCommand
-    - publishTelemetry
+    - abort
     - enable
     - disable
-    - abort
     - clearErrors
     - standby
+    - dispatchCommand
+    - publishTelemetry
+    - updateState
 
 ### Injector
 - Public
