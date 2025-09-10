@@ -1,3 +1,13 @@
+/**
+ * @file comms_controller.cpp
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
+ * @brief Implements the CommsController for handling network and serial communications.
+ *
+ * @details This file provides the concrete implementation for the methods declared in
+ * `comms_controller.h`. It includes the logic for managing the circular message queues,
+ * processing UDP packets, and parsing command strings.
+ */
 #include "comms_controller.h"
 
 CommsController::CommsController() {
