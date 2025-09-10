@@ -1,0 +1,54 @@
+st8erboi-fillhead/Debug/Device_Startup/startup_same53.d
+st8erboi-fillhead/Debug/Device_Startup/startup_same53.o
+st8erboi-fillhead/Debug/Makefile
+st8erboi-fillhead/Debug/makedep.mk
+st8erboi-fillhead/Debug/src/comms_controller.d
+st8erboi-fillhead/Debug/src/comms_controller.o
+st8erboi-fillhead/Debug/src/fillhead.d
+st8erboi-fillhead/Debug/src/fillhead.o
+st8erboi-fillhead/Debug/src/heater_controller.d
+st8erboi-fillhead/Debug/src/heater_controller.o
+st8erboi-fillhead/Debug/src/injector_controller.d
+st8erboi-fillhead/Debug/src/injector_controller.o
+st8erboi-fillhead/Debug/src/pinch_valve_controller.d
+st8erboi-fillhead/Debug/src/pinch_valve_controller.o
+st8erboi-fillhead/Debug/src/vacuum_controller.d
+st8erboi-fillhead/Debug/src/vacuum_controller.o
+st8erboi-fillhead/Debug/st8erboi-fillhead.bin
+st8erboi-fillhead/Debug/st8erboi-fillhead.elf
+st8erboi-fillhead/Debug/st8erboi-fillhead.elf.shadow
+st8erboi-fillhead/Debug/st8erboi-fillhead.map
+st8erboi-fillhead/Debug/st8erboi-fillhead.uf2
+st8erboi-gantry/Debug/Device_Startup/startup_same53.d
+st8erboi-gantry/Debug/Device_Startup/startup_same53.o
+st8erboi-gantry/Debug/Makefile
+st8erboi-gantry/Debug/ProjectTemplate.bin
+st8erboi-gantry/Debug/ProjectTemplate.elf
+st8erboi-gantry/Debug/ProjectTemplate.map
+st8erboi-gantry/Debug/ProjectTemplate.uf2
+st8erboi-gantry/Debug/makedep.mk
+st8erboi-gantry/Debug/src/axis_controller.d
+st8erboi-gantry/Debug/src/axis_controller.o
+st8erboi-gantry/Debug/src/comms_controller.d
+st8erboi-gantry/Debug/src/comms_controller.o
+st8erboi-gantry/Debug/src/gantry.d
+st8erboi-gantry/Debug/src/gantry.o
+st8erboi-gantry/Debug/st8er boi.bin
+st8erboi-gantry/Debug/st8er boi.elf
+st8erboi-gantry/Debug/st8er boi.map
+st8erboi-gantry/Debug/st8er boi.uf2
+st8erboi-gantry/Debug/st8erboi-fillhead.bin
+st8erboi-gantry/Debug/st8erboi-fillhead.elf
+st8erboi-gantry/Debug/st8erboi-fillhead.elf.shadow
+st8erboi-gantry/Debug/st8erboi-fillhead.map
+st8erboi-gantry/Debug/st8erboi-fillhead.uf2
+st8erboi-gantry/Debug/st8erboi-gantry.bin
+st8erboi-gantry/Debug/st8erboi-gantry.elf
+st8erboi-gantry/Debug/st8erboi-gantry.elf.shadow
+st8erboi-gantry/Debug/st8erboi-gantry.map
+st8erboi-gantry/Debug/st8erboi-gantry.uf2
+st8erboi-gantry/Debug/st8erboi-injector.bin
+st8erboi-gantry/Debug/st8erboi-injector.elf
+st8erboi-gantry/Debug/st8erboi-injector.elf.shadow
+st8erboi-gantry/Debug/st8erboi-injector.map
+st8erboi-gantry/Debug/st8erboi-injector.uf2

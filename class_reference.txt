@@ -50,8 +50,8 @@
     - update
     - enqueueRx
     - dequeueRx
-    - reportEvent
     - enqueueTx
+    - reportEvent
     - parseCommand
     - isGuiDiscovered
     - getGuiIp
@@ -60,9 +60,10 @@
     - setGuiIp
     - setGuiPort
 - Private
-    - setupEthernet
     - processUdp
     - processTxQueue
+    - setupEthernet
+    - setupUsbSerial
 
 ---
 
