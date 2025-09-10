@@ -66,6 +66,7 @@
  * @name Motion and Operation Parameters
  * @{
  */
+#define TORQUE_HLFB_AT_POSITION       -9999.0f  ///< Special value from ClearCore HLFB when a move is complete and the motor is at position.
 #define MAX_VEL         20000           ///< Default maximum velocity for motors in steps per second.
 #define MAX_ACC         200000          ///< Default maximum acceleration for motors in steps per second^2.
 #define MAX_TRQ         90              ///< Default maximum torque limit for moves, as a percentage.

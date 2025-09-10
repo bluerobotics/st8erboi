@@ -676,7 +676,7 @@ float Injector::getSmoothedTorque(MotorDriver *motor, float *smoothedValue, bool
 
     // The driver may return the sentinel value if a reading is not available yet (e.g., at the start of a move).
     // Treat it as "no data" and return 0 to avoid false torque limit trips.
-    if (currentRawTorque == TORQUE_SENTINEL_INVALID_VALUE) {
+    if (currentRawTorque == TORQUE_HLFB_AT_POSITION) {
         return 0.0f;
     }
 
@@ -697,8 +697,8 @@ bool Injector::checkTorqueLimit() {
         float torque0 = getSmoothedTorque(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
         float torque1 = getSmoothedTorque(m_motorB, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
 
-        bool m0_over_limit = (torque0 != TORQUE_SENTINEL_INVALID_VALUE && std::abs(torque0) > m_torqueLimit);
-        bool m1_over_limit = (torque1 != TORQUE_SENTINEL_INVALID_VALUE && std::abs(torque1) > m_torqueLimit);
+        bool m0_over_limit = (torque0 != TORQUE_HLFB_AT_POSITION && std::abs(torque0) > m_torqueLimit);
+        bool m1_over_limit = (torque1 != TORQUE_HLFB_AT_POSITION && std::abs(torque1) > m_torqueLimit);
 
         if (m0_over_limit || m1_over_limit) {
             abortMove();

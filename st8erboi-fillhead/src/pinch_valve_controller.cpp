@@ -465,7 +465,7 @@ void PinchValve::reset() {
  */
 float PinchValve::getInstantaneousTorque() {
 	float currentRawTorque = m_motor->HlfbPercent();
-	if (currentRawTorque == TORQUE_SENTINEL_INVALID_VALUE) {
+	if (currentRawTorque == TORQUE_HLFB_AT_POSITION) {
 		return 0.0f;
 	}
 	return currentRawTorque;

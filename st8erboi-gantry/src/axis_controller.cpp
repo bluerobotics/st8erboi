@@ -515,7 +515,7 @@ bool Axis::isEnabled() {
 
 float Axis::getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead) {
 	float currentRawTorque = motor->HlfbPercent();
-	if (currentRawTorque < -100) { return 0; }
+	if (currentRawTorque == TORQUE_HLFB_AT_POSITION) { return 0; }
 	if (*firstRead) {
 		*smoothedValue = currentRawTorque;
 		*firstRead = false;

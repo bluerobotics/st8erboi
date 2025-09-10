@@ -131,7 +131,7 @@
  * @name Motor Setup Defaults
  * @{
  */
-#define TORQUE_SENTINEL_INVALID_VALUE		-9999.0f  ///< A special value indicating that a torque reading is invalid or not yet available.
+#define TORQUE_HLFB_AT_POSITION		-9999.0f  ///< Special value from ClearCore HLFB when a move is complete and the motor is at position.
 #define MOTOR_DEFAULT_VEL_MAX_MMS           156.25f   ///< Default maximum velocity for motors in mm/s.
 #define MOTOR_DEFAULT_ACCEL_MAX_MMSS        625.0f    ///< Default maximum acceleration for motors in mm/s^2.
 #define MOTOR_DEFAULT_VEL_MAX_SPS           (int)(MOTOR_DEFAULT_VEL_MAX_MMS * STEPS_PER_MM_INJECTOR) ///< Default max velocity in steps/sec, derived from mm/s.
