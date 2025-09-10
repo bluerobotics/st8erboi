@@ -17,6 +17,8 @@ VacuumController::VacuumController(Fillhead* controller) {
 	m_rampTimeoutSec = (float)DEFAULT_VACUUM_RAMP_TIMEOUT_MS / 1000.0f;
 	m_leakTestDeltaPsig = DEFAULT_LEAK_TEST_DELTA_PSIG;
 	m_leakTestDurationSec = (float)DEFAULT_LEAK_TEST_DURATION_MS / 1000.0f;
+
+	reset();
 }
 
 void VacuumController::setup() {
@@ -68,7 +70,7 @@ void VacuumController::vacuumOff() {
 		reportEvent(STATUS_PREFIX_INFO, "VACUUM_OFF ignored: System is already OFF.");
 		return;
 	}
-	resetState();
+	reset();
 	reportEvent(STATUS_PREFIX_DONE, "VACUUM_OFF complete.");
 }
 
@@ -122,12 +124,12 @@ void VacuumController::updateState() {
 			char passMsg[STATUS_MESSAGE_BUFFER_SIZE];
 			snprintf(passMsg, sizeof(passMsg), "LEAK_TEST PASSED. Pressure loss was %.3f PSI.", pressure_delta);
 			reportEvent(STATUS_PREFIX_DONE, passMsg);
-			resetState();
+			reset();
 		}
 	}
 }
 
-void VacuumController::resetState() {
+void VacuumController::reset() {
 	m_state = VACUUM_OFF;
 	PIN_VACUUM_RELAY.State(false);
 	PIN_VACUUM_VALVE_RELAY.State(false);

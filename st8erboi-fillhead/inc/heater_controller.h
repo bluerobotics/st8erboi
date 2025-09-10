@@ -67,6 +67,11 @@ class HeaterController {
 	const char* getTelemetryString();
 
 	/**
+	 * @brief Resets the PID controller's state variables.
+	 */
+	void reset();
+
+	/**
 	 * @brief Gets the current state of the heater as a string.
 	 * @return A const char* representing the current state.
 	 */
@@ -101,12 +106,6 @@ private:
 	float m_pid_output;
 	/// @brief A buffer to store the formatted telemetry string.
 	char m_telemetryBuffer[256];
-
-	/**
-	 * @brief Resets the PID controller's state variables.
-	 * This is typically called when the heater is turned on or the gains are changed.
-	 */
-	void resetPID();
 
 	/**
 	 * @brief Formats and sends a status message via the main Fillhead controller.

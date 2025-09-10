@@ -160,9 +160,9 @@ src/axis_controller.d src/axis_controller.o: ../src/axis_controller.cpp \
  ../../libClearCore/inc/SysManager.h \
  ../../libClearCore/inc/MotorManager.h \
  ../../libClearCore/inc/SdCardDriver.h ../../libClearCore/inc/SerialUsb.h \
- ../../libClearCore/inc/XBeeDriver.h ../inc/config.h ../inc/gantry.h \
- ../inc/comms_controller.h ../../libClearCore/inc/EthernetUdp.h \
- ../../libClearCore/inc/IpAddress.h ../inc/commands.h
+ ../../libClearCore/inc/XBeeDriver.h ../inc/commands.h ../inc/gantry.h \
+ ../inc/config.h ../inc/comms_controller.h \
+ ../../libClearCore/inc/EthernetUdp.h ../../libClearCore/inc/IpAddress.h
 
 ../inc/axis_controller.h:
 
@@ -504,14 +504,14 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAME53_DFP\1.1.118\include
 
 ../../libClearCore/inc/XBeeDriver.h:
 
-../inc/config.h:
+../inc/commands.h:
 
 ../inc/gantry.h:
+
+../inc/config.h:
 
 ../inc/comms_controller.h:
 
 ../../libClearCore/inc/EthernetUdp.h:
 
 ../../libClearCore/inc/IpAddress.h:
-
-../inc/commands.h:

@@ -375,7 +375,7 @@ void Fillhead::disable() {
  */
 void Fillhead::abort() {
     reportEvent(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
-    m_injector.abortMove();
+    m_injector.abort();
     m_injectorValve.abort();
     m_vacuumValve.abort();
     standby(); // This now resets all sub-controller states.
@@ -389,7 +389,7 @@ void Fillhead::clearErrors() {
     reportEvent(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
 
     // Abort any active motion first to ensure a clean state.
-    m_injector.abortMove();
+    m_injector.abort();
     m_injectorValve.abort();
     m_vacuumValve.abort();
 
@@ -412,7 +412,8 @@ void Fillhead::standby() {
     m_injector.reset();
     m_injectorValve.reset();
     m_vacuumValve.reset();
-    m_vacuum.resetState();
+    m_heater.reset();
+    m_vacuum.reset();
 
     // Set the main state and report.
     m_mainState = STATE_STANDBY;

@@ -31,11 +31,13 @@
     - reset
     - isMoving
     - isHomed
+    - isBusy
     - getState
     - getStateEnum
     - getPositionMm
-    - getSmoothedTorque
+    - getTelemetryString
     - isEnabled
+    - isInFault
     - startMove
 - Private
     - moveSteps

@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// --- Message struct (Moved from gantry.h) ---
+// Structure to hold a single message for the queues
 struct Message {
 	char buffer[MAX_MESSAGE_LENGTH];
 	IpAddress remoteIp;
@@ -25,8 +25,9 @@ class CommsController {
 	// Queue Management
 	bool enqueueRx(const char* msg, const IpAddress& ip, uint16_t port);
 	bool dequeueRx(Message& msg);
-	void reportEvent(const char* statusType, const char* message);
 	bool enqueueTx(const char* msg, const IpAddress& ip, uint16_t port);
+	
+	void reportEvent(const char* statusType, const char* message);
 	Command parseCommand(const char* msg);
 
 	// Getters
@@ -40,9 +41,10 @@ class CommsController {
 	void setGuiPort(uint16_t port) { m_guiPort = port; }
 
 	private:
-	void setupEthernet();
 	void processUdp();
 	void processTxQueue();
+	void setupEthernet();
+	void setupUsbSerial();
 
 	EthernetUdp m_udp;
 	IpAddress m_guiIp;
@@ -50,7 +52,7 @@ class CommsController {
 	bool m_guiDiscovered;
 
 	unsigned char m_packetBuffer[MAX_PACKET_LENGTH];
-
+	
 	// Message Queues
 	Message m_rxQueue[RX_QUEUE_SIZE];
 	volatile int m_rxQueueHead;

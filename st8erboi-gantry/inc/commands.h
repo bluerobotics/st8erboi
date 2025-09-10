@@ -4,7 +4,7 @@
 // Command Strings & Prefixes
 //==================================================================================================
 // --- General Commands ---
-#define CMD_STR_DISCOVER "DISCOVER_GANTRY"
+#define CMD_STR_DISCOVER_GANTRY "DISCOVER_GANTRY"
 #define CMD_STR_ABORT "ABORT"
 #define CMD_STR_ENABLE "ENABLE"
 #define CMD_STR_DISABLE "DISABLE"
@@ -35,7 +35,7 @@
 // Maps all command strings to a single enum for easier parsing.
 typedef enum {
 	CMD_UNKNOWN,
-	CMD_DISCOVER,
+	CMD_DISCOVER_GANTRY,
 	CMD_ABORT,
     CMD_ENABLE,
     CMD_DISABLE,
