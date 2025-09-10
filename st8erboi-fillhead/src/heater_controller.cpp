@@ -1,3 +1,13 @@
+/**
+ * @file heater_controller.cpp
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
+ * @brief Implements the controller for the material heating system.
+ *
+ * @details This file provides the concrete implementation for the `HeaterController` class.
+ * It includes the logic for temperature sensing, the PID control loop, time-proportioned
+ * relay control, and handling user commands related to the heating system.
+ */
 #include "heater_controller.h"
 #include "fillhead.h"
 #include <stdio.h>

@@ -1,3 +1,13 @@
+/**
+ * @file axis_controller.cpp
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
+ * @brief Implements the controller for a single gantry axis.
+ *
+ * @details This file provides the concrete implementation for the `Axis` class.
+ * It contains the logic for the state machines that manage homing and motion,
+ * as well as the command handlers and motor control logic for a single axis.
+ */
 #include "axis_controller.h"
 #include "gantry.h"
 #include <math.h>

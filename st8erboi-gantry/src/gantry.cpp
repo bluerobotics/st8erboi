@@ -1,12 +1,13 @@
 /**
  * @file gantry.cpp
- * @author Your Name
- * @date August 19, 2025
- * @brief Implementation of the Gantry master controller.
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
+ * @brief Implements the master controller for the Gantry system.
  *
- * This file provides the logic for the Gantry class methods declared in gantry.h.
- * It also contains the global instance of the Gantry class and the main()
- * function, which serves as the application's entry point.
+ * @details This file provides the concrete implementation for the `Gantry` class.
+ * It contains the logic for the main application loop, command dispatch, and the
+ * orchestration of the individual `Axis` controllers. The program's entry point,
+ * `main()`, is also located here.
  */
 
 #include "gantry.h"

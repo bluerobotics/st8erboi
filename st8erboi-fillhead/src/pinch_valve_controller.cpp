@@ -1,3 +1,13 @@
+/**
+ * @file pinch_valve_controller.cpp
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
+ * @brief Implements the controller for a single motorized pinch valve.
+ *
+ * @details This file provides the concrete implementation for the `PinchValve` class.
+ * It contains the logic for the state machines that manage homing, opening, closing,
+ * and jogging operations, as well as motor control and torque monitoring.
+ */
 #include "pinch_valve_controller.h"
 #include "fillhead.h"
 #include <stdio.h>

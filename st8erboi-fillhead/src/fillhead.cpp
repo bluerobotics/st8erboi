@@ -1,13 +1,13 @@
 /**
  * @file fillhead.cpp
  * @author Eldin Miller-Stead
- * @date August 7, 2025
- * @brief Implementation of the Fillhead master controller.
+ * @date September 10, 2025
+ * @brief Implements the master controller for the Fillhead system.
  *
- * This file contains the implementation for the main Fillhead class, which serves
- * as the central "brain" for the entire dispensing system. It owns and orchestrates all
- * specialized sub-controllers (Injector, PinchValves, Heater, Vacuum) and manages
- * the main application state. The program's entry point, main(), is also located here.
+ * @details This file provides the concrete implementation for the `Fillhead` class
+ * as defined in `fillhead.h`. It contains the logic for the main application loop,
+ * command dispatch, state management, and the orchestration of all specialized
+ * sub-controllers. The program's entry point, `main()`, is also located here.
  */
 
 //==================================================================================================

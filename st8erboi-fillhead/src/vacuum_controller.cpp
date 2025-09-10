@@ -1,3 +1,14 @@
+/**
+ * @file vacuum_controller.cpp
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
+ * @brief Implements the controller for the vacuum system.
+ *
+ * @details This file provides the concrete implementation for the `VacuumController` class.
+ * It contains the logic for the state machine that manages vacuum pulldown, active hold,
+ * and leak testing sequences. It also handles pressure sensing and command processing
+ * for the vacuum system.
+ */
 #include "vacuum_controller.h"
 #include "fillhead.h"
 #include <cstdio>

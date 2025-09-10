@@ -1,14 +1,13 @@
 /**
  * @file injector_controller.cpp
- * @author Your Name
- * @date August 20, 2025
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
  * @brief Implements the controller for the dual-motor injector system.
  *
- * This file contains the implementation for the Injector class, which is
- * responsible for managing the two ganged motors (M0 and M1) that drive the
- * dispensing mechanism. It handles all motion control, including jogging,
- * homing routines, and precision injection/purge moves. The class operates as a
- * state machine to manage its operations in a non-blocking manner.
+ * @details This file provides the concrete implementation for the `Injector` class.
+ * It contains the logic for the hierarchical state machines that manage homing,
+ * feeding, and jogging operations. It also includes the command handlers, motion
+ * control logic, and telemetry reporting for the injector system.
  */
 
 //==================================================================================================

@@ -1,3 +1,15 @@
+/**
+ * @file fillhead.h
+ * @author Eldin Miller-Stead
+ * @date September 10, 2025
+ * @brief Defines the master controller for the entire Fillhead system.
+ *
+ * @details This header file defines the `Fillhead` class, which serves as the central
+ * orchestrator for all Fillhead operations. It owns and manages all specialized
+ * sub-controllers (Injector, PinchValves, Heater, Vacuum) and is responsible for
+ * the main application state machine, command dispatch, and telemetry reporting.
+ * The top-level system state enums are also defined here.
+ */
 #pragma once
 
 #include "config.h"
@@ -7,18 +19,25 @@
 #include "heater_controller.h"
 #include "vacuum_controller.h"
 
-// Defines the top-level operational state of the entire Fillhead system.
+/**
+ * @enum MainState
+ * @brief Defines the top-level operational state of the entire Fillhead system.
+ * @details This enum represents the high-level status of the machine. The state is
+ * determined by the combined status of all sub-controllers.
+ */
 enum MainState : uint8_t {
-	STATE_STANDBY,       // System is idle and ready to accept commands.
-	STATE_BUSY,          // A non-error operation is in progress.
-	STATE_ERROR,         // A fault has occurred, typically a motor fault.
-	STATE_DISABLED,       // System is disabled; motors will not move.
-	STATE_CLEARING_ERRORS // A special state to manage the non-blocking error recovery process.
+	STATE_STANDBY,       ///< System is idle, initialized, and ready to accept commands.
+	STATE_BUSY,          ///< A non-error operation (e.g., homing, injecting) is in progress.
+	STATE_ERROR,         ///< A fault has occurred, typically a motor fault. Requires `CLEAR_ERRORS` to recover.
+	STATE_DISABLED,      ///< System is disabled; motors will not move. Requires `ENABLE` to recover.
+	STATE_CLEARING_ERRORS///< A special state to manage the non-blocking error recovery process.
 };
 
 /**
  * @enum ErrorState
- * @brief Defines various error conditions the system can be in.
+ * @brief Defines various specific error conditions the system can encounter.
+ * @details This enum is intended for more granular error reporting in the future, though
+ * it is not fully implemented yet.
  */
 enum ErrorState : uint8_t {
 	ERROR_NONE,                   ///< No error.
@@ -36,30 +55,46 @@ enum ErrorState : uint8_t {
 	ERROR_MOTORS_DISABLED         ///< An operation was blocked because motors are disabled.
 };
 
-
+/**
+ * @class Fillhead
+ * @brief The master controller for the Fillhead system.
+ * @details This class acts as the "brain" of the Fillhead. It follows the Singleton
+ * pattern (instantiated once globally) and is responsible for the entire application
+ * lifecycle, from setup to the continuous execution of the main loop. It owns all
+ * sub-controller objects and delegates commands to them.
+ */
 class Fillhead {
 public:
     /**
-     * @brief Construct a new Fillhead master controller.
+     * @brief Constructs the Fillhead master controller.
+     * @details The constructor initializes all member variables and uses a member
+     * initializer list to instantiate all the specialized sub-controllers, ensuring
+     * they are ready before `setup()` is called.
      */
     Fillhead();
 
     /**
-     * @brief Sets up all sub-controllers and hardware.
+     * @brief Initializes all hardware and sub-controllers for the entire system.
+     * @details This method should be called once at startup. It sequentially calls the
+     * `setup()` method for each component in the correct order to ensure proper
+     * hardware and software initialization.
      */
     void setup();
 
     /**
-     * @brief The main application loop. Continuously updates all components.
+     * @brief The main execution loop for the Fillhead system.
+     * @details This function is called continuously from `main()`. It orchestrates all
+     * real-time operations in a non-blocking manner, including processing communication
+     * queues, dispatching commands, updating state machines, and managing periodic tasks.
      */
     void loop();
 
     /**
-     * @brief Public interface to send a status message.
-     * @details This wrapper method allows owned objects (like an Injector) to send
-     * status messages (INFO, DONE, ERROR) through the Fillhead's CommsController
-     * without needing a direct pointer to it.
-     * @param statusType The prefix for the message (e.g., "INFO: ").
+     * @brief Public interface for sub-controllers to send status messages.
+     * @details This wrapper method allows owned objects (like `Injector` or `HeaterController`)
+     * to send status messages (e.g., INFO, DONE, ERROR) through the `CommsController`
+     * without needing a direct pointer to it, reducing coupling.
+     * @param statusType The prefix for the message (e.g., "INFO: "). See `config.h`.
      * @param message The content of the message to send.
      */
     void reportEvent(const char* statusType, const char* message);
@@ -67,50 +102,69 @@ public:
 private:
     /**
      * @brief Updates the main system state and the state machines of all sub-controllers.
-     * @details This function is called once per loop. It first checks for motor faults
-     * to determine if the system should be in an error state. If not, it checks if any
-     * subsystem is busy. Otherwise, it remains in standby. It then calls the update
-     * functions for all sub-controllers.
+     * @details This function is called once per loop. It aggregates the status of all
+     * sub-controllers (e.g., checking for faults or busy states) to determine the
+     * overall system `MainState`. It then calls the `updateState()` method for each
+     * sub-controller to advance their individual state machines.
      */
     void updateState();
 
 	/**
-	 * @brief Processes and routes an incoming command to the correct sub-system.
-	 * @details This is the entry point for handling all received commands. It takes a
-	 * message that has just been pulled from the communications queue, determines the
-	 * required action, and then delegates the task to the appropriate component.
+	 * @brief Master command handler; dispatches incoming commands to the correct sub-system.
+	 * @details This function acts as a switchboard. It takes a message from the
+	 * communications queue, uses the `CommsController` to parse it into a `Command` enum,
+	 * and then calls the appropriate handler function or delegates the command to the
+	 * relevant sub-controller.
 	 * @param msg The incoming message object containing the command to be executed.
 	 */
     void dispatchCommand(const Message& msg);
 
 	/**
-	 * @brief Assembles and queues a comprehensive outgoing telemetry report.
-	 * @details This is the primary function for generating outgoing data. It polls
-	 * each sub-controller for its status, aggregates the information into a single
-	 * packet, and then hands it off to the communications queue to be sent.
+	 * @brief Aggregates telemetry data from all sub-controllers and sends it as a single packet.
+	 * @details This function is called periodically. It polls each sub-controller for its
+	 * latest telemetry data, assembles it into a single formatted string, and enqueues
+	 * it for transmission by the `CommsController`.
 	 */
     void publishTelemetry();
 
+    // --- System-Level Command Handlers ---
+    /**
+     * @brief Enables all motors and places the system in a ready state.
+     */
+    void enable();
+
+    /**
+     * @brief Disables all motors and stops all operations.
+     */
+    void disable();
+
+    /**
+     * @brief Halts all motion immediately and resets the system state to standby.
+     */
+    void abort();
+
+    /**
+     * @brief Resets any error states, clears motor faults, and returns the system to standby.
+     */
+    void clearErrors();
+
+    /**
+     * @brief Resets all sub-controllers to their idle states and sets the main state to STANDBY.
+     */
+    void standby();
+
     // --- Component Ownership ---
-    // The Fillhead "owns" all the specialized sub-controllers.
-    CommsController  m_comms;            // The communications channel
-    Injector         m_injector;         // The two main dispensing motors
-    PinchValve       m_injectorValve;   // The motorized injection pinch valve (M2)
-    PinchValve       m_vacuumValve;      // The motorized vacuum pinch valve (M3)
-    HeaterController m_heater; // The heater system
-    VacuumController m_vacuum; // The vacuum pump system
+    CommsController  m_comms;           ///< Manages all network and serial communication.
+    Injector         m_injector;        ///< Manages the dual-motor dispensing system.
+    PinchValve       m_injectorValve;   ///< Manages the motorized injection pinch valve.
+    PinchValve       m_vacuumValve;     ///< Manages the motorized vacuum pinch valve.
+    HeaterController m_heater;          ///< Manages the heater PID control loop.
+    VacuumController m_vacuum;          ///< Manages the vacuum pump and pressure monitoring.
 
     // Main system state machine
-    MainState m_mainState;
+    MainState m_mainState;              ///< The current high-level state of the Fillhead system.
 
     // Timers for periodic tasks
-    uint32_t m_lastTelemetryTime;
-    uint32_t m_lastSensorSampleTime;
-
-    // --- Top-Level Command Handlers ---
-    void enable();
-    void disable();
-    void abort();
-    void clearErrors();
-    void standby();
+    uint32_t m_lastTelemetryTime;       ///< Timestamp of the last telemetry transmission.
+    uint32_t m_lastSensorSampleTime;    ///< Timestamp of the last sensor poll.
 };
