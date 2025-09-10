@@ -40,9 +40,10 @@ class CommsController {
 	void setGuiPort(uint16_t port) { m_guiPort = port; }
 
 	private:
-	void setupEthernet();
 	void processUdp();
 	void processTxQueue();
+	void setupEthernet();
+	void setupUsbSerial();
 
 	EthernetUdp m_udp;
 	IpAddress m_guiIp;
