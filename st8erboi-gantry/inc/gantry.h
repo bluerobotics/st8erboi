@@ -27,8 +27,7 @@
 typedef enum {
     GANTRY_STANDBY, ///< The gantry is idle and ready to accept commands.
     GANTRY_HOMING,  ///< One or more axes are currently executing a homing routine.
-    GANTRY_MOVING,   ///< One or more axes are currently executing a move command.
-    GANTRY_ERROR    ///< An axis motor has faulted, requiring CLEAR_ERRORS.
+    GANTRY_MOVING   ///< One or more axes are currently executing a move command.
 } GantryState;
 
 /**
@@ -151,8 +150,6 @@ private:
 
     /// @brief The overall state of the gantry system.
     GantryState m_state;
-
-    char m_ip_address_str[16];
 
     /// @brief A reusable buffer for formatting the telemetry string.
     char m_telemetryBuffer[300];

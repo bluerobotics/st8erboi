@@ -75,7 +75,7 @@ class VacuumController {
 	 * @brief Resets the state of the vacuum controller to its initial, idle state.
 	 * This will turn off the vacuum and reset any ongoing operations.
 	 */
-	void reset();
+	void resetState();
 
 	/**
 	 * @brief Checks if the vacuum controller is busy with an operation.

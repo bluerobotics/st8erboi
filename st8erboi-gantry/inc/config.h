@@ -1,15 +1,13 @@
 #pragma once
 
-#define DEVICE_NAME "gantry"
-
 //==================================================================================================
 // Network Configuration
 //==================================================================================================
-#define LOCAL_PORT 6271      // For Fillhead commands
-#define MAX_PACKET_LENGTH 256  // Max UDP packet size
-#define MAX_MESSAGE_LENGTH 256 // Max message length
-#define RX_QUEUE_SIZE 10
-#define TX_QUEUE_SIZE 10
+#define LOCAL_PORT 8888
+#define MAX_PACKET_LENGTH 256 // Increased to prevent telemetry truncation
+#define RX_QUEUE_SIZE 32
+#define TX_QUEUE_SIZE 32
+#define MAX_MESSAGE_LENGTH MAX_PACKET_LENGTH
 #define TELEMETRY_INTERVAL_MS 100
 
 //==================================================================================================
@@ -56,17 +54,3 @@
 #define Y_MAX_POS 410.0f
 #define Z_MIN_POS -160.0f // Z=0 is top, Z=-160 is bottom
 #define Z_MAX_POS 0.0f
-
-// Torque Smoothing
-#define EWMA_ALPHA 0.2f // Smoothing factor for torque readings. Lower is smoother.
-
-// ===== NETWORKING =====
-#define CMD_PORT 6271 // Command port for Gantry
-#define RX_QUEUE_SIZE 10
-#define TX_QUEUE_SIZE 10
-
-// ===== MOTOR DEFAULTS =====
-// Default maximum velocity and acceleration for gantry motors.
-// These values are used during initialization and after a fault reset.
-#define MOTOR_DEFAULT_VEL_MAX_SPS (10000)
-#define MOTOR_DEFAULT_ACCEL_MAX_SPS2 (100000)

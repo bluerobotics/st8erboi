@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ClearCore.h"
-#include "commands.h"
+#include "config.h"
 
 class Gantry; // Forward declaration
 
@@ -31,28 +31,24 @@ public:
 	void updateState();
 	void move(const char* args);
 	void home(const char* args);
-    void handleCommand(Command cmd, const char* args);
 	void abort();
 	void enable();
 	void disable();
     void reset();
 	bool isMoving();
-	bool isHomed() const { return m_homed; }
-	bool isBusy() const;
-	const char* getState() const;
+	bool isHomed() { return m_homed; }
+	const char* getState();
 	AxisState getStateEnum() const;
 	float getPositionMm() const;
-	void getTelemetryString(char* buffer, size_t len) const;
+	float getSmoothedTorque();
 	bool isEnabled();
-	bool isInFault() const;
 	
 	void startMove(float target_mm, float vel_mms, float accel_mms2, int torque, MoveType moveType);
 
-private:
+	private:
 	void moveSteps(long steps, int velSps, int accelSps2, int torque);
 	bool checkTorqueLimit(MotorDriver* motor);
-	float getInstantaneousTorque(MotorDriver* motor);
-	float getSmoothedTorque(int motor_idx);
+	float getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
 	void reportEvent(const char* statusType, const char* message);
 
 	Gantry* m_controller;

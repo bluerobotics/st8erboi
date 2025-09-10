@@ -15,7 +15,7 @@ HeaterController::HeaterController(Fillhead* controller) {
 	m_pid_kp = DEFAULT_HEATER_KP;
 	m_pid_ki = DEFAULT_HEATER_KI;
 	m_pid_kd = DEFAULT_HEATER_KD;
-	reset();
+	resetPID();
 }
 
 void HeaterController::setup() {
@@ -51,7 +51,7 @@ void HeaterController::handleCommand(Command cmd, const char* args) {
 void HeaterController::heaterOn() {
 	// This function now enables PID control.
 	if (m_heaterState != HEATER_PID_ACTIVE) {
-		reset(); // Reset PID terms before starting
+		resetPID(); // Reset PID terms before starting
 		m_heaterState = HEATER_PID_ACTIVE;
 		reportEvent(STATUS_PREFIX_DONE, "HEATER_ON: PID control activated.");
 		} else {
@@ -75,7 +75,7 @@ void HeaterController::setGains(const char* args) {
 		char response[128];
 		snprintf(response, sizeof(response), "Heater gains set: P=%.2f, I=%.2f, D=%.2f", m_pid_kp, m_pid_ki, m_pid_kd);
 		reportEvent(STATUS_PREFIX_DONE, response);
-		reset(); // Reset integral and derivative terms after changing gains
+		resetPID(); // Reset integral and derivative terms after changing gains
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D");
 	}
@@ -147,13 +147,11 @@ void HeaterController::updateState() {
 	PIN_HEATER_RELAY.State((now % PID_PWM_PERIOD_MS) < on_duration_ms);
 }
 
-void HeaterController::reset() {
+void HeaterController::resetPID() {
 	m_pid_integral = 0.0f;
 	m_pid_last_error = 0.0f;
-	m_pid_last_time = Milliseconds();
 	m_pid_output = 0.0f;
-	m_heaterState = HEATER_OFF;
-	heaterOff(); // Ensure the physical relay is off
+	m_pid_last_time = Milliseconds();
 }
 
 void HeaterController::reportEvent(const char* statusType, const char* message) {

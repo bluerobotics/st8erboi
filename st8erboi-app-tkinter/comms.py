@@ -3,7 +3,6 @@ import threading
 import time
 import datetime
 import tkinter as tk
-import re
 
 # --- Constants ---
 CLEARCORE_PORT = 8888

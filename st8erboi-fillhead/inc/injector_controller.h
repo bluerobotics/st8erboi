@@ -107,7 +107,7 @@ public:
     /**
      * @brief Aborts any ongoing injector motion.
      */
-    void abort();
+    void abortMove();
 
     /**
      * @brief Resets the injector's state machine and error conditions.
@@ -133,30 +133,24 @@ public:
     const char* getState() const;
 
 private:
-	// Private Methods
-	void startMove(long steps, int vel, int accel, float torque_limit, bool limit_check_enabled = true);
-	bool isMoving() const;
+    void startMove(long steps, int velSps, int accelSps2);
+    bool isMoving();
+    float getSmoothedTorque(MotorDriver *motor, float *smoothedValue, bool *firstRead);
+    bool checkTorqueLimit();
+    void finalizeAndResetActiveDispenseOperation(bool success);
+    void fullyResetActiveDispenseOperation();
+    void reportEvent(const char* statusType, const char* message);
 
-	// Torque-related helper functions
-	float getInstantaneousTorque(MotorDriver* motor);
-	float getSmoothedTorque(int motor_idx);
-	bool checkTorqueLimit(MotorDriver* motor);
-
-	// State and operation management
-	void finalizeAndResetActiveDispenseOperation(bool success);
-	void fullyResetActiveDispenseOperation();
-	void reportEvent(const char* statusType, const char* message);
-
-	void jogMove(const char* args);
-	void machineHome();
-	void cartridgeHome();
-	void moveToCartridgeHome();
-	void moveToCartridgeRetract(const char* args);
-	void initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str);
-	void pauseOperation();
-	void resumeOperation();
-	void cancelOperation();
-	void setTorqueOffset(const char* args);
+    void jogMove(const char* args);
+    void machineHome();
+    void cartridgeHome();
+    void moveToCartridgeHome();
+    void moveToCartridgeRetract(const char* args);
+    void initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str);
+    void pauseOperation();
+    void resumeOperation();
+    void cancelOperation();
+    void setTorqueOffset(const char* args);
     
     Fillhead* m_controller;      ///< Pointer to the main Fillhead controller.
     MotorDriver* m_motorA;      ///< Pointer to the primary motor driver.
@@ -238,7 +232,4 @@ private:
     uint32_t m_feedStartTime;               ///< Timestamp when a feed operation started.
     
     char m_telemetryBuffer[256]; ///< Buffer for the telemetry string.
-
-	bool m_motor_a_homed;
-	bool m_motor_b_homed;
 };

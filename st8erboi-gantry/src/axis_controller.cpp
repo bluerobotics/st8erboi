@@ -1,6 +1,5 @@
 #include "axis_controller.h"
 #include "gantry.h"
-#include "config.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,12 +45,12 @@ void Axis::setup(Gantry* controller, MotorDriver* motor2, float stepsPerMm, floa
 }
 
 void Axis::enable() {
-	m_motor1->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
-	m_motor1->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+	m_motor1->VelMax(MAX_VEL);
+	m_motor1->AccelMax(MAX_ACC);
 	m_motor1->EnableRequest(true);
 	if (m_motor2) {
-		m_motor2->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
-		m_motor2->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+		m_motor2->VelMax(MAX_VEL);
+		m_motor2->AccelMax(MAX_ACC);
 		m_motor2->EnableRequest(true);
 	}
 	if (m_zBrake) m_zBrake->State(true); // sinking current = z axis is unlocked
@@ -74,14 +73,14 @@ void Axis::setupMotors() {
 	
 	m_motor1->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 	m_motor1->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-	m_motor1->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
-	m_motor1->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+	m_motor1->VelMax(MAX_VEL);
+	m_motor1->AccelMax(MAX_ACC);
 	m_motor1->EnableRequest(true);
 	if (m_motor2) {
 		m_motor2->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
 		m_motor2->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
-		m_motor2->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
-		m_motor2->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
+		m_motor2->VelMax(MAX_VEL);
+		m_motor2->AccelMax(MAX_ACC);
 		m_motor2->EnableRequest(true);
 	}
 }
@@ -205,34 +204,6 @@ void Axis::move(const char* args) {
 	snprintf(infoMsg, sizeof(infoMsg), "%s initiated", m_activeCommand);
 	reportEvent(STATUS_PREFIX_INFO, infoMsg);
 	startMove(target_mm, vel_mms, accel_mms2, torque, moveType);
-}
-
-void Axis::handleCommand(Command cmd, const char* args) {
-    switch(cmd) {
-        case CMD_MOVE_X:
-        case CMD_MOVE_Y:
-        case CMD_MOVE_Z:
-            move(args);
-            break;
-        case CMD_HOME_X:
-        case CMD_HOME_Y:
-        case CMD_HOME_Z:
-            home(args);
-            break;
-        case CMD_ENABLE_X:
-        case CMD_ENABLE_Y:
-        case CMD_ENABLE_Z:
-            enable();
-            break;
-        case CMD_DISABLE_X:
-        case CMD_DISABLE_Y:
-        case CMD_DISABLE_Z:
-            disable();
-            break;
-        default:
-            // This case should ideally not be reached if the Gantry dispatcher is correct.
-            break;
-    }
 }
 
 void Axis::home(const char* args) {
@@ -508,34 +479,7 @@ bool Axis::isMoving() {
 	return motor1Moving || motor2Moving;
 }
 
-void Axis::getTelemetryString(char* buffer, size_t len) const {
-	// The const_cast is a necessary evil here because updating the EWMA filter
-	// is a state change, but we need to do it within a const telemetry method.
-	Axis* nonConstThis = (Axis*)this; 
-
-	if (m_motor2) {
-		// Dual-motor axis (Y-axis)
-		snprintf(buffer, len, "ax_st:%s,ax_pos:%.3f,ax_t0:%.2f,ax_t1:%.2f,ax_homed:%d",
-			(const char*)getState(),
-			getPositionMm(),
-			nonConstThis->getSmoothedTorque(0),
-			nonConstThis->getSmoothedTorque(1),
-			isHomed());
-	} else {
-		// Single-motor axis (X and Z)
-		snprintf(buffer, len, "ax_st:%s,ax_pos:%.3f,ax_t:%.2f,ax_homed:%d",
-			(const char*)getState(),
-			getPositionMm(),
-			nonConstThis->getSmoothedTorque(0),
-			isHomed());
-	}
-}
-
-bool Axis::isBusy() const {
-    return m_state == STATE_MOVING || m_state == STATE_HOMING || m_state == STATE_STARTING_MOVE;
-}
-
-const char* Axis::getState() const {
+const char* Axis::getState() {
 	if (m_state == STATE_HOMING) return "Homing";
 	if (m_state == STATE_MOVING) return "Moving";
 	if (m_state == STATE_STARTING_MOVE) return "Starting";
@@ -559,59 +503,31 @@ bool Axis::isEnabled() {
 	return m_motor1->StatusReg().bit.Enabled;
 }
 
-bool Axis::isInFault() const {
-    if (m_motor1 && m_motor1->StatusReg().bit.MotorInFault) {
-        return true;
-    }
-    if (m_motor2 && m_motor2->StatusReg().bit.MotorInFault) {
-        return true;
-    }
-    return false;
-}
-
-float Axis::getSmoothedTorque(int motor_idx) {
-	MotorDriver* motor = nullptr;
-	float* smoothedValue = nullptr;
-	bool* firstRead = nullptr;
-
-	if (motor_idx == 0) {
-		motor = m_motor1;
-		smoothedValue = &m_smoothedTorqueM1;
-		firstRead = &m_firstTorqueReadM1;
-	} else if (motor_idx == 1 && m_motor2) {
-		motor = m_motor2;
-		smoothedValue = &m_smoothedTorqueM2;
-		firstRead = &m_firstTorqueReadM2;
-	} else {
-		return 0.0f;
-	}
-
-	if (!motor || !motor->StatusReg().bit.Enabled) {
-		*firstRead = true;
-		return 0.0f;
-	}
-
-	if (!motor->StatusReg().bit.StepsActive) {
-		return 0.0f;
-	}
-	
+float Axis::getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead) {
 	float currentRawTorque = motor->HlfbPercent();
 	if (currentRawTorque < -100) { return 0; }
 	if (*firstRead) {
 		*smoothedValue = currentRawTorque;
 		*firstRead = false;
-	} else {
+		} else {
 		*smoothedValue = (EWMA_ALPHA * currentRawTorque) + (1.0f - EWMA_ALPHA) * (*smoothedValue);
 	}
 	return *smoothedValue;
 }
 
-float Axis::getInstantaneousTorque(MotorDriver* motor) {
-	return motor->HlfbPercent();
+float Axis::getSmoothedTorque() {
+	return getRawTorque(m_motor1, &m_smoothedTorqueM1, &m_firstTorqueReadM1);
 }
 
 bool Axis::checkTorqueLimit(MotorDriver* motor) {
-	float torque = getInstantaneousTorque(motor);
+	float torque;
+	if (motor == m_motor1) {
+		torque = getRawTorque(motor, &m_smoothedTorqueM1, &m_firstTorqueReadM1);
+		} else if (motor == m_motor2) {
+		torque = getRawTorque(motor, &m_smoothedTorqueM2, &m_firstTorqueReadM2);
+		} else {
+		return false;
+	}
 
 	if (fabsf(torque) > m_torqueLimit) {
 		return true;

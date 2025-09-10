@@ -38,8 +38,6 @@ void Gantry::setup() {
     yAxis.setup(this, &MotorY2, STEPS_PER_MM_Y, Y_MIN_POS, Y_MAX_POS, &SENSOR_Y1, &SENSOR_Y2, &LIMIT_Y_BACK, nullptr);
     zAxis.setup(this, nullptr, STEPS_PER_MM_Z, Z_MIN_POS, Z_MAX_POS, &SENSOR_Z, nullptr, nullptr, &Z_BRAKE);
 
-    strncpy(m_ip_address_str, m_comms.getIpAddressStr(), sizeof(m_ip_address_str));
-
     xAxis.setupMotors();
     yAxis.setupMotors();
     zAxis.setupMotors();
@@ -113,28 +111,20 @@ void Gantry::publishTelemetry() {
     // Get peer IP from comms object for telemetry string.
 
     // Format the telemetry string with data from all relevant components.
-    m_lastTelemetryTime = Milliseconds();
+    snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
+        "%s"
+        "gantry_state:%s,"
+        "x_p:%.2f,x_t:%.2f,x_e:%d,x_h:%d,x_st:%s,"
+        "y_p:%.2f,y_t:%.2f,y_e:%d,y_h:%d,y_st:%s,"
+        "z_p:%.2f,z_t:%.2f,z_e:%d,z_h:%d,z_st:%s",
+        TELEM_PREFIX,
+        getState(),
+        xAxis.getPositionMm(), xAxis.getSmoothedTorque(), xAxis.isEnabled(), xAxis.isHomed(), xAxis.getState(),
+        yAxis.getPositionMm(), yAxis.getSmoothedTorque(), yAxis.isEnabled(), yAxis.isHomed(), yAxis.getState(),
+        zAxis.getPositionMm(), zAxis.getSmoothedTorque(), zAxis.isEnabled(), zAxis.isHomed(), zAxis.getState());
 
-	char x_telem[100];
-	char y_telem[100];
-	char z_telem[100];
-	xAxis.getTelemetryString(x_telem, sizeof(x_telem));
-	yAxis.getTelemetryString(y_telem, sizeof(y_telem));
-	zAxis.getTelemetryString(z_telem, sizeof(z_telem));
-
-	int len = snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
-			 "GANTRY_TELEM,"
-			 "state:%s,"
-			 "x:{%s},"
-			 "y:{%s},"
-			 "z:{%s}",
-			 (const char*)getState(),
-			 x_telem,
-			 y_telem,
-			 z_telem);
-
-	// The underlying enqueue method uses IpAddress object, not string
-	m_comms.enqueueTx(m_telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
+    // Enqueue the formatted string for transmission.
+    m_comms.enqueueTx(m_telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
 }
 
 /**
@@ -153,35 +143,6 @@ void Gantry::dispatchCommand(const Message& msg) {
     // Parse the command string into a GantryCommand enum.
     Command command = m_comms.parseCommand(msg.buffer);
 
-    // If the system is in an error state, block most commands.
-    if (m_state == GANTRY_ERROR) {
-        if (command != CMD_CLEAR_ERRORS && command != CMD_DISABLE && command != CMD_DISCOVER) {
-            reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System is in ERROR state. Send CLEAR_ERRORS to reset.");
-            return;
-        }
-    }
-
-    // For DISCOVER commands, set the GUI IP and port for future communication.
-    if (command == CMD_DISCOVER_GANTRY) {
-        char* portStr = strstr(msg.buffer, "PORT=");
-        if (portStr) {
-            m_comms.setGuiIp(msg.remoteIp);
-            m_comms.setGuiPort(atoi(portStr + 5));
-            m_comms.setGuiDiscovered(true);
-
-            // The fillhead doesn't send its IP, the GUI knows it from the packet.
-            // We will just send a simple discovery response.
-            m_comms.reportEvent(STATUS_PREFIX_DISCOVERY, "Gantry online.");
-        }
-        return;
-    }
-
-    // For all other commands, drop the command if the GUI has not been discovered.
-    if (!m_comms.isGuiDiscovered()) {
-        reportEvent(STATUS_PREFIX_ERROR, "Command ignored: GUI not discovered. Send DISCOVER_GANTRY to connect.");
-        return;
-    }
-
     // Find the beginning of the arguments (the character after the first space).
     const char* args = strchr(msg.buffer, ' ');
     if(args) args++; // Increment pointer to skip the space.
@@ -194,25 +155,39 @@ void Gantry::dispatchCommand(const Message& msg) {
         case CMD_CLEAR_ERRORS:  clearErrors(); break;
 
         // --- Axis Motion Commands ---
-        case CMD_MOVE_X:
-        case CMD_HOME_X:
+        case CMD_MOVE_X: xAxis.move(args); break;
+        case CMD_MOVE_Y: yAxis.move(args); break;
+        case CMD_MOVE_Z: zAxis.move(args); break;
+
+        // --- Axis Homing Commands ---
+        case CMD_HOME_X: xAxis.home(args); break;
+        case CMD_HOME_Y: yAxis.home(args); break;
+        case CMD_HOME_Z: zAxis.home(args); break;
+        
+        // --- Axis Enable/Disable Commands ---
         case CMD_ENABLE_X:
+            xAxis.enable();
+            reportEvent(STATUS_PREFIX_DONE, "ENABLE_X complete.");
+            break;
         case CMD_DISABLE_X:
-            xAxis.handleCommand(command, args);
+            xAxis.disable();
+            reportEvent(STATUS_PREFIX_DONE, "DISABLE_X complete.");
             break;
-
-        case CMD_MOVE_Y:
-        case CMD_HOME_Y:
         case CMD_ENABLE_Y:
-        case CMD_DISABLE_Y:
-            yAxis.handleCommand(command, args);
+            yAxis.enable();
+            reportEvent(STATUS_PREFIX_DONE, "ENABLE_Y complete.");
             break;
-
-        case CMD_MOVE_Z:
-        case CMD_HOME_Z:
+        case CMD_DISABLE_Y:
+            yAxis.disable();
+            reportEvent(STATUS_PREFIX_DONE, "DISABLE_Y complete.");
+            break;
         case CMD_ENABLE_Z:
+            zAxis.enable();
+            reportEvent(STATUS_PREFIX_DONE, "ENABLE_Z complete.");
+            break;
         case CMD_DISABLE_Z:
-            zAxis.handleCommand(command, args);
+            zAxis.disable();
+            reportEvent(STATUS_PREFIX_DONE, "DISABLE_Z complete.");
             break;
 
         // --- Miscellaneous Commands ---
@@ -246,24 +221,17 @@ void Gantry::dispatchCommand(const Message& msg) {
  * GantryState (e.g., if any axis is moving, the whole gantry is MOVING).
  */
 void Gantry::updateState() {
-    // Any axis in fault puts the whole gantry in a fault state.
-    if (xAxis.isInFault() || yAxis.isInFault() || zAxis.isInFault()) {
-        m_state = GANTRY_ERROR;
-        reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state.");
+    // Homing takes precedence over all other states.
+    if (xAxis.getStateEnum() == Axis::STATE_HOMING || yAxis.getStateEnum() == Axis::STATE_HOMING || zAxis.getStateEnum() == Axis::STATE_HOMING) {
+        m_state = GANTRY_HOMING;
         return;
     }
-
-    // Homing takes precedence over all other non-error states.
-    if (xAxis.isBusy() || yAxis.isBusy() || zAxis.isBusy()) {
-        if (xAxis.getStateEnum() == Axis::STATE_HOMING || yAxis.getStateEnum() == Axis::STATE_HOMING || zAxis.getStateEnum() == Axis::STATE_HOMING) {
-            m_state = GANTRY_HOMING;
-        } else {
-            m_state = GANTRY_MOVING;
-        }
+    // If not homing, any motion puts the system in a moving state.
+    if (xAxis.isMoving() || yAxis.isMoving() || zAxis.isMoving()) {
+        m_state = GANTRY_MOVING;
         return;
     }
-
-    // If no axes are busy, the system is in standby.
+    // Otherwise, the system is idle.
     m_state = GANTRY_STANDBY;
 }
 
@@ -276,7 +244,6 @@ const char* Gantry::getState() {
         case GANTRY_STANDBY: return "STANDBY";
         case GANTRY_HOMING:  return "HOMING";
         case GANTRY_MOVING:  return "MOVING";
-        case GANTRY_ERROR:   return "ERROR";
         default:             return "UNKNOWN";
     }
     return "UNKNOWN"; // Should not be reached.
