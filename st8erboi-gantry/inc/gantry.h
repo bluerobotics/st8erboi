@@ -28,7 +28,8 @@
 typedef enum {
     GANTRY_STANDBY, ///< The gantry is idle and ready to accept commands.
     GANTRY_HOMING,  ///< One or more axes are currently executing a homing routine.
-    GANTRY_MOVING   ///< One or more axes are currently executing a move command.
+    GANTRY_MOVING,   ///< One or more axes are currently executing a move command.
+	GANTRY_ERROR    ///< An error has occurred. The system requires a `CLEAR_ERRORS` command.
 } GantryState;
 
 /**
@@ -76,6 +77,12 @@ public:
      * @param message The content of the message to send.
      */
     void reportEvent(const char* statusType, const char* message);
+
+	/**
+	 * @brief Checks if the gantry is currently in an error state.
+	 * @return `true` if the state is `GANTRY_ERROR`, `false` otherwise.
+	 */
+	bool isInErrorState();
 
 private:
     /**

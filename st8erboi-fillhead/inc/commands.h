@@ -31,11 +31,11 @@
  * @name Injector Motion Commands
  * @{
  */
-#define CMD_STR_JOG_MOVE                    "JOG_MOVE "                ///< Command to perform a manual jog move.
-#define CMD_STR_MACHINE_HOME_MOVE           "MACHINE_HOME_MOVE"        ///< Command to home the injector to the machine's physical zero.
-#define CMD_STR_CARTRIDGE_HOME_MOVE         "CARTRIDGE_HOME_MOVE"      ///< Command to home the injector to the front of the material cartridge.
-#define CMD_STR_INJECT_STATOR               "INJECT_STATOR "           ///< Command to inject material for a stator winding.
-#define CMD_STR_INJECT_ROTOR                "INJECT_ROTOR "            ///< Command to inject material for a rotor.
+#define CMD_STR_INJECT_STATOR           "INJECT_STATOR "            ///< Command to dispense a specific volume using the stator (5:1) configuration.
+#define CMD_STR_INJECT_ROTOR            "INJECT_ROTOR "             ///< Command to dispense a specific volume using the rotor (1:1) configuration.
+#define CMD_STR_JOG_MOVE                "JOG_MOVE "                 ///< Command to jog the injector motors by a relative distance.
+#define CMD_STR_MACHINE_HOME_MOVE       "MACHINE_HOME_MOVE"         ///< Command to home the main machine axis.
+#define CMD_STR_CARTRIDGE_HOME_MOVE     "CARTRIDGE_HOME_MOVE"       ///< Command to home the injector against the cartridge.
 #define CMD_STR_MOVE_TO_CARTRIDGE_HOME      "MOVE_TO_CARTRIDGE_HOME"   ///< Command to move the injector to the cartridge home position.
 #define CMD_STR_MOVE_TO_CARTRIDGE_RETRACT   "MOVE_TO_CARTRIDGE_RETRACT "///< Command to retract the injector a specified distance from cartridge home.
 #define CMD_STR_PAUSE_INJECTION             "PAUSE_INJECTION"          ///< Command to pause an ongoing injection.
@@ -112,13 +112,13 @@ typedef enum {
 	CMD_CLEAR_ERRORS,                   ///< @see CMD_STR_CLEAR_ERRORS
 
 	// Injector Commands
+	CMD_INJECT_STATOR,                  ///< @see CMD_STR_INJECT_STATOR
+	CMD_INJECT_ROTOR,                   ///< @see CMD_STR_INJECT_ROTOR
 	CMD_JOG_MOVE,                       ///< @see CMD_STR_JOG_MOVE
 	CMD_MACHINE_HOME_MOVE,              ///< @see CMD_STR_MACHINE_HOME_MOVE
 	CMD_CARTRIDGE_HOME_MOVE,            ///< @see CMD_STR_CARTRIDGE_HOME_MOVE
 	CMD_MOVE_TO_CARTRIDGE_HOME,         ///< @see CMD_STR_MOVE_TO_CARTRIDGE_HOME
 	CMD_MOVE_TO_CARTRIDGE_RETRACT,      ///< @see CMD_STR_MOVE_TO_CARTRIDGE_RETRACT
-	CMD_INJECT_STATOR,                  ///< @see CMD_STR_INJECT_STATOR
-	CMD_INJECT_ROTOR,                   ///< @see CMD_STR_INJECT_ROTOR
 	CMD_PAUSE_INJECTION,                ///< @see CMD_STR_PAUSE_INJECTION
 	CMD_RESUME_INJECTION,               ///< @see CMD_STR_RESUME_INJECTION
 	CMD_CANCEL_INJECTION,               ///< @see CMD_STR_CANCEL_INJECTION

@@ -75,12 +75,12 @@
  * @name Homing Defaults
  * @{
  */
-#define HOMING_RAPID_VEL_MMS    20.0f   ///< Velocity (mm/s) for the initial high-speed search for the homing sensor.
-#define HOMING_BACKOFF_VEL_MMS  5.0f    ///< Velocity (mm/s) for backing off the sensor.
+#define HOMING_RAPID_VEL_MMS    40.0f   ///< Velocity (mm/s) for the initial high-speed search for the homing sensor.
+#define HOMING_BACKOFF_VEL_MMS  10.0f    ///< Velocity (mm/s) for backing off the sensor.
 #define HOMING_TOUCH_VEL_MMS    1.0f    ///< Velocity (mm/s) for the final, slow-speed precise touch-off.
 #define HOMING_ACCEL_MMSS       100.0f  ///< Acceleration (mm/s^2) for all homing moves.
 #define HOMING_TORQUE           25      ///< Default torque limit (%) for homing moves.
-#define HOMING_BACKOFF_MM       10      ///< Distance (mm) to back off from the sensor.
+#define HOMING_BACKOFF_MM       4      ///< Distance (mm) to back off from the sensor.
 /** @} */
 
 /**

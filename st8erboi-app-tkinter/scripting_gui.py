@@ -7,6 +7,30 @@ from functools import partial
 from script_validator import COMMANDS, validate_script, validate_single_line
 from script_processor import ScriptRunner
 
+# --- Helper Class for Placeholder Text ---
+class EntryWithPlaceholder(ttk.Entry):
+    def __init__(self, master=None, placeholder="PLACEHOLDER", color='grey', **kwargs):
+        super().__init__(master, **kwargs)
+        self.placeholder = placeholder
+        self.placeholder_color = color
+        self.default_fg_color = self['foreground']
+        self.bind("<FocusIn>", self.foc_in)
+        self.bind("<FocusOut>", self.foc_out)
+        self.put_placeholder()
+
+    def put_placeholder(self):
+        self.insert(0, self.placeholder)
+        self['foreground'] = self.placeholder_color
+
+    def foc_in(self, *args):
+        if self['foreground'] == self.placeholder_color:
+            self.delete('0', 'end')
+            self['foreground'] = self.default_fg_color
+
+    def foc_out(self, *args):
+        if not self.get():
+            self.put_placeholder()
+
 # --- Constants for Recent Files ---
 RECENT_FILES_CONFIG = "recent_files.json"
 MAX_RECENT_FILES = 5
@@ -218,21 +242,103 @@ class ValidationResultsWindow(tk.Toplevel):
 # --- GUI Creation Functions ---
 def create_command_reference(parent, script_editor_widget):
     ref_frame = tk.LabelFrame(parent, text="Command Reference", bg="#2a2d3b", fg="white", padx=5, pady=5)
-    tree = ttk.Treeview(ref_frame, columns=('device', 'params', 'desc'), show='tree headings')
-    tree.heading('#0', text='Command');
-    tree.heading('device', text='Device');
-    tree.heading('params', text='Parameters');
-    tree.heading('desc', text='Description')
-    tree.column('#0', width=150, anchor='w');
-    tree.column('device', width=80, anchor='w');
-    tree.column('params', width=200, anchor='w');
-    tree.column('desc', width=250, anchor='w')
+
+    # --- Filter Widgets ---
+    filter_frame = tk.Frame(ref_frame, bg="#2a2d3b")
+    filter_frame.pack(fill=tk.X, pady=(0, 5))
+    filter_frame.grid_columnconfigure((0,1,2,3), weight=1) # Make columns resizable
+
+    # --- Treeview ---
+    tree_frame = tk.Frame(ref_frame)
+    tree_frame.pack(fill=tk.BOTH, expand=True)
+    tree = ttk.Treeview(tree_frame, columns=('device', 'params', 'desc'), show='tree headings')
+    
+    all_commands = []
     for cmd, details in sorted(COMMANDS.items(), key=lambda item: (item[1]['device'], item[0])):
-        device = details['device'];
-        params = " ".join([p['name'] for p in details['params']]);
-        desc = details['help'];
-        tree.insert('', 'end', text=cmd, values=(device.capitalize(), params, desc))
-    tree.pack(fill=tk.BOTH, expand=True)
+        all_commands.append({
+            'cmd': cmd,
+            'device': details['device'].capitalize(),
+            'params': " ".join([p['name'] for p in details['params']]),
+            'desc': details['help']
+        })
+
+    def populate_tree(commands_to_display):
+        for item in tree.get_children():
+            tree.delete(item)
+        for cmd_data in commands_to_display:
+            tree.insert('', 'end', text=cmd_data['cmd'], values=(cmd_data['device'], cmd_data['params'], cmd_data['desc']))
+
+    filter_vars = {}
+    def apply_filters(*args):
+        filtered_commands = all_commands
+        for col, var in filter_vars.items():
+            entry = var.get()
+            # Don't filter if it's just the placeholder
+            if entry and entry != f"Filter {col.capitalize()}...":
+                filter_text = entry.lower()
+                filtered_commands = [cmd for cmd in filtered_commands if filter_text in cmd[col].lower()]
+        populate_tree(filtered_commands)
+        # After filtering, re-apply the current sort
+        if 'sort_by' in tree.__dict__:
+             sort_column(tree.sort_by, tree.sort_rev, True)
+
+
+    columns = {'#0': 'cmd', 'device': 'device', 'params': 'params', 'desc': 'desc'}
+    widths = {'#0': 150, 'device': 80, 'params': 200, 'desc': 250}
+
+    for i, (col_id, col_key) in enumerate(columns.items()):
+        tree.heading(col_id, text=col_key.capitalize() if col_id!='#0' else 'Command')
+        tree.column(col_id, width=widths[col_id], anchor='w')
+        
+        var = tk.StringVar()
+        var.trace_add("write", apply_filters)
+        filter_vars[col_key] = var
+        
+        entry = EntryWithPlaceholder(filter_frame, placeholder=f"Filter {col_key.capitalize()}...", style="Search.TEntry")
+        entry.grid(row=0, column=i, sticky='ew', padx=(0 if i==0 else 2, 0))
+
+    def sort_column(col_id, reverse, preserve=False):
+        # The text of the header is stored in tree.heading(col_id, "text")
+        header_text = tree.heading(col_id, "text").replace(" ▲", "").replace(" ▼", "")
+        
+        # Reset all headers
+        for cid, ckey in columns.items():
+             tree.heading(cid, text=ckey.capitalize() if cid!='#0' else 'Command')
+        
+        arrow = " ▼" if reverse else " ▲"
+        tree.heading(col_id, text=header_text + arrow)
+
+        # Get data to sort
+        if col_id == '#0':
+             l = [(tree.item(k)['text'], k) for k in tree.get_children('')]
+        else:
+             l = [(tree.set(k, col_id), k) for k in tree.get_children('')]
+        
+        l.sort(key=lambda t: t[0].lower(), reverse=reverse)
+        for index, (val, k) in enumerate(l):
+            tree.move(k, '', index)
+
+        # Update the heading command to toggle sorting
+        tree.heading(col_id, command=lambda: sort_column(col_id, not reverse))
+        # Store sort state
+        tree.sort_by = col_id
+        tree.sort_rev = reverse
+
+
+    for col_id, col_key in columns.items():
+        tree.heading(col_id, command=lambda c=col_id: sort_column(c, False))
+
+
+    vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+    tree.configure(yscrollcommand=vsb.set)
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    populate_tree(all_commands)
+    # Sort by the 'Command' column by default on startup
+    # Using 'after' gives the UI a moment to draw before sorting.
+    tree.after(100, lambda: sort_column('#0', False))
+
     context_menu = tk.Menu(parent, tearoff=0)
 
     def get_selected_command():
@@ -260,7 +366,7 @@ def create_command_reference(parent, script_editor_widget):
     return ref_frame
 
 
-def create_scripting_interface(parent, command_funcs, shared_gui_refs):
+def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_var):
     """
     Creates the main scripting area, including the editor and command reference.
     Returns a dictionary containing file commands and a callback to update the recent menu.
@@ -295,6 +401,12 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     recent_files_menu_ref = None
 
     def terminal_wrapper(message):
+        # --- Intercept ERROR messages to display them prominently ---
+        if "_ERROR:" in message:
+            # The root.after is crucial to prevent threading issues with Tkinter
+            root.after(0, lambda: status_label.config(fg="#db2828")) # Bright Red
+            root.after(0, lambda: status_var.set(message))
+
         if "DONE:" in message: message_queue.put(message)
         if original_terminal_cb: original_terminal_cb(message)
 
@@ -312,6 +424,9 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     script_editor.tag_config("error_highlight", background="#552222")
     script_editor.text.tag_lower("selection_highlight", "sel");
     script_editor.insert(tk.END, "# Example Script\n# Type commands here or load a file.\n")
+    # Mark the initial, default script as "unmodified" to prevent the save dialog
+    script_editor.text.edit_reset()
+    script_editor.text.edit_modified(False)
 
     command_ref_widget = create_command_reference(right_pane, script_editor.text);
     command_ref_widget.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
@@ -323,8 +438,20 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
         root.title(f"{filename}{modified_star} - Multi-Device Controller")
 
     def on_text_modified(event):
-        """Updates window title and selection highlight whenever the text is changed."""
+        """Updates window title and triggers autosave if enabled."""
         update_window_title()
+        # --- Autosave Logic ---
+        if autosave_var.get() and current_filepath:
+            # Call the save_script function but without triggering the dialog
+            try:
+                with open(current_filepath, 'w') as f:
+                    f.write(script_editor.get('1.0', tk.END))
+                # Mark as unmodified to prevent the "unsaved" dialog
+                script_editor.text.edit_modified(False)
+                update_window_title() # Update title to remove '*'
+            except Exception as e:
+                status_var.set(f"Autosave Error: {e}")
+
         # Update the highlight to follow the cursor's current line
         current_line = int(script_editor.text.index(tk.INSERT).split('.')[0])
         update_selection_highlight(current_line)
@@ -596,9 +723,17 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     feed_hold_button.config(state=tk.DISABLED)
 
     # --- Status Label ---
-    status_label = tk.Label(control_frame, textvariable=status_var, bg=control_frame['bg'], fg="cyan", anchor='w');
+    font_status_line = ("Segoe UI", 12, "bold") # New, larger font
+    status_label = tk.Label(control_frame, textvariable=status_var, bg=control_frame['bg'], fg="cyan", anchor='w', font=font_status_line);
     status_label.pack(side=tk.LEFT, padx=10, pady=(5, 5), fill=tk.X, expand=True)
     update_window_title()
+
+    # --- Callback to reset status color ---
+    def reset_status_color(*args):
+        status_label.config(fg="cyan")
+
+    status_var.trace_add("write", reset_status_color)
+
 
     # --- Return file commands and menu update callback ---
     file_commands = {
@@ -610,5 +745,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs):
     }
     return {
         "file_commands": file_commands,
-        "update_recent_menu_callback": set_recent_menu_reference
+        "update_recent_menu_callback": set_recent_menu_reference,
+        "check_unsaved": check_unsaved_changes,
+        "load_specific_script": load_specific_script
     }

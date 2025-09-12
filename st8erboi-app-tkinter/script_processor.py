@@ -8,16 +8,76 @@ from script_validator import COMMANDS
 class ScriptRunner:
     def __init__(self, script_content, command_funcs, gui_refs, status_callback, completion_callback, message_queue,
                  line_offset=0):
-        self.script_lines = script_content.splitlines()
+        
         self.command_funcs = command_funcs
         self.gui_refs = gui_refs
         self.status_callback = status_callback
         self.completion_callback = completion_callback
         self.message_queue = message_queue
-        self.line_offset = line_offset
+        self.line_offset = line_offset # This is the original line number of the first line of script_content
         self.is_running = False
         self.thread = None
-        self.runtime_defaults = {}  # No longer need script-side defaults for vacuum
+        self.runtime_defaults = {}
+
+        # --- New: Pre-process the script to expand loops ---
+        try:
+            expanded_content, self.line_map = self._expand_loops(script_content, line_offset)
+            self.script_lines = expanded_content
+        except Exception as e:
+            self.script_lines = [f"Error processing script: {e}"]
+            self.line_map = [1 + line_offset]
+
+    def _expand_loops(self, content, start_offset):
+        original_lines = content.splitlines()
+        
+        # Create a list of tuples: (line_content, original_line_number)
+        lines_with_nums = [(line, i + 1 + start_offset) for i, line in enumerate(original_lines)]
+        
+        def process_block(block_with_nums):
+            expanded_block = []
+            i = 0
+            while i < len(block_with_nums):
+                line, line_num = block_with_nums[i]
+                parts = line.strip().split()
+                command = parts[0].upper() if parts else ""
+
+                if command == "REPEAT":
+                    count = int(parts[1])
+                    nesting_level = 1
+                    end_index = -1
+                    
+                    # Find the matching END_REPEAT
+                    for j in range(i + 1, len(block_with_nums)):
+                        sub_line, _ = block_with_nums[j]
+                        sub_parts = sub_line.strip().split()
+                        sub_command = sub_parts[0].upper() if sub_parts else ""
+                        if sub_command == "REPEAT":
+                            nesting_level += 1
+                        elif sub_command == "END_REPEAT":
+                            nesting_level -= 1
+                            if nesting_level == 0:
+                                end_index = j
+                                break
+                    
+                    loop_body_with_nums = block_with_nums[i + 1 : end_index]
+                    processed_body = process_block(loop_body_with_nums)
+                    
+                    for _ in range(count):
+                        expanded_block.extend(processed_body)
+                    
+                    i = end_index # Move the pointer past the processed block
+                
+                else:
+                    expanded_block.append((line, line_num))
+                i += 1
+            return expanded_block
+
+        processed_lines_with_nums = process_block(lines_with_nums)
+        
+        final_lines = [line for line, num in processed_lines_with_nums]
+        final_map = [num for line, num in processed_lines_with_nums]
+        
+        return final_lines, final_map
 
     def start(self):
         if self.is_running: return
@@ -65,9 +125,12 @@ class ScriptRunner:
             self.status_callback(f"L{line_num}: Waiting for {duration} {unit}...", line_num)
 
             start_time = time.time()
-            while (time.time() - start_time) * 1000 < duration_ms:
+            end_time = start_time + (duration_ms / 1000.0)
+            while time.time() < end_time:
                 if not self.is_running: return False
-                time.sleep(0.05)
+                remaining_time = end_time - time.time()
+                self.status_callback(f"L{line_num}: Waiting... {remaining_time:.1f}s remaining", line_num)
+                time.sleep(0.1) # Update GUI 10 times per second
             return True
         except ValueError:
             self.status_callback(f"Error on L{line_num}: Invalid duration for WAIT command.", line_num)
@@ -76,9 +139,11 @@ class ScriptRunner:
 
     def _handle_wait_until_vacuum(self, args, line_num):
         try:
-            target_psi = float(args[0]) if len(args) > 0 else float(self.runtime_defaults.get("VACUUM_TARGET", -14.0))
+            # New logic: Use the GUI's target var as the source of truth
+            target_psi_str = args[0] if len(args) > 0 else self.gui_refs['vac_target_var'].get()
+            target_psi = float(target_psi_str)
             timeout_s = float(args[1]) if len(args) > 1 else float(self.runtime_defaults.get("VACUUM_TIMEOUT", 60))
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, tk.TclError):
             self.status_callback(f"Error on L{line_num}: Invalid parameters for WAIT_UNTIL_VACUUM.", line_num)
             self.is_running = False
             return False
@@ -106,6 +171,7 @@ class ScriptRunner:
 
     def _handle_wait_until_heater_at_temp(self, args, line_num):
         try:
+            # Reverted: Now correctly uses the 'pid_setpoint_var' which is bound to the UI.
             target_temp_str = args[0] if len(args) > 0 else self.gui_refs['pid_setpoint_var'].get()
             target_temp = float(target_temp_str)
             timeout_s = float(args[1]) if len(args) > 1 else float(self.runtime_defaults.get("HEATER_TIMEOUT", 100))
@@ -115,6 +181,11 @@ class ScriptRunner:
             return False
 
         start_time = time.time()
+        # Calculate the 5% tolerance band
+        tolerance = target_temp * 0.05
+        lower_bound = target_temp - tolerance
+        upper_bound = target_temp + tolerance
+
         while True:
             if not self.is_running: return False
             if time.time() - start_time > timeout_s:
@@ -125,9 +196,9 @@ class ScriptRunner:
             try:
                 temp_str = self.gui_refs['temp_c_var'].get().split()[0]
                 current_temp = float(temp_str)
-                self.status_callback(f"L{line_num}: Waiting for temp ~{target_temp:.1f}C, current: {current_temp:.1f}C",
+                self.status_callback(f"L{line_num}: Waiting for temp in range [{lower_bound:.1f}..{upper_bound:.1f}]C, current: {current_temp:.1f}C",
                                      line_num)
-                if abs(current_temp - target_temp) <= 1.0:
+                if lower_bound <= current_temp <= upper_bound:
                     self.status_callback(f"L{line_num}: Heater target reached ({current_temp:.1f} C).", line_num)
                     return True
             except (ValueError, IndexError, tk.TclError):
@@ -137,7 +208,8 @@ class ScriptRunner:
 
     def _run(self):
         for i, line in enumerate(self.script_lines):
-            line_num = i + 1 + self.line_offset
+            # MODIFIED: Use the line map to get the correct original line number
+            line_num = self.line_map[i]
             if not self.is_running:
                 self.status_callback("Stopped", -1)
                 break
@@ -168,6 +240,15 @@ class ScriptRunner:
                     break
 
                 device = command_info['device']
+                
+                # --- Special Handling for Script-Aware Commands ---
+                # Update the GUI's own variables to keep them in sync with the script
+                if command_word == "SET_HEATER_SETPOINT" and len(args) > 0:
+                    # CORRECTED: Uses the real command and the correct GUI variable.
+                    self.gui_refs['pid_setpoint_var'].set(args[0])
+                if command_word == "SET_VACUUM_TARGET" and len(args) > 0:
+                    self.gui_refs['vac_target_var'].set(args[0])
+
                 if device == "script":
                     if command_word == "WAIT_MS":
                         if not self._handle_wait(args, line_num, is_seconds=False): break
@@ -270,6 +351,12 @@ class ScriptRunner:
                     elif (command_to_check == "INJECTION_VALVE_HOME_UNTUBED" or command_to_check == "INJECTION_VALVE_HOME_TUBED") and "inj_valve" in msg and "DONE" in msg:
                         is_complete = True
                     elif (command_to_check == "VACUUM_VALVE_HOME_UNTUBED" or command_to_check == "VACUUM_VALVE_HOME_TUBED") and "vac_valve" in msg and "DONE" in msg:
+                        is_complete = True
+                    # --- FIX for Valve Open/Close ---
+                    # These also have unique DONE messages that don't contain the command name.
+                    elif (command_to_check == "INJECTION_VALVE_OPEN" or command_to_check == "INJECTION_VALVE_CLOSE") and "inj_valve" in msg and "DONE" in msg:
+                        is_complete = True
+                    elif (command_to_check == "VACUUM_VALVE_OPEN" or command_to_check == "VACUUM_VALVE_CLOSE") and "vac_valve" in msg and "DONE" in msg:
                         is_complete = True
                     # Generic fallback for other commands like MOVE_X, HOME_Y, etc.
                     elif command_to_check in msg and "DONE" in msg:

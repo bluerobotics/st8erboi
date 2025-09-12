@@ -23,16 +23,15 @@ class Fillhead; // Forward declaration
  * @brief Defines the main operational states of a pinch valve.
  */
 enum PinchValveState {
-	VALVE_IDLE,             ///< The valve is not performing any action and is ready for commands.
-	VALVE_HOMING,           ///< The valve is currently executing its homing sequence.
-	VALVE_OPENING,          ///< The valve is moving to the fully open (homed) position.
-	VALVE_CLOSING,          ///< The valve is moving to the fully closed (pinched) position.
-	VALVE_JOGGING,          ///< The valve is performing a manual jog move.
-	VALVE_OPEN,             ///< The valve is stationary in the fully open position.
+	VALVE_NOT_HOMED,        ///< The valve has not been homed and its position is unknown. This is the default state on boot.
 	VALVE_CLOSED,           ///< The valve is stationary in the fully closed position.
+	VALVE_OPEN,             ///< The valve is stationary in the fully open position (after a successful home).
+	VALVE_HALTED,           ///< The valve was stopped mid-move by an abort command and is in a known, intermediate position. It is still homed.
+	VALVE_MOVING,           ///< The valve is actively moving between the open and closed positions.
+	VALVE_HOMING,           ///< The valve is currently executing its homing sequence.
+	VALVE_JOGGING,          ///< The valve is performing a manual jog move.
 	VALVE_RESETTING,        ///< The valve is waiting for motion to stop before completing a reset.
-	VALVE_OPERATION_ERROR,  ///< An error occurred during an operation (e.g., timeout, torque limit).
-	VALVE_MOTOR_FAULT       ///< The motor driver has reported a hardware fault.
+	VALVE_ERROR,            ///< An error has occurred (e.g., timeout, motor fault, torque limit).
 };
 
 /**
@@ -159,6 +158,16 @@ public:
 
 private:
 	/**
+	 * @enum MoveType
+	 * @brief Defines the type of motion being performed in the VALVE_MOVING state.
+	 */
+	typedef enum {
+		MOVE_TYPE_NONE,     ///< No specific move type is active.
+		MOVE_TYPE_OPEN,     ///< The valve is performing an 'open' operation.
+		MOVE_TYPE_CLOSE     ///< The valve is performing a 'close' operation.
+	} MoveType;
+
+	/**
 	 * @brief Low-level helper to command a motor move.
 	 * @param steps The target position relative to the current position, in motor steps.
 	 * @param velocity_sps The maximum velocity for the move, in steps per second.
@@ -232,6 +241,7 @@ private:
 	PinchValveState m_state;            ///< The main state of the pinch valve.
 	HomingPhase m_homingPhase;          ///< The current phase of the homing sequence.
 	OperatingPhase m_opPhase;           ///< The current phase of a standard open/close/jog operation.
+	MoveType m_moveType;                ///< The type of move being performed (open or close).
 	uint32_t m_moveStartTime;           ///< Timestamp (ms) when a move operation was started, used for timeout.
 	bool m_isHomed;                     ///< Flag indicating if the valve has been successfully homed.
 	uint32_t m_homingStartTime;         ///< Timestamp (ms) when a homing sequence was started, used for timeout.

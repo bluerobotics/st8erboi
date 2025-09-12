@@ -17,19 +17,20 @@
 /**
  * @brief Constructs the PinchValve controller.
  */
-PinchValve::PinchValve(const char* name, MotorDriver* motor, Fillhead* controller) {
-	m_name = name;
-	m_motor = motor;
-	m_controller = controller;
-	m_state = VALVE_IDLE;
-	m_isHomed = false;
-	m_homingStartTime = 0;
-	m_torqueLimit = 20.0f;
-	m_smoothedTorque = 0.0f;
-	m_firstTorqueReading = true;
-	m_homingPhase = HOMING_PHASE_IDLE;
-	m_opPhase = PHASE_IDLE;
-	m_moveStartTime = 0;
+PinchValve::PinchValve(const char* name, MotorDriver* motor, Fillhead* controller) :
+    m_name(name),
+    m_motor(motor),
+    m_controller(controller),
+    m_state(VALVE_NOT_HOMED), // Default state is now NOT_HOMED
+    m_homingPhase(HOMING_PHASE_IDLE),
+    m_opPhase(PHASE_IDLE),
+    m_moveType(MOVE_TYPE_NONE), // Initialize move type
+    m_moveStartTime(0),
+    m_isHomed(false),
+    m_homingStartTime(0),
+    m_torqueLimit(0.0f),
+    m_smoothedTorque(0.0f),
+    m_firstTorqueReading(true) {
 }
 
 /**
@@ -47,30 +48,20 @@ void PinchValve::setup() {
  * @brief The main update loop for the valve's state machine.
  */
 void PinchValve::updateState() {
-	switch (m_state) {
-		case VALVE_IDLE:
-		case VALVE_OPEN:
-		case VALVE_CLOSED:
-		case VALVE_OPERATION_ERROR:
-			// Do nothing in these terminal states
-			m_opPhase = PHASE_IDLE;
-			break;
+    // Check for motor faults first, as this is a critical hardware issue.
+    if (isInFault() && m_state != VALVE_ERROR) {
+        m_state = VALVE_ERROR;
+        m_isHomed = false; // Lost homed status due to error
+        reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected.");
+    }
 
-		case VALVE_RESETTING:
-			// This state is used to wait for motor motion to stop before finishing a reset.
-			if (!m_motor->StatusReg().bit.StepsActive) {
-				m_state = VALVE_IDLE;
-				m_homingPhase = HOMING_PHASE_IDLE;
-				m_opPhase = PHASE_IDLE;
-				m_firstTorqueReading = true;
-			}
-			break;
-
-		case VALVE_HOMING: {
+    switch (m_state) {
+        case VALVE_HOMING: {
 			// Homing logic remains the same...
 			if (Milliseconds() - m_homingStartTime > MAX_HOMING_DURATION_MS) {
 				abort();
-				m_state = VALVE_OPERATION_ERROR;
+				m_state = VALVE_ERROR;
+				m_isHomed = false; // Lost homed status due to error
 				m_homingPhase = HOMING_PHASE_IDLE;
 				char errorMsg[128];
 				snprintf(errorMsg, sizeof(errorMsg), "%s homing timeout.", m_name);
@@ -111,7 +102,8 @@ void PinchValve::updateState() {
 					if (checkTorqueLimit()) {
 						m_homingPhase = BACKOFF_START;
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_OPERATION_ERROR;
+						m_state = VALVE_ERROR;
+						m_isHomed = false; // Lost homed status due to error
 						reportEvent(STATUS_PREFIX_ERROR, "Homing failed: move finished before hard stop.");
 					}
 					break;
@@ -140,7 +132,8 @@ void PinchValve::updateState() {
 					if (checkTorqueLimit()) {
 						m_homingPhase = SET_OFFSET_START;
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_OPERATION_ERROR;
+						m_state = VALVE_ERROR;
+						m_isHomed = false; // Lost homed status due to error
 						reportEvent(STATUS_PREFIX_ERROR, "Homing failed during slow search.");
 					}
 					break;
@@ -159,7 +152,7 @@ void PinchValve::updateState() {
 				case SET_ZERO:
 					m_motor->PositionRefSet(0); 
 					m_isHomed = true;
-					m_state = VALVE_OPEN;
+					m_state = VALVE_OPEN; // Transition to OPEN after homing
 					m_homingPhase = HOMING_PHASE_IDLE;
 					char msg[64];
 					snprintf(msg, sizeof(msg), "%s homing complete. Valve is OPEN.", m_name);
@@ -167,74 +160,68 @@ void PinchValve::updateState() {
 					break;
 				default:
 					abort();
-					m_state = VALVE_OPERATION_ERROR;
+					m_state = VALVE_ERROR;
+					m_isHomed = false; // Lost homed status due to error
 					m_homingPhase = HOMING_PHASE_IDLE;
 					break;
 			}
 			break;
 		}
 		
-		case VALVE_CLOSING:
-			switch(m_opPhase) {
-				case PHASE_START:
-					
-					break;
-				case PHASE_WAIT_TO_START:
-					if (m_motor->StatusReg().bit.StepsActive) {
-						m_opPhase = PHASE_MOVING;
-					} else if (Milliseconds() - m_moveStartTime > 500) {
-						m_state = VALVE_OPERATION_ERROR;
-						m_opPhase = PHASE_IDLE;
-						reportEvent(STATUS_PREFIX_ERROR, "Close failed: Motor did not start moving.");
-					}
-					break;
-				case PHASE_MOVING:
-					if (checkTorqueLimit()) {
-						m_state = VALVE_CLOSED;
-						m_opPhase = PHASE_IDLE;
-						char msg[64];
-						snprintf(msg, sizeof(msg), "%s closed on torque.", m_name);
-						reportEvent(STATUS_PREFIX_DONE, msg);
-					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_OPERATION_ERROR;
-						m_opPhase = PHASE_IDLE;
-						reportEvent(STATUS_PREFIX_ERROR, "Close failed: move finished before torque limit.");
-					}
-					break;
-				default:
-					m_state = VALVE_IDLE;
-					m_opPhase = PHASE_IDLE;
-					break;
-			}
-			break;
-
-		case VALVE_OPENING:
-			switch(m_opPhase) {
-				case PHASE_WAIT_TO_START:
-					if (m_motor->StatusReg().bit.StepsActive) {
-						m_opPhase = PHASE_MOVING;
-					} else if (Milliseconds() - m_moveStartTime > 500) {
-						m_state = VALVE_OPERATION_ERROR;
-						m_opPhase = PHASE_IDLE;
-						reportEvent(STATUS_PREFIX_ERROR, "Move failed: Motor did not start.");
-					}
-					break;
-				case PHASE_MOVING:
-					if (checkTorqueLimit()) { // Safety check during open
-						m_state = VALVE_OPERATION_ERROR;
-						m_opPhase = PHASE_IDLE;
-					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_OPEN; // Success
-						m_opPhase = PHASE_IDLE;
-						reportEvent(STATUS_PREFIX_DONE, "Open complete.");
-					}
-					break;
-				default:
-					m_state = VALVE_IDLE;
-					m_opPhase = PHASE_IDLE;
-					break;
-			}
-			break;
+		case VALVE_MOVING: {
+            // Shared logic for timeout and motor start
+            switch(m_opPhase) {
+                case PHASE_WAIT_TO_START:
+                    if (m_motor->StatusReg().bit.StepsActive) {
+                        m_opPhase = PHASE_MOVING;
+                    } else if (Milliseconds() - m_moveStartTime > 500) {
+                        m_state = VALVE_ERROR;
+                        m_isHomed = false; // Lost homed status due to error
+                        m_opPhase = PHASE_IDLE;
+                        m_moveType = MOVE_TYPE_NONE;
+                        reportEvent(STATUS_PREFIX_ERROR, "Move failed: Motor did not start.");
+                    }
+                    break;
+                case PHASE_MOVING:
+                    // --- Logic diverges based on move type ---
+                    if (m_moveType == MOVE_TYPE_OPEN) {
+                        // Success: move completes. Error: torque limit hit.
+                        if (checkTorqueLimit()) {
+                            abort();
+                            m_state = VALVE_ERROR;
+                            m_isHomed = false; // Lost homed status due to error
+                            reportEvent(STATUS_PREFIX_ERROR, "Open failed: Torque limit hit unexpectedly.");
+                        } else if (!m_motor->StatusReg().bit.StepsActive) {
+                            m_state = VALVE_OPEN;
+                            reportEvent(STATUS_PREFIX_DONE, "Open complete.");
+                        }
+                    } else if (m_moveType == MOVE_TYPE_CLOSE) {
+                        // Success: torque limit hit. Error: move completes.
+                        if (checkTorqueLimit()) {
+                            abort(); // Stop the move now that we've hit the stop.
+                            m_state = VALVE_CLOSED;
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "%s closed.", m_name);
+                            reportEvent(STATUS_PREFIX_DONE, msg);
+                        } else if (!m_motor->StatusReg().bit.StepsActive) {
+                            m_state = VALVE_ERROR;
+                            m_isHomed = false; // Lost homed status due to error
+                            reportEvent(STATUS_PREFIX_ERROR, "Close failed: Did not reach torque limit.");
+                        }
+                    }
+                    
+                    // If state changed, the operation is over.
+                    if (m_state != VALVE_MOVING) {
+                        m_opPhase = PHASE_IDLE;
+                        m_moveType = MOVE_TYPE_NONE;
+                    }
+                    break;
+                default:
+                    // This includes PHASE_IDLE and PHASE_START, which shouldn't be processed here.
+                    break;
+            }
+        }
+        break;
 
 		case VALVE_JOGGING:
 			switch(m_opPhase) {
@@ -242,44 +229,62 @@ void PinchValve::updateState() {
 					if (m_motor->StatusReg().bit.StepsActive) {
 						m_opPhase = PHASE_MOVING;
 					} else if (Milliseconds() - m_moveStartTime > 500) {
-						m_state = VALVE_OPERATION_ERROR;
+						m_state = VALVE_ERROR;
+						m_isHomed = false; // Lost homed status due to error
 						m_opPhase = PHASE_IDLE;
 						reportEvent(STATUS_PREFIX_ERROR, "Move failed: Motor did not start.");
 					}
 					break;
 				case PHASE_MOVING:
 					if (checkTorqueLimit()) { // Expected stop for jog
-						m_state = VALVE_IDLE;
+						abort();
+						m_state = m_isHomed ? VALVE_OPEN : VALVE_NOT_HOMED;
 						m_opPhase = PHASE_IDLE;
 					} else if (!m_motor->StatusReg().bit.StepsActive) {
-						m_state = VALVE_IDLE; // Success
+						m_state = m_isHomed ? VALVE_OPEN : VALVE_NOT_HOMED; // Success
 						m_opPhase = PHASE_IDLE;
 						reportEvent(STATUS_PREFIX_DONE, "Jog complete.");
 					}
 					break;
 				default:
-					m_state = VALVE_IDLE;
+					m_state = VALVE_ERROR;
+					m_isHomed = false; // Lost homed status due to error
 					m_opPhase = PHASE_IDLE;
 					break;
 			}
 			break;
 		
-		default:
-			m_state = VALVE_IDLE;
+		case VALVE_RESETTING: {
+            if (!m_motor->StatusReg().bit.StepsActive) {
+                m_state = m_isHomed ? VALVE_OPEN : VALVE_NOT_HOMED;
+            }
+        }
+        break;
+
+		// Stationary states, no action needed.
+        case VALVE_NOT_HOMED:
+		case VALVE_OPEN:
+		case VALVE_CLOSED:
+		case VALVE_HALTED:
+		case VALVE_ERROR:
 			break;
-	}
+    }
 }
 
 /**
  * @brief Routes a command to the appropriate handler function.
  */
 void PinchValve::handleCommand(Command cmd, const char* args) {
-	if (m_state != VALVE_IDLE && m_state != VALVE_OPEN && m_state != VALVE_CLOSED) {
-		char errorMsg[128];
-		snprintf(errorMsg, sizeof(errorMsg), "%s is busy. Command ignored.", m_name);
-		reportEvent(STATUS_PREFIX_ERROR, errorMsg);
-		return;
-	}
+    // Prevent new motion commands while busy, unless it's an abort/reset.
+    if (isBusy() && cmd != CMD_ABORT && cmd != CMD_CLEAR_ERRORS) {
+        reportEvent(STATUS_PREFIX_ERROR, "Valve is busy.");
+        return;
+    }
+    // Prevent motion if in an error state.
+    if (m_state == VALVE_ERROR && cmd != CMD_CLEAR_ERRORS) {
+        reportEvent(STATUS_PREFIX_ERROR, "Valve is in an error state. Reset required.");
+        return;
+    }
 
 	switch(cmd) {
 		case CMD_INJECTION_VALVE_HOME_UNTUBED:
@@ -348,13 +353,14 @@ void PinchValve::home(bool is_tubed) {
  */
 void PinchValve::open() {
 	if (!m_isHomed) {
-		reportEvent(STATUS_PREFIX_ERROR, "Cannot open: not homed.");
+		reportEvent(STATUS_PREFIX_ERROR, "Valve must be homed before opening.");
 		return;
 	}
-	m_state = VALVE_OPENING;
+	m_state = VALVE_MOVING;
+	m_moveType = MOVE_TYPE_OPEN; // Set move type
 	m_opPhase = PHASE_WAIT_TO_START;
 	m_moveStartTime = Milliseconds();
-	m_torqueLimit = JOG_DEFAULT_TORQUE_PERCENT;
+	m_torqueLimit = JOG_DEFAULT_TORQUE_PERCENT; // High torque limit, not meant to be hit
 	
 	long target_steps = 0;
 	long current_steps = m_motor->PositionRefCommanded();
@@ -369,13 +375,14 @@ void PinchValve::open() {
  */
 void PinchValve::close() {
 	if (!m_isHomed) {
-		reportEvent(STATUS_PREFIX_ERROR, "Cannot close: not homed.");
+		reportEvent(STATUS_PREFIX_ERROR, "Valve must be homed before closing.");
 		return;
 	}
-	m_state = VALVE_CLOSING;
+	m_state = VALVE_MOVING;
+	m_moveType = MOVE_TYPE_CLOSE; // Set move type
 	m_opPhase = PHASE_WAIT_TO_START;
 	m_moveStartTime = Milliseconds();
-	m_torqueLimit = PINCH_VALVE_PINCH_TORQUE_PERCENT;
+	m_torqueLimit = PINCH_VALVE_PINCH_TORQUE_PERCENT; // Low torque limit, expected to be hit
 	
 	long long_move_steps = (long)(PINCH_HOMING_UNTUBED_STROKE_MM * STEPS_PER_MM_PINCH);
 	int vel_sps = (int)(PINCH_VALVE_PINCH_VEL_MMS * STEPS_PER_MM_PINCH);
@@ -393,6 +400,7 @@ void PinchValve::jog(const char* args) {
 		return;
 	}
 	m_state = VALVE_JOGGING;
+	m_moveType = MOVE_TYPE_NONE; // Ensure moveType is not set for jogs
 	m_opPhase = PHASE_WAIT_TO_START;
 	m_moveStartTime = Milliseconds();
 	m_torqueLimit = JOG_DEFAULT_TORQUE_PERCENT;
@@ -439,25 +447,32 @@ void PinchValve::disable() {
 }
 
 void PinchValve::abort() {
-	if (m_motor->StatusReg().bit.StepsActive) {
+	if (m_state == VALVE_MOVING || m_state == VALVE_JOGGING) {
 		m_motor->MoveStopAbrupt();
+		m_state = VALVE_HALTED;
+		m_opPhase = PHASE_IDLE;
+		m_moveType = MOVE_TYPE_NONE;
 	}
-	reset();
 }
 
 void PinchValve::reset() {
+	// This function should only clear an error state.
+	// If not in an error, do nothing.
+	if (m_state != VALVE_ERROR) {
+		return;
+	}
+
+	// If we are in an error state, we need to stop any potential motion
+	// and reset the state machine to a known, safe state.
 	if (m_motor->StatusReg().bit.StepsActive) {
 		m_motor->MoveStopAbrupt();
-		// Enter a temporary state to wait for the motor to physically stop moving.
-		// This prevents a race condition in the CLEAR_ERRORS sequence.
-		m_state = VALVE_RESETTING;
-	} else {
-		// If the motor is already stopped, we can reset the state immediately.
-		m_state = VALVE_IDLE;
-		m_homingPhase = HOMING_PHASE_IDLE;
-		m_opPhase = PHASE_IDLE;
-		m_firstTorqueReading = true;
 	}
+	m_state = VALVE_RESETTING; // Transition to a temporary state to wait for motor to stop
+	m_homingPhase = HOMING_PHASE_IDLE;
+	m_opPhase = PHASE_IDLE;
+	m_moveType = MOVE_TYPE_NONE;
+	m_firstTorqueReading = true;
+	// The homed status was already cleared when the error occurred.
 }
 
 /**
@@ -524,33 +539,41 @@ const char* PinchValve::getTelemetryString() {
 }
 
 bool PinchValve::isBusy() const {
-	return m_state == VALVE_HOMING || m_state == VALVE_OPENING || m_state == VALVE_CLOSING || m_state == VALVE_JOGGING || m_state == VALVE_RESETTING;
+	return m_state == VALVE_HOMING || m_state == VALVE_MOVING || m_state == VALVE_JOGGING || m_state == VALVE_RESETTING;
 }
 
 bool PinchValve::isInFault() const {
 	return m_motor->StatusReg().bit.MotorInFault;
 }
 
+/**
+ * @brief Checks if the valve has been successfully homed.
+ */
 bool PinchValve::isHomed() const {
 	return m_isHomed;
 }
 
+/**
+ * @brief Checks if the valve is currently in the fully open state.
+ */
 bool PinchValve::isOpen() const {
-	return m_isHomed && (m_state == VALVE_OPEN || m_state == VALVE_IDLE);
+	return m_state == VALVE_OPEN;
 }
 
+/**
+ * @brief Gets the current state of the valve as a human-readable string.
+ */
 const char* PinchValve::getState() const {
 	switch (m_state) {
-		case VALVE_IDLE:            return "Idle";
-		case VALVE_HOMING:          return "Homing";
-		case VALVE_OPENING:         return "Opening";
-		case VALVE_CLOSING:         return "Closing";
-		case VALVE_JOGGING:         return "Jogging";
-		case VALVE_OPEN:            return "Open";
-		case VALVE_CLOSED:          return "Closed";
-		case VALVE_RESETTING:       return "Resetting";
-		case VALVE_OPERATION_ERROR: return "Op Error";
-		case VALVE_MOTOR_FAULT:     return "Fault";
-		default:                    return "Unknown";
+		case VALVE_NOT_HOMED: return "Not Homed";
+		case VALVE_OPEN: return "Open";
+		case VALVE_CLOSED: return "Closed";
+		case VALVE_HALTED: return "Halted";
+		case VALVE_MOVING: return "Moving";
+		case VALVE_HOMING: return "Homing";
+		case VALVE_JOGGING: return "Jogging";
+		case VALVE_RESETTING: return "Resetting";
+		case VALVE_ERROR: return "Error";
+		default: return "Unknown";
 	}
 }

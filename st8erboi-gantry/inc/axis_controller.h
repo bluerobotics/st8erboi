@@ -34,7 +34,8 @@ public:
 		STATE_STANDBY,        ///< The axis is idle and ready for commands.
 		STATE_STARTING_MOVE,  ///< A move has been commanded, and the axis is waiting for motion to start.
 		STATE_MOVING,         ///< The axis is currently executing a move.
-		STATE_HOMING          ///< The axis is performing a homing sequence.
+		STATE_HOMING,         ///< The axis is performing a homing sequence.
+		STATE_FAULT           ///< The axis has encountered an error (e.g., motor fault, torque limit) and must be reset.
 	} AxisState;
 	
 	/**
@@ -69,7 +70,9 @@ public:
 		Connector* homingSensor1, Connector* homingSensor2, Connector* limitSensor, Connector* zBrake);
 
 	/**
-	 * @brief Sets up the motor-specific configurations.
+	 * @brief Sets up motor-specific configurations.
+	 * @details Configures HLFB, sets max velocity and acceleration, and enables the motor(s).
+	 * It also configures associated hardware like sensors and brakes.
 	 */
 	void setupMotors();
 	
@@ -77,21 +80,129 @@ public:
 	 * @name Public Interface
 	 * @{
 	 */
-	void updateState();
-	void move(const char* args);
-	void home(const char* args);
-	void abort();
-	void enable();
-	void disable();
-    void reset();
-	bool isMoving();
-	bool isHomed() { return m_homed; }
-	const char* getState();
-	AxisState getStateEnum() const;
-	float getPositionMm() const;
-	float getSmoothedTorque();
-	bool isEnabled();
 	
+	/**
+	 * @brief The main, non-blocking update loop for the axis.
+	 * @details This function is intended to be called continuously from the main `Gantry` loop.
+	 * It drives the internal state machine for this axis, handling the progression of
+	 * moves and homing sequences.
+	 */
+	void updateState();
+
+	/**
+	 * @brief Initiates a move command parsed from a string.
+	 * @details This is the main entry point for `MOVE` commands from the GUI. It parses
+	 * the provided arguments to determine the move parameters (e.g., type, target, speed)
+	 * and then calls `startMove()` to execute it.
+	 * @param args A string containing the move parameters. Expected format:
+	 *             "[ABS|INC] <pos_mm> <vel_mms> <accel_mms2> <torque_percent>"
+	 */
+	void move(const char* args);
+
+	/**
+	 * @brief Initiates a homing sequence parsed from a string.
+	 * @details This is the entry point for `HOME` commands. It parses an optional
+	 * max travel distance and then starts the homing state machine.
+	 * @param args A string that can optionally contain the max travel distance in mm.
+	 *             If empty or null, the axis's full travel range is used.
+	 */
+	void home(const char* args);
+
+	/**
+	 * @brief Aborts any motion in progress on this axis immediately.
+	 * @details Halts the motor(s) using an abrupt stop.
+	 */
+	void abort();
+
+	/**
+	 * @brief Enables the motor(s) for this axis.
+	 * @details Also disengages the Z-axis brake if one is configured.
+	 */
+	void enable();
+
+	/**
+	 * @brief Disables the motor(s) for this axis.
+	 * @details Also engages the Z-axis brake if one is configured.
+	 */
+	void disable();
+
+    /**
+     * @brief Resets the axis to a safe, idle state.
+     * @details Aborts any active motion and resets the state machine to STANDBY.
+     * The homed status is preserved.
+     */
+    void reset();
+
+	/**
+	 * @brief Checks if the axis is currently in motion.
+	 * @return `true` if the motor(s) are actively executing a move, `false` otherwise.
+	 */
+	bool isMoving();
+
+	/**
+	 * @brief Checks if the axis has been successfully homed.
+	 * @return `true` if a homing sequence has completed successfully, `false` otherwise.
+	 */
+	bool isHomed() { return m_homed; }
+
+	/**
+	 * @brief Gets the current state of the axis as a human-readable string.
+	 * @return A `const char*` representing the current state (e.g., "Homing", "Standby").
+	 */
+	const char* getState();
+
+	/**
+	 * @brief Gets the current state of the axis as an `AxisState` enum.
+	 * @return The current value of the `m_state` member.
+	 */
+	AxisState getStateEnum() const;
+
+	/**
+	 * @brief Checks if the axis is currently in a fault condition.
+	 * @return `true` if the state is `STATE_FAULT`, `false` otherwise.
+	 */
+	bool isInFault();
+
+	/**
+	 * @brief Checks if the configured limit sensor for this axis is currently triggered.
+	 * @return `true` if the sensor exists and is in a triggered state, `false` otherwise.
+	 */
+	bool isLimitSensorTriggered();
+
+	/**
+	 * @brief Forces the axis into a fault state.
+	 * @details This is called by an external controller (like Gantry) when a system-level
+	 * fault related to this axis is detected (e.g., a limit switch).
+	 * @param reason A string describing the reason for the fault, to be used in the error message.
+	 */
+	void enterFaultState(const char* reason);
+
+	/**
+	 * @brief Gets the current commanded position of the axis in millimeters.
+	 * @return The current position in mm.
+	 */
+	float getPositionMm() const;
+
+	/**
+	 * @brief Gets the smoothed torque reading for telemetry purposes.
+	 * @details This function updates and returns an Exponentially Weighted Moving Average (EWMA)
+	 * of the motor torque. For dual-motor axes, it returns the average of both motors'
+	 * smoothed torque values.
+	 * @return The smoothed torque value as a percentage.
+	 */
+	float getSmoothedTorque();
+	
+	/**
+	 * @brief Starts a move with precisely defined parameters.
+	 * @details This is the core motion execution function. It validates the move against
+	 * software limits and then commands the motor(s) to move the specified distance.
+	 * @param target_mm For absolute moves, the destination coordinate. For incremental
+	 *                  moves, the distance to travel.
+	 * @param vel_mms The target velocity in mm/s.
+	 * @param accel_mms2 The target acceleration in mm/s^2.
+	 * @param torque The torque limit for the move as a percentage.
+	 * @param moveType The type of move (`ABSOLUTE` or `INCREMENTAL`).
+	 */
 	void startMove(float target_mm, float vel_mms, float accel_mms2, int torque, MoveType moveType);
     /** @} */
 
@@ -100,9 +211,45 @@ public:
 	 * @name Private Helper Methods
 	 * @{
 	 */
+	
+	/**
+	 * @brief Commands the low-level motor driver(s) to move a set number of steps.
+	 * @param steps The number of steps to move. Positive or negative determines direction.
+	 * @param velSps The target velocity in steps/s.
+	 * @param accelSps2 The target acceleration in steps/s^2.
+	 * @param torque The torque limit for the move as a percentage.
+	 */
 	void moveSteps(long steps, int velSps, int accelSps2, int torque);
+	
+	/**
+	 * @brief Checks if a motor has exceeded its torque limit during a move.
+	 * @details This function uses an instantaneous torque reading for the fastest response.
+	 * @param motor A pointer to the `MotorDriver` to check.
+	 * @return `true` if the absolute torque exceeds the current `m_torqueLimit`, `false` otherwise.
+	 */
 	bool checkTorqueLimit(MotorDriver* motor);
-	float getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
+
+	/**
+	 * @brief Updates and retrieves the smoothed (EWMA) torque value for a single motor.
+	 * @param motor A pointer to the `MotorDriver` to measure.
+	 * @param smoothedValue A pointer to the float where the smoothed value is stored.
+	 * @param firstRead A pointer to the flag used to initialize the EWMA filter.
+	 * @return The new smoothed torque value as a percentage.
+	 */
+	float getSmoothedTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead);
+
+	/**
+	 * @brief Gets the instantaneous, unfiltered torque reading from a single motor.
+	 * @param motor A pointer to the `MotorDriver` to measure.
+	 * @return The raw torque value as a percentage.
+	 */
+	float getInstantaneousTorque(MotorDriver* motor);
+	
+	/**
+	 * @brief Reports a status event up to the main `Gantry` controller.
+	 * @param statusType The prefix for the message (e.g., "GANTRY_INFO: ").
+	 * @param message The content of the message to send.
+	 */
 	void reportEvent(const char* statusType, const char* message);
     /** @} */
 
@@ -144,6 +291,8 @@ public:
 	float m_stepsPerMm;         ///< Conversion factor for this axis.
 	bool m_homed;               ///< Flag indicating if the axis has been successfully homed.
 	float m_torqueLimit;        ///< Current torque limit (%) for moves.
+	uint32_t m_homingStartTimeMs; ///< Timestamp (ms) when a homing sequence started, used for timeout.
+	uint32_t m_homingTimeoutMs;   ///< Calculated timeout (ms) for the current homing operation.
 	
 	float m_minPosMm;           ///< The minimum software travel limit in millimeters.
 	float m_maxPosMm;           ///< The maximum software travel limit in millimeters.

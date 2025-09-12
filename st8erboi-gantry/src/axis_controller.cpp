@@ -248,6 +248,14 @@ void Axis::home(const char* args) {
 	m_state = STATE_HOMING;
 	homingPhase = RAPID_SEARCH_START;
 	
+	// --- Dynamic Timeout Calculation ---
+	// Calculate the maximum time the longest move (rapid search) should take.
+	float max_time_sec = fabs(max_dist_mm / HOMING_RAPID_VEL_MMS);
+	// Add a 50% safety margin.
+	max_time_sec *= 1.5;
+	m_homingTimeoutMs = (uint32_t)(max_time_sec * 1000.0f);
+	m_homingStartTimeMs = Milliseconds();
+	
 	float backoff_mm = HOMING_BACKOFF_MM;
 	
 	m_homingDistanceSteps = (long)(fabs(max_dist_mm) * m_stepsPerMm);
@@ -269,7 +277,7 @@ void Axis::updateState() {
 		case STATE_STARTING_MOVE:
 		if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
 			reportEvent(STATUS_PREFIX_ERROR, "Cannot start move: Motor in fault");
-			m_state = STATE_STANDBY;
+			m_state = STATE_FAULT;
 			return;
 		}
 		if (isMoving()){
@@ -278,17 +286,10 @@ void Axis::updateState() {
 		break;
 		
 		case STATE_MOVING:
-		if (m_limitSensor && m_limitSensor->State()) {
-			abort();
-			reportEvent(STATUS_PREFIX_ERROR, "MOVE aborted due to limit switch trigger.");
-			m_state = STATE_STANDBY;
-			m_activeCommand = nullptr;
-			break;
-		}
 		if ((m_motor1 && checkTorqueLimit(m_motor1)) || (m_motor2 && checkTorqueLimit(m_motor2))) {
 			abort();
 			reportEvent(STATUS_PREFIX_ERROR, "MOVE aborted due to torque limit.");
-			m_state = STATE_STANDBY;
+			m_state = STATE_FAULT;
 			m_activeCommand = nullptr;
 		}
 		else if (!isMoving()) {
@@ -303,10 +304,24 @@ void Axis::updateState() {
 		break;
 		
 		case STATE_HOMING: {
+			// Only check for timeout during the initial rapid search phase.
+			if (homingPhase == RAPID_SEARCH_START || 
+				homingPhase == RAPID_SEARCH_WAIT_TO_START || 
+				homingPhase == RAPID_SEARCH_MOVING) {
+				if (Milliseconds() - m_homingStartTimeMs > m_homingTimeoutMs) {
+					abort();
+					reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Operation timed out.");
+					m_state = STATE_FAULT;
+					homingPhase = HOMING_NONE;
+					m_activeCommand = nullptr;
+					break;
+				}
+			}
+
 			if ((m_motor1 && m_motor1->StatusReg().bit.MotorInFault) || (m_motor2 && m_motor2->StatusReg().bit.MotorInFault)){
 				abort();
 				reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motor in fault.");
-				m_state = STATE_STANDBY;
+				m_state = STATE_FAULT;
 				homingPhase = HOMING_NONE;
 				m_activeCommand = nullptr;
 				break;
@@ -349,7 +364,7 @@ void Axis::updateState() {
 						} else if (!isMoving()) {
 						abort();
 						reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Axis stopped before sensor was triggered.");
-						m_state = STATE_STANDBY;
+						m_state = STATE_FAULT;
 						homingPhase = HOMING_NONE;
 					}
 					break;
@@ -413,7 +428,7 @@ void Axis::updateState() {
 						} else if (!isMoving()) {
 						abort();
 						reportEvent(STATUS_PREFIX_ERROR, "Homing failed during slow search.");
-						m_state = STATE_STANDBY;
+						m_state = STATE_FAULT;
 						homingPhase = HOMING_NONE;
 					}
 					break;
@@ -458,12 +473,16 @@ void Axis::updateState() {
 				default:
 				abort();
 				reportEvent(STATUS_PREFIX_ERROR, "Unknown homing phase, aborting.");
-				m_state = STATE_STANDBY;
+				m_state = STATE_FAULT;
 				homingPhase = HOMING_NONE;
 				break;
 			}
 			break;
 		}
+		case STATE_FAULT:
+			// Once in a fault state, do nothing until a CLEAR_ERRORS command is received.
+			// The reset() function, called by Gantry::clearErrors(), will return the axis to STANDBY.
+			break;
 	}
 }
 
@@ -493,11 +512,27 @@ const char* Axis::getState() {
 	if (m_state == STATE_HOMING) return "Homing";
 	if (m_state == STATE_MOVING) return "Moving";
 	if (m_state == STATE_STARTING_MOVE) return "Starting";
+	if (m_state == STATE_FAULT) return "Fault";
 	return "Standby";
 }
 
 Axis::AxisState Axis::getStateEnum() const {
 	return m_state;
+}
+
+bool Axis::isInFault() {
+	return m_state == STATE_FAULT;
+}
+
+bool Axis::isLimitSensorTriggered() {
+	return m_limitSensor && m_limitSensor->State();
+}
+
+void Axis::enterFaultState(const char* reason) {
+	abort();
+	reportEvent(STATUS_PREFIX_ERROR, reason);
+	m_state = STATE_FAULT;
+	m_activeCommand = nullptr;
 }
 
 void Axis::reportEvent(const char* statusType, const char* message) {
@@ -513,7 +548,7 @@ bool Axis::isEnabled() {
 	return m_motor1->StatusReg().bit.Enabled;
 }
 
-float Axis::getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead) {
+float Axis::getSmoothedTorque(MotorDriver* motor, float* smoothedValue, bool* firstRead) {
 	float currentRawTorque = motor->HlfbPercent();
 	if (currentRawTorque == TORQUE_HLFB_AT_POSITION) { return 0; }
 	if (*firstRead) {
@@ -525,19 +560,25 @@ float Axis::getRawTorque(MotorDriver* motor, float* smoothedValue, bool* firstRe
 	return *smoothedValue;
 }
 
+float Axis::getInstantaneousTorque(MotorDriver* motor) {
+	float currentRawTorque = motor->HlfbPercent();
+	if (currentRawTorque == TORQUE_HLFB_AT_POSITION) {
+		return 0.0f;
+	}
+	return currentRawTorque;
+}
+
 float Axis::getSmoothedTorque() {
-	return getRawTorque(m_motor1, &m_smoothedTorqueM1, &m_firstTorqueReadM1);
+	float torque1 = getSmoothedTorque(m_motor1, &m_smoothedTorqueM1, &m_firstTorqueReadM1);
+	if (m_motor2) {
+		float torque2 = getSmoothedTorque(m_motor2, &m_smoothedTorqueM2, &m_firstTorqueReadM2);
+		return (torque1 + torque2) / 2.0f;
+	}
+	return torque1;
 }
 
 bool Axis::checkTorqueLimit(MotorDriver* motor) {
-	float torque;
-	if (motor == m_motor1) {
-		torque = getRawTorque(motor, &m_smoothedTorqueM1, &m_firstTorqueReadM1);
-		} else if (motor == m_motor2) {
-		torque = getRawTorque(motor, &m_smoothedTorqueM2, &m_firstTorqueReadM2);
-		} else {
-		return false;
-	}
+	float torque = getInstantaneousTorque(motor);
 
 	if (fabsf(torque) > m_torqueLimit) {
 		return true;

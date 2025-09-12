@@ -46,7 +46,7 @@ void VacuumController::setup() {
  */
 void VacuumController::handleCommand(Command cmd, const char* args) {
 	// Prevent starting a new operation if one is already in progress (except for turning off)
-	if (m_state != VACUUM_OFF && m_state != VACUUM_ACTIVE_HOLD) {
+	if (m_state != VACUUM_OFF && m_state != VACUUM_ON) {
 		if (cmd == CMD_VACUUM_ON || cmd == CMD_VACUUM_LEAK_TEST) {
 			reportEvent(STATUS_PREFIX_ERROR, "Vacuum command ignored: An operation is already in progress.");
 			return;
@@ -68,8 +68,8 @@ void VacuumController::handleCommand(Command cmd, const char* args) {
 }
 
 void VacuumController::vacuumOn() {
-	reportEvent(STATUS_PREFIX_START, "VACUUM_ON received. Actively holding target pressure.");
-	m_state = VACUUM_ACTIVE_HOLD;
+	reportEvent(STATUS_PREFIX_START, "VACUUM_ON received. Pump is now running.");
+	m_state = VACUUM_ON;
 	PIN_VACUUM_RELAY.State(true);
 	PIN_VACUUM_VALVE_RELAY.State(true); // Assuming valve should be open
 }
@@ -93,7 +93,7 @@ void VacuumController::leakTest() {
 
 void VacuumController::updateState() {
 	// These states are terminal or passive, no automatic transitions needed.
-	if (m_state == VACUUM_OFF || m_state == VACUUM_ACTIVE_HOLD || m_state == VACUUM_ERROR) {
+	if (m_state == VACUUM_OFF || m_state == VACUUM_ON || m_state == VACUUM_ERROR) {
 		return;
 	}
 
@@ -232,7 +232,7 @@ const char* VacuumController::getState() const {
 		case VACUUM_PULLDOWN:       return "Pulldown";
 		case VACUUM_SETTLING:       return "Settling";
 		case VACUUM_LEAK_TESTING:   return "Leak Test";
-		case VACUUM_ACTIVE_HOLD:    return "Hold";
+		case VACUUM_ON:    return "On";
 		case VACUUM_ERROR:          return "Error";
 		default:                    return "Unknown";
 	}

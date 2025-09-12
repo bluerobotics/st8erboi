@@ -10,14 +10,16 @@ COMMANDS = {
     "INJECT_STATOR": {
         "device": "fillhead",
         "params": [
-            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000}
+            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000},
+            {"name": "Speed(ml/s)", "type": float, "min": 0.01, "max": 5.0, "optional": True, "default": 0.25}
         ],
         "help": "Injects a specific volume using the Stator (5:1) cartridge settings."
     },
     "INJECT_ROTOR": {
         "device": "fillhead",
         "params": [
-            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000}
+            {"name": "Volume(ml)", "type": float, "min": 0, "max": 1000},
+            {"name": "Speed(ml/s)", "type": float, "min": 0.01, "max": 5.0, "optional": True, "default": 0.25}
         ],
         "help": "Injects a specific volume using the Rotor (1:1) cartridge settings."
     },
@@ -148,6 +150,16 @@ COMMANDS = {
     "ABORT": {"device": "both", "params": [], "help": "Stops all motion on the target device."},
 
     # --- Script-Control Commands ---
+    "REPEAT": {
+        "device": "script",
+        "params": [{"name": "Count", "type": int, "min": 1, "max": 10000}],
+        "help": "Starts a block of commands to be repeated 'Count' times. Must be on its own line and closed with END_REPEAT."
+    },
+    "END_REPEAT": {
+        "device": "script",
+        "params": [],
+        "help": "Marks the end of a REPEAT block. Must be on its own line."
+    },
     "WAIT_MS": {"device": "script", "params": [{"name": "Milliseconds", "type": float, "min": 0, "max": 600000}],
                 "help": "Pauses script execution for a given time in milliseconds."},
     "WAIT_S": {"device": "script", "params": [{"name": "Seconds", "type": float, "min": 0, "max": 600}],
@@ -185,6 +197,11 @@ def _validate_line(line_content, line_num):
     """Helper function to validate a single, non-empty, non-comment line."""
     errors = []
     sub_commands = line_content.strip().split(',')
+    
+    command_word_for_line = sub_commands[0].strip().split()[0].upper()
+    if (command_word_for_line == "REPEAT" or command_word_for_line == "END_REPEAT") and len(sub_commands) > 1:
+        errors.append({"line": line_num, "error": "REPEAT and END_REPEAT commands must be on their own line."})
+        return errors # Stop processing this line as it's fundamentally malformed
 
     for sub_cmd_str in sub_commands:
         sub_cmd_str = sub_cmd_str.strip()
@@ -235,12 +252,30 @@ def validate_script(script_content):
     """Validates an entire script against the command reference."""
     errors = []
     lines = script_content.splitlines()
+    repeat_stack = []
+
     for i, line in enumerate(lines):
         line_num = i + 1
-        line = line.strip()
-        if not line or line.startswith('#'):
+        line_content = line.strip()
+        if not line_content or line_content.startswith('#'):
             continue
+        
+        # Check loop syntax based on the first command of the line
+        first_command_word = line_content.split(',')[0].strip().split()[0].upper()
+        if first_command_word == "REPEAT":
+            repeat_stack.append(line_num)
+        elif first_command_word == "END_REPEAT":
+            if not repeat_stack:
+                errors.append({"line": line_num, "error": "END_REPEAT found without a matching REPEAT."})
+            else:
+                repeat_stack.pop()
+
         errors.extend(_validate_line(line, line_num))
+
+    if repeat_stack:
+        for ln in repeat_stack:
+            errors.append({"line": ln, "error": "This REPEAT does not have a matching END_REPEAT."})
+
     return errors
 
 

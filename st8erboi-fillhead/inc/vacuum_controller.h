@@ -26,7 +26,7 @@ enum VacuumState : uint8_t {
 	VACUUM_PULLDOWN,        ///< The pump is on, pulling down to the target pressure.
 	VACUUM_SETTLING,        ///< The pump is off, allowing pressure to stabilize before a leak test.
 	VACUUM_LEAK_TESTING,    ///< The system is holding vacuum and monitoring for pressure changes to detect leaks.
-	VACUUM_ACTIVE_HOLD,     ///< The pump is actively cycling to maintain the target pressure.
+	VACUUM_ON,              ///< The pump is on and will run continuously until a `VACUUM_OFF` command is received.
 	VACUUM_ERROR            ///< The system failed to reach target pressure or failed a leak test.
 };
 

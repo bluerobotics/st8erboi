@@ -77,6 +77,11 @@ void Gantry::loop() {
     yAxis.updateState();
     zAxis.updateState();
 
+	// Check for hardware-specific conditions, like the Y-axis limit switch.
+	if (yAxis.isLimitSensorTriggered()) {
+		yAxis.enterFaultState("MOVE aborted due to limit switch trigger.");
+	}
+
     // 4. Update the overall gantry state based on the axis states.
     updateState();
 
@@ -86,6 +91,14 @@ void Gantry::loop() {
         m_lastTelemetryTime = now;
         publishTelemetry();
     }
+}
+
+/**
+ * @brief Checks if the gantry is currently in an error state.
+ * @return `true` if the state is `GANTRY_ERROR`, `false` otherwise.
+ */
+bool Gantry::isInErrorState() {
+	return m_state == GANTRY_ERROR;
 }
 
 /**
@@ -135,6 +148,11 @@ void Gantry::publishTelemetry() {
  * @param msg The message object received from the communications queue.
  */
 void Gantry::dispatchCommand(const Message& msg) {
+	// If in an error state, only allow the CLEAR_ERRORS command.
+	if (isInErrorState() && strncmp(msg.buffer, CMD_STR_CLEAR_ERRORS, strlen(CMD_STR_CLEAR_ERRORS)) != 0) {
+		reportEvent(STATUS_PREFIX_ERROR, "System is in an error state. Must clear errors to continue.");
+		return;
+	}
     // The DISCOVER command is broadcast, so we'll receive messages not intended for us.
     // If the message is a discovery command but not OUR discovery command, ignore it.
     if (strncmp(msg.buffer, "DISCOVER_", 9) == 0 && strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
@@ -222,6 +240,14 @@ void Gantry::dispatchCommand(const Message& msg) {
  * GantryState (e.g., if any axis is moving, the whole gantry is MOVING).
  */
 void Gantry::updateState() {
+	// An error state is sticky and must be explicitly cleared.
+	if (isInErrorState()) {
+		return;
+	}
+	if (xAxis.isInFault() || yAxis.isInFault() || zAxis.isInFault()) {
+		m_state = GANTRY_ERROR;
+		return;
+	}
     // Homing takes precedence over all other states.
     if (xAxis.getStateEnum() == Axis::STATE_HOMING || yAxis.getStateEnum() == Axis::STATE_HOMING || zAxis.getStateEnum() == Axis::STATE_HOMING) {
         m_state = GANTRY_HOMING;
@@ -245,6 +271,7 @@ const char* Gantry::getState() {
         case GANTRY_STANDBY: return "STANDBY";
         case GANTRY_HOMING:  return "HOMING";
         case GANTRY_MOVING:  return "MOVING";
+        case GANTRY_ERROR:   return "ERROR";
         default:             return "UNKNOWN";
     }
     return "UNKNOWN"; // Should not be reached.

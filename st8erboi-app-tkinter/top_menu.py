@@ -1,54 +1,40 @@
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
+from tkinter import ttk
 
 
-def create_top_menu(root, file_commands):
+def create_top_menu(parent, file_commands, autosave_var):
     """
-    Creates the main menu bar for the application. The styling is now handled
-    by the sv_ttk theme set in main.py.
-
-    Args:
-        root: The main Tkinter window.
-        file_commands (dict): A dictionary mapping file operations to their functions.
-
-    Returns:
-        dict: A dictionary containing a reference to the recent_files_menu object.
+    Creates the main application menu bar.
     """
-    menubar = tk.Menu(root)
-    root.config(menu=menubar)
-
-    # --- File Menu ---
+    menubar = tk.Menu(parent)
     file_menu = tk.Menu(menubar, tearoff=0)
-    menubar.add_cascade(label="File", menu=file_menu)
-
-    file_menu.add_command(label="New Script", command=file_commands.get('new'), accelerator="Ctrl+N")
-    file_menu.add_command(label="Load Script...", command=file_commands.get('load'), accelerator="Ctrl+O")
+    file_menu.add_command(label="New Script", command=file_commands.get("new"))
+    file_menu.add_command(label="Open Script...", command=file_commands.get("load"))
+    file_menu.add_separator()
+    file_menu.add_command(label="Save", command=file_commands.get("save"))
+    file_menu.add_command(label="Save As...", command=file_commands.get("save_as"))
+    file_menu.add_separator()
+    file_menu.add_checkbutton(label="Autosave", onvalue=True, offvalue=False, variable=autosave_var)
+    file_menu.add_separator()
 
     recent_files_menu = tk.Menu(file_menu, tearoff=0)
-    file_menu.add_cascade(label="Recent Scripts", menu=recent_files_menu)
-    recent_files_menu.add_command(label="Empty", state=tk.DISABLED)
+    file_menu.add_cascade(label="Recent Files", menu=recent_files_menu)
 
     file_menu.add_separator()
-    file_menu.add_command(label="Save Script", command=file_commands.get('save'), accelerator="Ctrl+S")
-    file_menu.add_command(label="Save Script As...", command=file_commands.get('save_as'), accelerator="Ctrl+Shift+S")
-    file_menu.add_separator()
-    file_menu.add_command(label="Validate Script", command=file_commands.get("validate"))
-    file_menu.add_separator()
-    file_menu.add_command(label="Exit", command=root.quit)
+    file_menu.add_command(label="Exit", command=parent.quit)
 
-    # --- Help Menu ---
-    help_menu = tk.Menu(menubar, tearoff=0)
-    menubar.add_cascade(label="Help", menu=help_menu)
-    help_menu.add_command(label="Documentation", command=lambda: show_documentation_window(root))
-    help_menu.add_command(label="About", command=lambda: show_about_window(root))
+    menubar.add_cascade(label="File", menu=file_menu)
 
-    # --- Bind Keyboard Shortcuts ---
-    root.bind("<Control-n>", lambda event: file_commands.get('new')())
-    root.bind("<Control-o>", lambda event: file_commands.get('load')())
-    root.bind("<Control-s>", lambda event: file_commands.get('save')())
-    root.bind("<Control-S>", lambda event: file_commands.get('save_as')())
+    tools_menu = tk.Menu(menubar, tearoff=0)
+    tools_menu.add_command(label="Validate Script", command=file_commands.get("validate"))
+    menubar.add_cascade(label="Tools", menu=tools_menu)
 
-    return {'recent_files_menu': recent_files_menu}
+    parent.config(menu=menubar)
+    return {
+        "menubar": menubar,
+        "recent_files_menu": recent_files_menu
+    }
 
 
 def show_documentation_window(parent):

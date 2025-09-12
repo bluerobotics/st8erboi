@@ -527,12 +527,15 @@ void Injector::moveToCartridgeRetract(const char* args) {
  */
 void Injector::initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str) {
     float volume_ml = 0.0f;
-    // Optional parameters with firmware-defined defaults
+    // Optional speed parameter, with firmware-defined default
     float speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
+
+    // We no longer need accel and torque as optional params from the GUI,
+    // as they are not exposed in the simplified command.
     float accel_sps2 = (float)m_feedDefaultAccelSPS2;
     int torque_percent = m_feedDefaultTorquePercent;
 
-    int parsed_count = std::sscanf(args, "%f %f %f %d", &volume_ml, &speed_ml_s, &accel_sps2, &torque_percent);
+    int parsed_count = std::sscanf(args, "%f %f", &volume_ml, &speed_ml_s);
 
     if (parsed_count >= 1) { // Only volume is required
         // --- Calculate steps/ml based on piston geometry ---
@@ -547,9 +550,9 @@ void Injector::initiateInjectMove(const char* args, float piston_a_diam, float p
         // Basic validation
         if (torque_percent <= 0 || torque_percent > 100) torque_percent = m_feedDefaultTorquePercent;
         if (volume_ml <= 0) { reportEvent(STATUS_PREFIX_ERROR, "Error: Inject volume must be positive."); return; }
-        if (speed_ml_s <= 0) speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
-        if (accel_sps2 <= 0) accel_sps2 = (float)m_feedDefaultAccelSPS2;
-
+        // If speed is not provided or invalid, use the default.
+        if (speed_ml_s <= 0) speed_ml_s = INJECT_DEFAULT_SPEED_MLS; 
+        
         // Setup and execute the move
         fullyResetActiveDispenseOperation();
         m_state = STATE_FEEDING;
