@@ -1,33 +1,44 @@
 import tkinter as tk
 from tkinter import ttk
-
+import theme
 
 def create_status_bar(parent, shared_gui_refs):
     """
     Creates the vertically stacked left status bar with Connection, Axis, and System status.
     """
-    status_bar_container = tk.Frame(parent, bg="#21232b")
+    status_bar_container = ttk.Frame(parent, style='TFrame')
     status_bar_container.pack(side=tk.TOP, fill=tk.X, expand=False)
 
     # --- Connection Status ---
-    conn_frame = tk.LabelFrame(status_bar_container, text="Connection Status", bg="#2a2d3b", fg="white", padx=10,
-                               pady=5, font=("Segoe UI", 10, "bold"))
+    conn_frame = ttk.LabelFrame(status_bar_container, text="Connection Status", style='TFrame', padding=10)
     conn_frame.pack(side=tk.TOP, fill="x", pady=(0, 10))
-    # MODIFIED: Changed 'status_var_injector' to 'status_var_fillhead' to fix the KeyError.
-    tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_fillhead'], bg=conn_frame['bg'], fg="white",
-             font=("Segoe UI", 9)).pack(anchor='w')
-    tk.Label(conn_frame, textvariable=shared_gui_refs['status_var_gantry'], bg=conn_frame['bg'], fg="white",
-             font=("Segoe UI", 9)).pack(anchor='w')
+    
+    gantry_conn_label = ttk.Label(conn_frame, textvariable=shared_gui_refs['status_var_gantry'])
+    gantry_conn_label.pack(anchor='w')
+    
+    fillhead_conn_label = ttk.Label(conn_frame, textvariable=shared_gui_refs['status_var_fillhead'])
+    fillhead_conn_label.pack(anchor='w')
+
+    # Dynamic status coloring
+    shared_gui_refs['status_var_gantry'].trace_add("write", 
+        lambda *args: gantry_conn_label.config(
+            foreground=theme.SUCCESS_GREEN if "Connected" in shared_gui_refs['status_var_gantry'].get() else theme.ERROR_RED
+        )
+    )
+    shared_gui_refs['status_var_fillhead'].trace_add("write", 
+        lambda *args: fillhead_conn_label.config(
+            foreground=theme.SUCCESS_GREEN if "Connected" in shared_gui_refs['status_var_fillhead'].get() else theme.ERROR_RED
+        )
+    )
 
     # --- Axis Status Display ---
-    axis_status_frame = tk.LabelFrame(status_bar_container, text="Axis Status", bg="#2a2d3b", fg="white", padx=10,
-                                      pady=10, font=("Segoe UI", 10, "bold"))
+    axis_status_frame = ttk.Frame(status_bar_container, style='TFrame', padding=10)
     axis_status_frame.pack(side=tk.TOP, fill="x", expand=True, pady=(0, 10))
 
-    # --- Font and Size Definitions ---
-    font_large_readout = ("Consolas", 32, "bold")
-    font_medium_readout = ("Consolas", 18, "bold")
-    font_small_readout = ("Consolas", 16, "bold")
+    # --- Font Definitions ---
+    font_large_readout = ("JetBrains Mono", 28, "bold")
+    font_medium_readout = ("JetBrains Mono", 16, "bold")
+    font_small_readout = ("JetBrains Mono", 14, "bold")
     bar_height = 55
     small_bar_height = 40
 
@@ -35,9 +46,8 @@ def create_status_bar(parent, shared_gui_refs):
     def make_homed_tracer(var, label_to_color):
         def tracer(*args):
             is_homed = var.get() == "Homed"
-            color = "lightgreen" if is_homed else "#db2828"
-            label_to_color.config(fg=color)
-
+            color = theme.SUCCESS_GREEN if is_homed else theme.ERROR_RED
+            label_to_color.config(foreground=color)
         return tracer
 
     def make_torque_tracer(double_var, string_var):
@@ -47,19 +57,17 @@ def create_status_bar(parent, shared_gui_refs):
                 string_var.set(f"{int(val)}%")
             except (tk.TclError, ValueError):
                 string_var.set("ERR")
-
         return tracer
 
     def create_torque_widget(parent, torque_dv, height):
-        torque_frame = tk.Frame(parent, bg=parent['bg'], height=height, width=30)
+        torque_frame = ttk.Frame(parent, height=height, width=30, style='TFrame')
         torque_frame.pack_propagate(False)
         torque_sv = tk.StringVar()
         torque_frame.tracer = make_torque_tracer(torque_dv, torque_sv)
         torque_dv.trace_add('write', torque_frame.tracer)
-        pbar = ttk.Progressbar(torque_frame, variable=torque_dv, maximum=100, orient=tk.VERTICAL,
-                               style="Green.Vertical.TProgressbar")
+        pbar = ttk.Progressbar(torque_frame, variable=torque_dv, maximum=100, orient=tk.VERTICAL)
         pbar.pack(fill=tk.BOTH, expand=True)
-        label = tk.Label(torque_frame, textvariable=torque_sv, bg="#333745", fg="white", font=("Segoe UI", 7, "bold"))
+        label = ttk.Label(torque_frame, textvariable=torque_sv, font=("JetBrains Mono", 7, "bold"), anchor='center')
         label.place(relx=0.5, rely=0.5, anchor='center')
         torque_frame.tracer()
         return torque_frame
@@ -72,17 +80,15 @@ def create_status_bar(parent, shared_gui_refs):
     ]
 
     for axis_info in gantry_axes_data:
-        axis_frame = tk.Frame(axis_status_frame, bg=axis_status_frame['bg'])
+        axis_frame = ttk.Frame(axis_status_frame, style='TFrame')
         axis_frame.pack(anchor='w', pady=4, fill='x')
         axis_frame.grid_columnconfigure(1, weight=1)
 
-        axis_label = tk.Label(axis_frame, text=f"{axis_info['label']}:", width=5, anchor='w',
-                              bg=axis_status_frame['bg'], font=font_large_readout)
+        axis_label = ttk.Label(axis_frame, text=f"{axis_info['label']}:", width=5, anchor='w', font=font_large_readout)
         axis_label.grid(row=0, column=0, sticky='w', padx=(0, 5))
 
-        tk.Label(axis_frame, textvariable=shared_gui_refs[axis_info['pos_var']], bg=axis_status_frame['bg'], fg="white",
-                 font=font_large_readout, anchor='e').grid(row=0, column=1, sticky='ew', padx=(0, 10))
-
+        ttk.Label(axis_frame, textvariable=shared_gui_refs[axis_info['pos_var']], font=font_large_readout, anchor='e').grid(row=0, column=1, sticky='ew', padx=(0, 10))
+        
         torque_widget = create_torque_widget(axis_frame, shared_gui_refs[axis_info['torque_var']], bar_height)
         torque_widget.grid(row=0, column=2, sticky='ns')
 
@@ -92,21 +98,17 @@ def create_status_bar(parent, shared_gui_refs):
         axis_label.tracer()
 
     # --- Injector Distance Display (No border) ---
-    injector_dist_frame = tk.Frame(axis_status_frame, bg="#2a2d3b")
+    injector_dist_frame = ttk.Frame(axis_status_frame, style='TFrame')
     injector_dist_frame.pack(fill='x', pady=(10, 5))
     injector_dist_frame.grid_columnconfigure(1, weight=1)
 
-    machine_label = tk.Label(injector_dist_frame, text="Machine:", bg=injector_dist_frame['bg'],
-                             font=font_medium_readout)
+    machine_label = ttk.Label(injector_dist_frame, text="Machine:", font=font_medium_readout)
     machine_label.grid(row=0, column=0, sticky='w')
-    tk.Label(injector_dist_frame, textvariable=shared_gui_refs['machine_steps_var'], bg=injector_dist_frame['bg'],
-             fg='white', font=font_medium_readout, anchor='e').grid(row=0, column=1, sticky='ew', padx=5)
+    ttk.Label(injector_dist_frame, textvariable=shared_gui_refs['machine_steps_var'], font=font_medium_readout, anchor='e').grid(row=0, column=1, sticky='ew', padx=5)
 
-    cartridge_label = tk.Label(injector_dist_frame, text="Cartridge:", bg=injector_dist_frame['bg'],
-                               font=font_medium_readout)
+    cartridge_label = ttk.Label(injector_dist_frame, text="Cartridge:", font=font_medium_readout)
     cartridge_label.grid(row=1, column=0, sticky='w')
-    tk.Label(injector_dist_frame, textvariable=shared_gui_refs['cartridge_steps_var'], bg=injector_dist_frame['bg'],
-             fg='white', font=font_medium_readout, anchor='e').grid(row=1, column=1, sticky='ew', padx=5)
+    ttk.Label(injector_dist_frame, textvariable=shared_gui_refs['cartridge_steps_var'], font=font_medium_readout, anchor='e').grid(row=1, column=1, sticky='ew', padx=5)
 
     injector_torque_widget = create_torque_widget(injector_dist_frame, shared_gui_refs['torque0_var'], bar_height)
     injector_torque_widget.grid(row=0, column=2, rowspan=2, sticky='ns', padx=(10, 0))
@@ -123,25 +125,20 @@ def create_status_bar(parent, shared_gui_refs):
     cartridge_label.tracer()
 
     # --- Pinch Axes ---
-    # MODIFIED: Updated to use new, specific variable names for pinch valves.
     pinch_axes_data = [
-        {'label': 'Inj Valve', 'pos_var': 'inj_valve_pos_var', 'homed_var': 'inj_valve_homed_var',
-         'torque_var': 'torque2_var'},
-        {'label': 'Vac Valve', 'pos_var': 'vac_valve_pos_var', 'homed_var': 'vac_valve_homed_var',
-         'torque_var': 'torque3_var'},
+        {'label': 'Inj Valve', 'pos_var': 'inj_valve_pos_var', 'homed_var': 'inj_valve_homed_var', 'torque_var': 'torque2_var'},
+        {'label': 'Vac Valve', 'pos_var': 'vac_valve_pos_var', 'homed_var': 'vac_valve_homed_var', 'torque_var': 'torque3_var'},
     ]
 
     for axis_info in pinch_axes_data:
-        axis_frame = tk.Frame(axis_status_frame, bg=axis_status_frame['bg'])
+        axis_frame = ttk.Frame(axis_status_frame, style='TFrame')
         axis_frame.pack(anchor='w', pady=2, fill='x')
         axis_frame.grid_columnconfigure(1, weight=1)
 
-        axis_label = tk.Label(axis_frame, text=f"{axis_info['label']}:", anchor='w', bg=axis_status_frame['bg'],
-                              font=font_small_readout)
+        axis_label = ttk.Label(axis_frame, text=f"{axis_info['label']}:", anchor='w', font=font_small_readout)
         axis_label.grid(row=0, column=0, sticky='w', padx=(0, 5))
 
-        tk.Label(axis_frame, textvariable=shared_gui_refs[axis_info['pos_var']], bg=axis_status_frame['bg'], fg="white",
-                 font=font_small_readout, anchor='e').grid(row=0, column=1, sticky='ew', padx=(0, 10))
+        ttk.Label(axis_frame, textvariable=shared_gui_refs[axis_info['pos_var']], font=font_small_readout, anchor='e').grid(row=0, column=1, sticky='ew', padx=(0, 10))
 
         torque_widget = create_torque_widget(axis_frame, shared_gui_refs[axis_info['torque_var']], small_bar_height)
         torque_widget.grid(row=0, column=2, sticky='ns')
@@ -152,47 +149,41 @@ def create_status_bar(parent, shared_gui_refs):
         axis_label.tracer()
 
     # --- Consolidated System Status Display ---
-    sys_status_frame = tk.LabelFrame(status_bar_container, text="System Status", bg="#2a2d3b", fg="white", padx=10,
-                                     pady=10, font=("Segoe UI", 10, "bold"))
+    sys_status_frame = ttk.Frame(status_bar_container, style='TFrame', padding=10)
     sys_status_frame.pack(side=tk.TOP, fill="x", expand=True, pady=(10, 0))
-    status_grid = tk.Frame(sys_status_frame, bg=sys_status_frame['bg'])
+    status_grid = ttk.Frame(sys_status_frame, style='TFrame')
     status_grid.pack(fill="x", expand=True)
     status_grid.grid_columnconfigure(1, weight=1)
-    font_status_label = ("Segoe UI", 10)
-    font_status_value = ("Segoe UI", 10, "bold")
-    font_state_value = ("Segoe UI", 14, "bold")
+    
+    font_status_label = theme.FONT_NORMAL
+    font_status_value = theme.FONT_BOLD
+    font_state_value = ("JetBrains Mono", 14, "bold")
 
-    tk.Label(status_grid, text="Fillhead State:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
-        row=0, column=0, sticky='e', padx=5, pady=3)
-    tk.Label(status_grid, textvariable=shared_gui_refs['main_state_var'], bg=sys_status_frame['bg'], fg="cyan",
-             font=font_state_value).grid(row=0, column=1, sticky='w')
-    tk.Label(status_grid, text="Gantry State:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
-        row=1, column=0, sticky='e', padx=5, pady=3)
-    tk.Label(status_grid, textvariable=shared_gui_refs['fh_state_var'], bg=sys_status_frame['bg'], fg="yellow",
-             font=font_state_value).grid(row=1, column=1, sticky='w')
+    ttk.Label(status_grid, text="Fillhead State:", font=font_status_label).grid(row=0, column=0, sticky='e', padx=5, pady=3)
+    ttk.Label(status_grid, textvariable=shared_gui_refs['main_state_var'], foreground=theme.PRIMARY_ACCENT, font=font_state_value).grid(row=0, column=1, sticky='w')
+    
+    ttk.Label(status_grid, text="Gantry State:", font=font_status_label).grid(row=1, column=0, sticky='e', padx=5, pady=3)
+    ttk.Label(status_grid, textvariable=shared_gui_refs['fh_state_var'], foreground=theme.WARNING_YELLOW, font=font_state_value).grid(row=1, column=1, sticky='w')
     
     # --- Gantry Axis States ---
-    gantry_states_frame = tk.Frame(status_grid, bg=sys_status_frame['bg'])
+    gantry_states_frame = ttk.Frame(status_grid, style='TFrame')
     gantry_states_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=2, padx=20)
     gantry_states_frame.grid_columnconfigure((0, 1, 2), weight=1)
     
-    tk.Label(gantry_states_frame, text="X:", bg=sys_status_frame['bg'], fg="yellow").grid(row=0, column=0, sticky='e')
-    tk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_x_var'], bg=sys_status_frame['bg'], fg="white").grid(row=0, column=1, sticky='w')
-    tk.Label(gantry_states_frame, text="Y:", bg=sys_status_frame['bg'], fg="yellow").grid(row=1, column=0, sticky='e')
-    tk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_y_var'], bg=sys_status_frame['bg'], fg="white").grid(row=1, column=1, sticky='w')
-    tk.Label(gantry_states_frame, text="Z:", bg=sys_status_frame['bg'], fg="yellow").grid(row=2, column=0, sticky='e')
-    tk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_z_var'], bg=sys_status_frame['bg'], fg="white").grid(row=2, column=1, sticky='w')
+    ttk.Label(gantry_states_frame, text="X:", foreground=theme.WARNING_YELLOW).grid(row=0, column=0, sticky='e')
+    ttk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_x_var']).grid(row=0, column=1, sticky='w')
+    ttk.Label(gantry_states_frame, text="Y:", foreground=theme.WARNING_YELLOW).grid(row=1, column=0, sticky='e')
+    ttk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_y_var']).grid(row=1, column=1, sticky='w')
+    ttk.Label(gantry_states_frame, text="Z:", foreground=theme.WARNING_YELLOW).grid(row=2, column=0, sticky='e')
+    ttk.Label(gantry_states_frame, textvariable=shared_gui_refs['fh_state_z_var']).grid(row=2, column=1, sticky='w')
 
     ttk.Separator(status_grid, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=8)
     
     # --- Fillhead Component States ---
-    fillhead_states_frame = tk.Frame(status_grid, bg=sys_status_frame['bg'])
+    fillhead_states_frame = ttk.Frame(status_grid, style='TFrame')
     fillhead_states_frame.grid(row=4, column=0, columnspan=2, sticky='ew', pady=(2, 0), padx=20)
     fillhead_states_frame.grid_columnconfigure(1, weight=1)
 
-    # Define a consistent color scheme
-    fillhead_label_color = "#87CEEB"
-    
     # Data for fillhead components
     fillhead_components = [
         ("Injector:", 'fillhead_injector_state_var'),
@@ -203,31 +194,21 @@ def create_status_bar(parent, shared_gui_refs):
     ]
 
     for i, (label_text, var_key) in enumerate(fillhead_components):
-        tk.Label(fillhead_states_frame, text=label_text, bg=sys_status_frame['bg'], fg=fillhead_label_color).grid(row=i, column=0, sticky='e', padx=(0, 5))
-        tk.Label(fillhead_states_frame, textvariable=shared_gui_refs[var_key], bg=sys_status_frame['bg'], fg="white").grid(row=i, column=1, sticky='w')
+        ttk.Label(fillhead_states_frame, text=label_text, foreground=theme.PRIMARY_ACCENT).grid(row=i, column=0, sticky='e', padx=(0, 5))
+        ttk.Label(fillhead_states_frame, textvariable=shared_gui_refs[var_key]).grid(row=i, column=1, sticky='w')
 
     ttk.Separator(status_grid, orient='horizontal').grid(row=5, column=0, columnspan=2, sticky='ew', pady=8)
 
+    # System Readouts
+    readouts = [
+        ("Vacuum:", 'vacuum_psig_var', theme.PRIMARY_ACCENT),
+        ("Heater Temp:", 'temp_c_var', theme.WARNING_YELLOW),
+        ("Dispensed (Active):", 'inject_active_ml_var', theme.SUCCESS_GREEN),
+        ("Dispensed (Total):", 'inject_cumulative_ml_var', theme.FG_COLOR)
+    ]
 
-    tk.Label(status_grid, text="Vacuum:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(row=6,
-                                                                                                              column=0,
-                                                                                                              sticky='e',
-                                                                                                              padx=5,
-                                                                                                              pady=2)
-    tk.Label(status_grid, textvariable=shared_gui_refs['vacuum_psig_var'], bg=sys_status_frame['bg'], fg="#aaddff",
-             font=font_status_value).grid(row=6, column=1, sticky='w')
-    tk.Label(status_grid, text="Heater Temp:", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
-        row=7, column=0, sticky='e', padx=5, pady=2)
-    tk.Label(status_grid, textvariable=shared_gui_refs['temp_c_var'], bg=sys_status_frame['bg'], fg="orange",
-             font=font_status_value).grid(row=7, column=1, sticky='w')
-    tk.Label(status_grid, text="Dispensed (Active):", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
-        row=8, column=0, sticky='e', padx=5, pady=2)
-    tk.Label(status_grid, textvariable=shared_gui_refs['inject_active_ml_var'], bg=sys_status_frame['bg'],
-             fg="lightgreen", font=font_status_value).grid(row=8, column=1, sticky='w')
-    tk.Label(status_grid, text="Dispensed (Total):", bg=sys_status_frame['bg'], fg="white", font=font_status_label).grid(
-        row=9, column=0, sticky='e', padx=5, pady=2)
-    tk.Label(status_grid, textvariable=shared_gui_refs['inject_cumulative_ml_var'], bg=sys_status_frame['bg'],
-             fg="yellow", font=font_status_value).grid(row=9, column=1, sticky='w')
-
+    for i, (label_text, var_key, color) in enumerate(readouts):
+        ttk.Label(status_grid, text=label_text, font=font_status_label).grid(row=i + 6, column=0, sticky='e', padx=5, pady=2)
+        ttk.Label(status_grid, textvariable=shared_gui_refs[var_key], foreground=color, font=font_status_value).grid(row=i + 6, column=1, sticky='w')
 
     return status_bar_container

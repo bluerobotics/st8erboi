@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
-import math
+import theme
 
 
 # This file now consolidates all logic for creating the manual control panels
@@ -8,10 +8,9 @@ import math
 
 # --- Motor Power Controls ---
 def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
-    """Creates the central motor power enable/disable controls with dynamic color feedback."""
-    power_frame = tk.LabelFrame(parent, text="Motor Power", bg="#2a2d3b", fg="white", padx=5, pady=5)
+    """Creates the central motor power enable/disable controls."""
+    power_frame = ttk.LabelFrame(parent, text="Motor Power", style='TFrame', padding=5)
     power_frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
-
     power_frame.grid_columnconfigure((0, 1), weight=1)
 
     send_fillhead_cmd = command_funcs['send_fillhead']
@@ -25,15 +24,13 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
 
         return tracer
 
-    fillhead_frame = tk.Frame(power_frame, bg=power_frame['bg'])
+    fillhead_frame = ttk.Frame(power_frame, style='TFrame')
     fillhead_frame.grid(row=0, column=0, sticky='ew', padx=(0, 2))
     fillhead_frame.grid_columnconfigure((0, 1), weight=1)
 
-    btn_enable_fillhead = ttk.Button(fillhead_frame, text="Enable Fillhead", style='Small.TButton',
-                                     command=lambda: send_fillhead_cmd("ENABLE"))
+    btn_enable_fillhead = ttk.Button(fillhead_frame, text="Enable Fillhead", style='Small.TButton', command=lambda: send_fillhead_cmd("ENABLE"))
     btn_enable_fillhead.grid(row=0, column=0, sticky='ew', padx=(0, 1))
-    btn_disable_fillhead = ttk.Button(fillhead_frame, text="Disable Fillhead", style='Small.TButton',
-                                      command=lambda: send_fillhead_cmd("DISABLE"))
+    btn_disable_fillhead = ttk.Button(fillhead_frame, text="Disable Fillhead", style='Small.TButton', command=lambda: send_fillhead_cmd("DISABLE"))
     btn_disable_fillhead.grid(row=0, column=1, sticky='ew', padx=(1, 0))
 
     def fillhead_state_tracer(*args):
@@ -59,7 +56,7 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
 
     ttk.Separator(power_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky='ew', pady=5)
 
-    fh_frame = tk.Frame(power_frame, bg=power_frame['bg'])
+    fh_frame = ttk.Frame(power_frame, style='TFrame')
     fh_frame.grid(row=2, column=0, columnspan=2, sticky='ew')
     fh_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
@@ -103,7 +100,7 @@ def create_motor_power_controls(parent, command_funcs, shared_gui_refs):
 def create_pinch_valve_controls(parent, command_funcs):
     """Creates controls for opening and closing the pinch valves."""
     send_fillhead_cmd = command_funcs['send_fillhead']
-    frame = tk.LabelFrame(parent, text="Pinch Valve Control", bg="#2a2d3b", fg="#E0B0FF", font=("Segoe UI", 9, "bold"), padx=5, pady=5)
+    frame = ttk.LabelFrame(parent, text="Pinch Valve Control", style='TFrame', padding=5)
     frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
     frame.grid_columnconfigure((0, 1), weight=1)
 
@@ -119,46 +116,46 @@ def create_pinch_valve_controls(parent, command_funcs):
 def create_heater_controls(parent, command_funcs, shared_gui_refs):
     """Creates controls for the heater."""
     send_fillhead_cmd = command_funcs['send_fillhead']
-    frame = tk.LabelFrame(parent, text="Heater Control", bg="#2a2d3b", fg="#FFD700", font=("Segoe UI", 9, "bold"), padx=5, pady=5)
+    frame = ttk.LabelFrame(parent, text="Heater Control", style='TFrame', padding=5)
     frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
 
     # On/Off Buttons
-    btn_frame = tk.Frame(frame, bg=frame['bg'])
+    btn_frame = ttk.Frame(frame, style='TFrame')
     btn_frame.pack(fill=tk.X, pady=(0, 5))
     btn_frame.grid_columnconfigure((0, 1), weight=1)
     ttk.Button(btn_frame, text="Heater On", style='Green.TButton', command=lambda: send_fillhead_cmd("HEATER_ON")).grid(row=0, column=0, sticky='ew', padx=(0, 2))
     ttk.Button(btn_frame, text="Heater Off", style='Red.TButton', command=lambda: send_fillhead_cmd("HEATER_OFF")).grid(row=0, column=1, sticky='ew', padx=(2, 0))
 
     # Parameter Entries
-    param_frame = tk.Frame(frame, bg=frame['bg'])
+    param_frame = ttk.Frame(frame, style='TFrame')
     param_frame.pack(fill=tk.X)
     param_frame.grid_columnconfigure(1, weight=1)
 
     # Setpoint
-    tk.Label(param_frame, text="Setpoint (°C):", bg=frame['bg'], fg='white').grid(row=0, column=0, sticky='e', padx=(0, 5))
-    entry_setpoint = ttk.Entry(param_frame, textvariable=shared_gui_refs['heater_setpoint_var'], width=8)
+    ttk.Label(param_frame, text="Setpoint (°C):", style='TLabel', padding=5).grid(row=0, column=0, sticky='e', padx=(0, 5))
+    entry_setpoint = ttk.Entry(param_frame, textvariable=shared_gui_refs['heater_setpoint_var'], width=8, style='TEntry')
     entry_setpoint.grid(row=0, column=1, sticky='ew', pady=1)
     ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_HEATER_SETPOINT {shared_gui_refs['heater_setpoint_var'].get()}")).grid(row=0, column=2, sticky='ew', padx=2)
 
     # Gains
-    tk.Label(param_frame, text="Gains (P, I, D):", bg=frame['bg'], fg='white').grid(row=1, column=0, sticky='e', padx=(0, 5))
-    gains_frame = tk.Frame(param_frame, bg=frame['bg'])
+    ttk.Label(param_frame, text="Gains (P, I, D):", style='TLabel', padding=5).grid(row=1, column=0, sticky='e', padx=(0, 5))
+    gains_frame = ttk.Frame(param_frame, style='TFrame')
     gains_frame.grid(row=1, column=1, sticky='ew', pady=1)
     gains_frame.grid_columnconfigure((0,1,2), weight=1)
-    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_kp_var'], width=5).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_ki_var'], width=5).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
-    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_kd_var'], width=5).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_kp_var'], width=5, style='TEntry').pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_ki_var'], width=5, style='TEntry').pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+    ttk.Entry(gains_frame, textvariable=shared_gui_refs['heater_kd_var'], width=5, style='TEntry').pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
     ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_HEATER_GAINS {shared_gui_refs['heater_kp_var'].get()} {shared_gui_refs['heater_ki_var'].get()} {shared_gui_refs['heater_kd_var'].get()}")).grid(row=1, column=2, sticky='ew', padx=2)
 
 
 def create_vacuum_controls(parent, command_funcs, shared_gui_refs):
     """Creates controls for the vacuum system."""
     send_fillhead_cmd = command_funcs['send_fillhead']
-    frame = tk.LabelFrame(parent, text="Vacuum Control", bg="#2a2d3b", fg="#ADD8E6", font=("Segoe UI", 9, "bold"), padx=5, pady=5)
+    frame = ttk.LabelFrame(parent, text="Vacuum Control", style='TFrame', padding=5)
     frame.pack(fill=tk.X, pady=5, padx=5, anchor='n')
 
     # On/Off/Test Buttons
-    btn_frame = tk.Frame(frame, bg=frame['bg'])
+    btn_frame = ttk.Frame(frame, style='TFrame')
     btn_frame.pack(fill=tk.X, pady=(0, 5))
     btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
     ttk.Button(btn_frame, text="Vacuum On", style='Green.TButton', command=lambda: send_fillhead_cmd("VACUUM_ON")).grid(row=0, column=0, sticky='ew', padx=(0, 2))
@@ -166,106 +163,152 @@ def create_vacuum_controls(parent, command_funcs, shared_gui_refs):
     ttk.Button(btn_frame, text="Leak Test", style='Blue.TButton', command=lambda: send_fillhead_cmd("VACUUM_LEAK_TEST")).grid(row=0, column=2, sticky='ew', padx=(2, 0))
 
     # Parameter Entries
-    param_frame = tk.Frame(frame, bg=frame['bg'])
+    param_frame = ttk.Frame(frame, style='TFrame')
     param_frame.pack(fill=tk.X, pady=2)
     param_frame.grid_columnconfigure(1, weight=1)
 
     # Target
-    tk.Label(param_frame, text="Target (PSIG):", bg=frame['bg'], fg='white').grid(row=0, column=0, sticky='e', padx=(0, 5))
-    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_target_var'], width=8).grid(row=0, column=1, sticky='ew', pady=1)
+    ttk.Label(param_frame, text="Target (PSIG):", style='TLabel', padding=5).grid(row=0, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_target_var'], width=8, style='TEntry').grid(row=0, column=1, sticky='ew', pady=1)
     ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_VACUUM_TARGET {shared_gui_refs['vac_target_var'].get()}")).grid(row=0, column=2, sticky='ew', padx=2)
 
     # Timeout
-    tk.Label(param_frame, text="Timeout (s):", bg=frame['bg'], fg='white').grid(row=1, column=0, sticky='e', padx=(0, 5))
-    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_timeout_var'], width=8).grid(row=1, column=1, sticky='ew', pady=1)
+    ttk.Label(param_frame, text="Timeout (s):", style='TLabel', padding=5).grid(row=1, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_timeout_var'], width=8, style='TEntry').grid(row=1, column=1, sticky='ew', pady=1)
     ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_VACUUM_TIMEOUT_S {shared_gui_refs['vac_timeout_var'].get()}")).grid(row=1, column=2, sticky='ew', padx=2)
     
     # Leak Test Delta
-    tk.Label(param_frame, text="Leak Δ (PSIG):", bg=frame['bg'], fg='white').grid(row=2, column=0, sticky='e', padx=(0, 5))
-    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_leak_delta_var'], width=8).grid(row=2, column=1, sticky='ew', pady=1)
+    ttk.Label(param_frame, text="Leak Δ (PSIG):", style='TLabel', padding=5).grid(row=2, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_leak_delta_var'], width=8, style='TEntry').grid(row=2, column=1, sticky='ew', pady=1)
     ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_LEAK_TEST_DELTA {shared_gui_refs['vac_leak_delta_var'].get()}")).grid(row=2, column=2, sticky='ew', padx=2)
     
     # Leak Test Duration
-    tk.Label(param_frame, text="Leak Dura. (s):", bg=frame['bg'], fg='white').grid(row=3, column=0, sticky='e', padx=(0, 5))
-    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_leak_duration_var'], width=8).grid(row=3, column=1, sticky='ew', pady=1)
+    ttk.Label(param_frame, text="Leak Dura. (s):", style='TLabel', padding=5).grid(row=3, column=0, sticky='e', padx=(0, 5))
+    ttk.Entry(param_frame, textvariable=shared_gui_refs['vac_leak_duration_var'], width=8, style='TEntry').grid(row=3, column=1, sticky='ew', pady=1)
     ttk.Button(param_frame, text="Set", style='Small.TButton', width=4, command=lambda: send_fillhead_cmd(f"SET_LEAK_TEST_DURATION_S {shared_gui_refs['vac_leak_duration_var'].get()}")).grid(row=3, column=2, sticky='ew', padx=2)
 
 
-# --- Main Collapsible Panel Creation ---
-def create_manual_controls_panel(parent, command_funcs, shared_gui_refs):
-    """Creates the scrollable panel containing all manual device controls."""
-    from fillhead_controls import create_fillhead_ancillary_controls
-    from gantry_controls import create_gantry_ancillary_controls
+def create_themed_jog_panel(parent, send_cmd_func, variables, config):
+    """Helper to create a standardized, themed jog panel."""
+    frame = ttk.LabelFrame(parent, text=config['title'], style='TFrame', padding=10)
+    frame.pack(fill=tk.X, expand=False, pady=(5, 0), padx=5)
+    
+    params_frame = ttk.Frame(frame, style='TFrame')
+    params_frame.pack(fill=tk.X, pady=(0, 5))
+    
+    col_count = len(config['params'])
+    params_frame.grid_columnconfigure(tuple(range(col_count * 2)), weight=1)
 
-    canvas = tk.Canvas(parent, bg="#2a2d3b", highlightthickness=0)
-    scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-    scrollable_frame = tk.Frame(canvas, bg="#2a2d3b")
+    for i, p_config in enumerate(config['params']):
+        ttk.Label(params_frame, text=p_config['label']).grid(row=0, column=i*2, sticky="e", padx=(0, 5))
+        ttk.Entry(params_frame, textvariable=variables[p_config['var']], width=8).grid(row=0, column=i*2+1, sticky="ew", padx=(0, 10))
 
-    def on_canvas_configure(event):
-        canvas.itemconfig(window_id, width=event.width)
+    btn_frame = ttk.Frame(frame, style='TFrame')
+    btn_frame.pack(fill=tk.X, pady=2)
+    btn_frame.grid_columnconfigure(tuple(range(len(config['buttons']))), weight=1)
 
-    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
-    def _on_mousewheel(event):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel)
-    scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
-
-    window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    canvas.configure(yscrollcommand=scrollbar.set)
-    canvas.bind("<Configure>", on_canvas_configure)
-
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    ui_elements = {}
-
-    create_motor_power_controls(scrollable_frame, command_funcs, shared_gui_refs)
-
-    # Separator
-    ttk.Separator(scrollable_frame, orient='horizontal').pack(fill=tk.X, pady=10, padx=5)
-
-    create_pinch_valve_controls(scrollable_frame, command_funcs)
-    create_heater_controls(scrollable_frame, command_funcs, shared_gui_refs)
-    create_vacuum_controls(scrollable_frame, command_funcs, shared_gui_refs)
-
-    # Separator
-    ttk.Separator(scrollable_frame, orient='horizontal').pack(fill=tk.X, pady=10, padx=5)
-
-    create_fillhead_ancillary_controls(scrollable_frame, command_funcs['send_fillhead'], shared_gui_refs, ui_elements)
-    # --- MODIFIED: Added the missing 'shared_gui_refs' argument ---
-    create_gantry_ancillary_controls(scrollable_frame, command_funcs['send_gantry'], shared_gui_refs)
-
+    for i, b_config in enumerate(config['buttons']):
+        cmd = b_config['cmd_lambda'](variables)
+        ttk.Button(btn_frame, text=b_config['text'], style='Small.TButton', command=lambda c=cmd: send_cmd_func(c)).grid(row=b_config['row'], column=i, sticky='ew', padx=1, pady=1)
 
 def create_manual_controls_display(parent, command_funcs, shared_gui_refs):
-    """Creates the main expandable container for the manual controls."""
-    main_container = tk.Frame(parent, bg="#21232b")
+    """Creates the main container for the manual controls, with all functionality restored and themed."""
+    main_container = ttk.Frame(parent, style='TFrame')
+    
+    # --- Initialize all missing variables ---
+    if 'jog_dist_mm_var' not in shared_gui_refs: shared_gui_refs['jog_dist_mm_var'] = tk.StringVar(value="1.0")
+    if 'jog_velocity_var' not in shared_gui_refs: shared_gui_refs['jog_velocity_var'] = tk.StringVar(value="5.0")
+    if 'jog_acceleration_var' not in shared_gui_refs: shared_gui_refs['jog_acceleration_var'] = tk.StringVar(value="25.0")
+    if 'jog_torque_percent_var' not in shared_gui_refs: shared_gui_refs['jog_torque_percent_var'] = tk.StringVar(value="20.0")
+    if 'jog_pinch_dist_mm_var' not in shared_gui_refs: shared_gui_refs['jog_pinch_dist_mm_var'] = tk.StringVar(value="1.0")
+    if 'fh_jog_dist_mm_var' not in shared_gui_refs: shared_gui_refs['fh_jog_dist_mm_var'] = tk.StringVar(value="10.0")
+    if 'fh_jog_vel_mms_var' not in shared_gui_refs: shared_gui_refs['fh_jog_vel_mms_var'] = tk.StringVar(value="15.0")
+    if 'fh_jog_accel_mms2_var' not in shared_gui_refs: shared_gui_refs['fh_jog_accel_mms2_var'] = tk.StringVar(value="50.0")
+    if 'fh_jog_torque_var' not in shared_gui_refs: shared_gui_refs['fh_jog_torque_var'] = tk.StringVar(value="20")
+    if 'fh_home_distance_mm_var' not in shared_gui_refs: shared_gui_refs['fh_home_distance_mm_var'] = tk.StringVar(value="1250.0")
 
-    content_panel = tk.Frame(main_container, width=350, bg="#2a2d3b")
-    content_panel.pack_propagate(False)
-    create_manual_controls_panel(content_panel, command_funcs, shared_gui_refs)
 
-    trigger_canvas = tk.Canvas(main_container, width=30, bg="#4a5568", highlightthickness=1,
-                               highlightbackground="#646d7e")
-    trigger_canvas.pack(side=tk.LEFT, fill=tk.Y)
+    # --- Motor Power ---
+    create_motor_power_controls(main_container, command_funcs, shared_gui_refs)
+    ttk.Separator(main_container, orient='horizontal').pack(fill=tk.X, pady=10, padx=5)
 
-    def draw_trigger_text(text):
-        trigger_canvas.delete("all")
-        trigger_canvas.create_text(15, 150, text=text, angle=90, font=("Segoe UI", 10, "bold"), fill="white",
-                                   anchor="center")
+    # --- JOGGING ---
+    # Fillhead Jog
+    fillhead_jog_config = {
+        'title': "Fillhead Jog",
+        'params': [
+            {'label': "Dist(mm):", 'var': 'jog_dist_mm_var'},
+            {'label': "Vel(mm/s):", 'var': 'jog_velocity_var'},
+            {'label': "Accel(mm/s²):", 'var': 'jog_acceleration_var'},
+            {'label': "Torque(%):", 'var': 'jog_torque_percent_var'}
+        ],
+        'buttons': [
+            {'text': "▲ M0", 'row': 0, 'cmd_lambda': lambda v: f"JOG_MOVE {v['jog_dist_mm_var'].get()} 0 {v['jog_velocity_var'].get()} {v['jog_acceleration_var'].get()} {v['jog_torque_percent_var'].get()}"},
+            {'text': "▲ M1", 'row': 0, 'cmd_lambda': lambda v: f"JOG_MOVE 0 {v['jog_dist_mm_var'].get()} {v['jog_velocity_var'].get()} {v['jog_acceleration_var'].get()} {v['jog_torque_percent_var'].get()}"},
+            {'text': "▲ Both", 'row': 0, 'cmd_lambda': lambda v: f"JOG_MOVE {v['jog_dist_mm_var'].get()} {v['jog_dist_mm_var'].get()} {v['jog_velocity_var'].get()} {v['jog_acceleration_var'].get()} {v['jog_torque_percent_var'].get()}"},
+            {'text': "▼ M0", 'row': 1, 'cmd_lambda': lambda v: f"JOG_MOVE -{v['jog_dist_mm_var'].get()} 0 {v['jog_velocity_var'].get()} {v['jog_acceleration_var'].get()} {v['jog_torque_percent_var'].get()}"},
+            {'text': "▼ M1", 'row': 1, 'cmd_lambda': lambda v: f"JOG_MOVE 0 -{v['jog_dist_mm_var'].get()} {v['jog_velocity_var'].get()} {v['jog_acceleration_var'].get()} {v['jog_torque_percent_var'].get()}"},
+            {'text': "▼ Both", 'row': 1, 'cmd_lambda': lambda v: f"JOG_MOVE -{v['jog_dist_mm_var'].get()} -{v['jog_dist_mm_var'].get()} {v['jog_velocity_var'].get()} {v['jog_acceleration_var'].get()} {v['jog_torque_percent_var'].get()}"},
+        ]
+    }
+    create_themed_jog_panel(main_container, command_funcs['send_fillhead'], shared_gui_refs, fillhead_jog_config)
 
-    def toggle_panel():
-        if content_panel.winfo_ismapped():
-            content_panel.pack_forget()
-            draw_trigger_text("Show Manual Controls")
-        else:
-            content_panel.pack(side=tk.LEFT, fill=tk.Y)
-            draw_trigger_text("Hide Manual Controls")
+    # Gantry Jog
+    gantry_jog_config = {
+        'title': "Gantry Jog",
+        'params': [
+            {'label': "Dist(mm):", 'var': 'fh_jog_dist_mm_var'},
+            {'label': "Speed(mm/s):", 'var': 'fh_jog_vel_mms_var'},
+            {'label': "Accel(mm/s²):", 'var': 'fh_jog_accel_mms2_var'},
+            {'label': "Torque(%):", 'var': 'fh_jog_torque_var'}
+        ],
+        'buttons': [
+            {'text': "X-", 'row': 0, 'cmd_lambda': lambda v: f"MOVE_X -{v['fh_jog_dist_mm_var'].get()} {v['fh_jog_vel_mms_var'].get()} {v['fh_jog_accel_mms2_var'].get()} {v['fh_jog_torque_var'].get()}"},
+            {'text': "Y-", 'row': 0, 'cmd_lambda': lambda v: f"MOVE_Y -{v['fh_jog_dist_mm_var'].get()} {v['fh_jog_vel_mms_var'].get()} {v['fh_jog_accel_mms2_var'].get()} {v['fh_jog_torque_var'].get()}"},
+            {'text': "Z-", 'row': 0, 'cmd_lambda': lambda v: f"MOVE_Z -{v['fh_jog_dist_mm_var'].get()} {v['fh_jog_vel_mms_var'].get()} {v['fh_jog_accel_mms2_var'].get()} {v['fh_jog_torque_var'].get()}"},
+            {'text': "X+", 'row': 1, 'cmd_lambda': lambda v: f"MOVE_X {v['fh_jog_dist_mm_var'].get()} {v['fh_jog_vel_mms_var'].get()} {v['fh_jog_accel_mms2_var'].get()} {v['fh_jog_torque_var'].get()}"},
+            {'text': "Y+", 'row': 1, 'cmd_lambda': lambda v: f"MOVE_Y {v['fh_jog_dist_mm_var'].get()} {v['fh_jog_vel_mms_var'].get()} {v['fh_jog_accel_mms2_var'].get()} {v['fh_jog_torque_var'].get()}"},
+            {'text': "Z+", 'row': 1, 'cmd_lambda': lambda v: f"MOVE_Z {v['fh_jog_dist_mm_var'].get()} {v['fh_jog_vel_mms_var'].get()} {v['fh_jog_accel_mms2_var'].get()} {v['fh_jog_torque_var'].get()}"},
+        ]
+    }
+    create_themed_jog_panel(main_container, command_funcs['send_gantry'], shared_gui_refs, gantry_jog_config)
+    
+    # --- HOMING ---
+    homing_frame = ttk.LabelFrame(main_container, text="Homing", style='TFrame', padding=10)
+    homing_frame.pack(fill=tk.X, expand=False, pady=5, padx=5)
 
-    draw_trigger_text("Show Manual Controls")
-    trigger_canvas.bind("<Button-1>", lambda e: toggle_panel())
-    trigger_canvas.bind("<Enter>", lambda e: trigger_canvas.config(bg="#5a6268"))
-    trigger_canvas.bind("<Leave>", lambda e: trigger_canvas.config(bg="#4a5568"))
+    # Main Homing buttons
+    main_home_frame = ttk.Frame(homing_frame, style='TFrame')
+    main_home_frame.pack(fill=tk.X, expand=True, pady=(0, 5))
+    main_home_frame.grid_columnconfigure((0,1), weight=1)
+    ttk.Button(main_home_frame, text="Machine Home", style='Small.TButton', command=lambda: command_funcs['send_fillhead']("MACHINE_HOME_MOVE")).grid(row=0, column=0, sticky='ew', padx=(0,2))
+    ttk.Button(main_home_frame, text="Cartridge Home", style='Small.TButton', command=lambda: command_funcs['send_fillhead']("CARTRIDGE_HOME_MOVE")).grid(row=0, column=1, sticky='ew', padx=(2,0))
 
+    ttk.Separator(homing_frame, orient='horizontal').pack(fill=tk.X, pady=5)
+
+    # Pinch Valve Homing
+    pv_home_frame = ttk.Frame(homing_frame, style='TFrame')
+    pv_home_frame.pack(fill=tk.X, expand=True, pady=(0, 5))
+    pv_home_frame.grid_columnconfigure((0,1), weight=1)
+    
+    ttk.Button(pv_home_frame, text="Home Inj (Untubed)", style='Small.TButton', command=lambda: command_funcs['send_fillhead']("INJECTION_VALVE_HOME_UNTUBED")).grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=(0,2))
+    ttk.Button(pv_home_frame, text="Home Vac (Untubed)", style='Small.TButton', command=lambda: command_funcs['send_fillhead']("VACUUM_VALVE_HOME_UNTUBED")).grid(row=0, column=1, sticky="ew", padx=(2,0), pady=(0,2))
+    ttk.Button(pv_home_frame, text="Home Inj (Tubed)", style='Small.TButton', command=lambda: command_funcs['send_fillhead']("INJECTION_VALVE_HOME_TUBED")).grid(row=1, column=0, sticky="ew", padx=(0, 2))
+    ttk.Button(pv_home_frame, text="Home Vac (Tubed)", style='Small.TButton', command=lambda: command_funcs['send_fillhead']("VACUUM_VALVE_HOME_TUBED")).grid(row=1, column=1, sticky="ew", padx=(2, 0))
+
+    ttk.Separator(homing_frame, orient='horizontal').pack(fill=tk.X, pady=5)
+
+    # Gantry Homing
+    gantry_home_frame = ttk.Frame(homing_frame, style='TFrame')
+    gantry_home_frame.pack(fill=tk.X, expand=True)
+    gantry_home_frame.grid_columnconfigure((0,1,2), weight=1)
+    ttk.Button(gantry_home_frame, text="Home X", style='Small.TButton', command=lambda: command_funcs['send_gantry'](f"HOME_X {shared_gui_refs['fh_home_distance_mm_var'].get()}")).grid(row=0, column=0, sticky='ew', padx=(0,2))
+    ttk.Button(gantry_home_frame, text="Home Y", style='Small.TButton', command=lambda: command_funcs['send_gantry'](f"HOME_Y {shared_gui_refs['fh_home_distance_mm_var'].get()}")).grid(row=0, column=1, sticky='ew', padx=(2,2))
+    ttk.Button(gantry_home_frame, text="Home Z", style='Small.TButton', command=lambda: command_funcs['send_gantry'](f"HOME_Z {shared_gui_refs['fh_home_distance_mm_var'].get()}")).grid(row=0, column=2, sticky='ew', padx=(2,0))
+
+    ttk.Separator(main_container, orient='horizontal').pack(fill=tk.X, pady=10, padx=5)
+    create_pinch_valve_controls(main_container, command_funcs)
+    create_heater_controls(main_container, command_funcs, shared_gui_refs)
+    create_vacuum_controls(main_container, command_funcs, shared_gui_refs)
+    
     return {'main_container': main_container}

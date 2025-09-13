@@ -1,35 +1,49 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, scrolledtext, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import queue
 import os
 import json
 from functools import partial
-from script_validator import COMMANDS, validate_script, validate_single_line
+import re
+
+from script_validator import COMMANDS, validate_single_line
 from script_processor import ScriptRunner
+import theme
 
 # --- Helper Class for Placeholder Text ---
 class EntryWithPlaceholder(ttk.Entry):
-    def __init__(self, master=None, placeholder="PLACEHOLDER", color='grey', **kwargs):
+    def __init__(self, master=None, placeholder="PLACEHOLDER", **kwargs):
         super().__init__(master, **kwargs)
         self.placeholder = placeholder
-        self.placeholder_color = color
-        self.default_fg_color = self['foreground']
-        self.bind("<FocusIn>", self.foc_in)
-        self.bind("<FocusOut>", self.foc_out)
+        self.placeholder_color = theme.SECONDARY_ACCENT
+        self.default_fg_color = theme.FG_COLOR
+        self.is_placeholder = True
+
+        self.bind("<FocusIn>", self._clear_placeholder)
+        self.bind("<FocusOut>", self._add_placeholder)
         self.put_placeholder()
 
     def put_placeholder(self):
+        self.is_placeholder = True
+        self.delete(0, tk.END)
         self.insert(0, self.placeholder)
-        self['foreground'] = self.placeholder_color
+        self.config(foreground=self.placeholder_color)
 
-    def foc_in(self, *args):
-        if self['foreground'] == self.placeholder_color:
-            self.delete('0', 'end')
-            self['foreground'] = self.default_fg_color
+    def _clear_placeholder(self, event=None):
+        if self.is_placeholder:
+            self.is_placeholder = False
+            self.delete(0, tk.END)
+            self.config(foreground=self.default_fg_color)
 
-    def foc_out(self, *args):
+    def _add_placeholder(self, event=None):
         if not self.get():
             self.put_placeholder()
+
+    # Override get() to return empty string if it's a placeholder
+    def get(self):
+        if self.is_placeholder:
+            return ""
+        return super().get()
 
 # --- Constants for Recent Files ---
 RECENT_FILES_CONFIG = "recent_files.json"
@@ -60,74 +74,30 @@ def add_to_recent_files(filepath):
     filepaths.insert(0, filepath)
     save_recent_files(filepaths[:MAX_RECENT_FILES])
 
-
-# --- Autocomplete and Text Editor Widgets ---
-class AutocompletePopup(tk.Toplevel):
-    def __init__(self, parent, text_widget, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.overrideredirect(True)
-        self.text_widget = text_widget
-        self.listbox = tk.Listbox(self, bg="#3c3f41", fg="white", selectbackground="#0078d7", exportselection=False)
-        self.listbox.pack(expand=True, fill="both")
-        self.listbox.bind("<ButtonRelease-1>", self.on_select)
-        self.listbox.bind("<Return>", self.on_select)
-        self.withdraw()
-
-    def show(self, x, y, suggestions):
-        if not suggestions: self.withdraw(); return
-        self.listbox.delete(0, tk.END)
-        for s in suggestions: self.listbox.insert(tk.END, s)
-        self.listbox.config(height=min(len(suggestions), 8))
-        self.geometry(f"+{x}+{y}");
-        self.deiconify();
-        self.lift();
-        self.focus_set();
-        self.listbox.selection_set(0)
-
-    def on_select(self, event=None):
-        if not self.listbox.curselection(): self.withdraw(); return
-        selected = self.listbox.get(self.listbox.curselection())
-        self.text_widget.autocomplete(selected);
-        self.withdraw()
-
-    def on_key(self, event):
-        if event.keysym == "Down":
-            current = self.listbox.curselection()
-            if current and current[0] < self.listbox.size() - 1: self.listbox.selection_clear(0,
-                                                                                              tk.END); self.listbox.selection_set(
-                current[0] + 1)
-        elif event.keysym == "Up":
-            current = self.listbox.curselection()
-            if current and current[0] > 0: self.listbox.selection_clear(0, tk.END); self.listbox.selection_set(
-                current[0] - 1)
-
-
-class TextLineNumbers(tk.Canvas):
-    def __init__(self, *args, **kwargs):
-        tk.Canvas.__init__(self, *args, **kwargs);
-        self.textwidget = None
-
-    def attach(self, text_widget):
-        self.textwidget = text_widget;
-        self.redraw()
-
-    def redraw(self, *args):
-        self.delete("all");
-        i = self.textwidget.index("@0,0")
-        while True:
-            dline = self.textwidget.dlineinfo(i)
-            if dline is None: break
-            y = dline[1];
-            linenum = str(i).split(".")[0]
-            self.create_text(2, y, anchor="nw", text=linenum, fill="#6c757d", font=("Consolas", 10));
-            i = self.textwidget.index(f"{i}+1line")
-
+# --- Custom Text Widget and Line Numbers (Restored and Themed) ---
 
 class CustomText(tk.Text):
+    """A text widget that notifies of changes"""
     def __init__(self, *args, **kwargs):
-        tk.Text.__init__(self, *args, **kwargs);
-        self._orig = self._w + "_orig";
-        self.tk.call("rename", self._w, self._orig);
+        super().__init__(*args, **kwargs)
+        self.config(
+            bg=theme.WIDGET_BG,
+            fg=theme.FG_COLOR,
+            insertbackground=theme.PRIMARY_ACCENT, # Cursor color
+            borderwidth=0,
+            highlightthickness=0, # Remove the border
+            font=theme.FONT_NORMAL,
+            selectbackground=theme.SELECTION_BG,
+            selectforeground=theme.SELECTION_FG,
+            inactiveselectbackground=theme.SELECTION_BG, # Keep selection color when widget loses focus
+            undo=True,
+            wrap=tk.WORD,
+            spacing3=3 # Add 3 pixels of spacing after each line
+        )
+
+        # Create a proxy for the underlying widget
+        self._orig = self._w + "_orig"
+        self.tk.call("rename", self._w, self._orig)
         self.tk.createcommand(self._w, self._proxy)
 
     def _proxy(self, *args):
@@ -135,121 +105,184 @@ class CustomText(tk.Text):
         try:
             result = self.tk.call(cmd)
         except tk.TclError:
-            return None
-        if (args[0] in ("insert", "delete", "replace") or args[0:3] == ("mark", "set", "insert") or args[0:2] == (
-                "xview", "moveto") or args[0:2] == ("xview", "scroll") or args[0:2] == ("yview", "moveto") or args[
-                                                                                                              0:2] == (
-                "yview", "scroll")): self.event_generate("<<Change>>", when="tail")
-        if (args[0] in ("insert", "delete", "replace")): self.event_generate("<<Modified>>", when="tail")
+            return None # Can happen with Ctrl-C
+
+        # Generate virtual events for changes
+        if (args[0] in ("insert", "delete", "replace") or
+            args[0:3] == ("mark", "set", "insert") or
+            args[0:2] in (("xview", "moveto"), ("xview", "scroll"),
+                         ("yview", "moveto"), ("yview", "scroll"))):
+            self.event_generate("<<Change>>", when="tail")
+        
+        if args[0] in ("insert", "delete", "replace"):
+            self.event_generate("<<Modified>>", when="tail")
+        
         return result
 
-
-class TextWithLineNumbers(tk.Frame):
+class TextLineNumbers(tk.Canvas):
+    """A canvas that displays line numbers for a text widget."""
     def __init__(self, *args, **kwargs):
-        tk.Frame.__init__(self, *args, **kwargs)
-        self.text = CustomText(self, wrap=tk.WORD, bg="#1b1e2b", fg="white", insertbackground="white",
-                               font=("Consolas", 10), undo=True, selectbackground="#0078d7", selectforeground="white")
-        self.linenumbers = TextLineNumbers(self, width=30, bg="#2a2d3b", highlightthickness=0);
+        super().__init__(*args, **kwargs)
+        self.textwidget = None
+
+    def attach(self, text_widget):
+        self.textwidget = text_widget
+
+    def redraw(self, *args):
+        self.delete("all")
+        i = self.textwidget.index("@0,0")
+        while True:
+            dline = self.textwidget.dlineinfo(i)
+            if dline is None: break
+            y = dline[1]
+            linenum = str(i).split(".")[0]
+            self.create_text(2, y, anchor="nw", text=linenum, 
+                             font=theme.FONT_NORMAL, fill=theme.SECONDARY_ACCENT)
+            i = self.textwidget.index(f"{i}+1line")
+
+# --- Syntax Highlighter ---
+class SyntaxHighlighter:
+    def __init__(self, text_widget, keywords):
+        self.text = text_widget
+        self.keywords = keywords
+        self.tags = {
+            'command': {'foreground': theme.COMMAND_COLOR, 'font': theme.FONT_BOLD},
+            'parameter': {'foreground': theme.PARAMETER_COLOR},
+            'comment': {'foreground': theme.COMMENT_COLOR},
+        }
+        self._configure_tags()
+        # Use a flag to prevent re-highlighting while highlighting is in progress
+        self._highlighting = False
+        # Bind to the custom <<Modified>> event, which fires on any text change.
+        self.text.bind('<<Modified>>', self.highlight)
+
+    def _configure_tags(self):
+        for tag_name, tag_config in self.tags.items():
+            self.text.tag_configure(tag_name, **tag_config)
+
+    def highlight(self, event=None):
+        # Use 'end-1c' to avoid highlighting the final newline which can cause issues
+        content = self.text.get("1.0", "end-1c")
+        
+        # A small delay to prevent rapid, sequential updates from fighting each other.
+        self.text.after(10, self._apply_highlight, content)
+
+    def _apply_highlight(self, content):
+        # Remove all tags first to prevent stacking
+        for tag in self.tags.keys():
+            self.text.tag_remove(tag, "1.0", "end")
+
+        # Highlight keywords
+        keyword_pattern = r'\b(' + '|'.join(self.keywords) + r')\b'
+        for match in re.finditer(keyword_pattern, content, re.IGNORECASE):
+            start, end = match.span()
+            self.text.tag_add("command", f"1.0+{start}c", f"1.0+{end}c")
+
+        # Highlight numbers (integers and floats)
+        for match in re.finditer(r'\b-?\d+(\.\d+)?\b', content):
+            start, end = match.span()
+            self.text.tag_add("parameter", f"1.0+{start}c", f"1.0+{end}c")
+
+        # Highlight comments
+        for match in re.finditer(r'#.*', content):
+            start, end = match.span()
+            self.text.tag_add("comment", f"1.0+{start}c", f"1.0+{end}c")
+
+
+# --- Themed Script Editor (Rebuilt with Line Numbers) ---
+
+class ScriptEditor(tk.Frame):
+    def __init__(self, parent, keywords, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.config(bg=theme.WIDGET_BG)
+
+        # Create components
+        self.text = CustomText(self)
+        self.linenumbers = TextLineNumbers(self, width=40, bg=theme.WIDGET_BG, highlightthickness=0, borderwidth=0)
         self.linenumbers.attach(self.text)
-        self.vsb = tk.Scrollbar(self, orient="vertical", command=self.text.yview);
+        
+        self.vsb = ttk.Scrollbar(self, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=self.vsb.set)
-        self.linenumbers.pack(side="left", fill="y");
-        self.vsb.pack(side="right", fill="y");
+        
+        # Pack components
+        self.linenumbers.pack(side="left", fill="y")
+        self.vsb.pack(side="right", fill="y")
         self.text.pack(side="right", fill="both", expand=True)
-        self.text.bind("<<Change>>", self._on_change);
+
+        # Bind events
+        self.text.bind("<<Change>>", self._on_change)
         self.text.bind("<Configure>", self._on_change)
-        self.autocomplete_popup = AutocompletePopup(self, self)
-        self.text.bind("<KeyRelease>", self._on_key_release);
-        self.text.bind("<FocusOut>", lambda e: self.autocomplete_popup.withdraw());
-        self.text.bind("<Escape>", lambda e: self.autocomplete_popup.withdraw());
-        self.autocomplete_popup.bind("<Key>", self.autocomplete_popup.on_key)
+        self.text.bind("<KeyRelease>", self._highlight_current_line)
+        self.text.bind("<Button-1>", self._on_change)
 
-    def _on_key_release(self, event):
-        if event.char.isalnum() or event.keysym in ('BackSpace', 'Delete'): self.show_autocomplete()
+        self.text.tag_configure("current_line", background=theme.SECONDARY_ACCENT)
+        self._highlight_current_line()
+        
+        # Attach syntax highlighter
+        # FIX: Pass self.text, not self, to the highlighter.
+        self.highlighter = SyntaxHighlighter(self.text, keywords)
+    
+    def _highlight_current_line(self, event=None):
+        self.text.tag_remove("current_line", "1.0", "end")
+        self.text.tag_add("current_line", "insert linestart", "insert lineend+1c")
+        self.text.tag_raise("sel") # Raise selection tag to the top of the stacking order
 
-    def show_autocomplete(self):
-        word_start = self.text.index("insert wordstart");
-        word_end = self.text.index("insert");
-        current_word = self.text.get(word_start, word_end)
-        if len(current_word) > 0:
-            suggestions = [cmd for cmd in COMMANDS if cmd.startswith(current_word.upper())]
-            if suggestions:
-                bbox = self.text.bbox(tk.INSERT)
-                if bbox: x, y, _, _ = bbox; self.autocomplete_popup.show(self.winfo_rootx() + x,
-                                                                         self.winfo_rooty() + y + 20, suggestions)
-            else:
-                self.autocomplete_popup.withdraw()
-        else:
-            self.autocomplete_popup.withdraw()
-
-    def autocomplete(self, selected_command):
-        word_start = self.text.index("insert wordstart");
-        word_end = self.text.index("insert");
-        self.text.delete(word_start, word_end);
-        self.text.insert(tk.INSERT, selected_command + " ")
-
-    def _on_change(self, event):
+    def _on_change(self, event=None):
         self.linenumbers.redraw()
+        self._highlight_current_line()
 
-    def get(self, *args, **kwargs):
-        return self.text.get(*args, **kwargs)
+    # --- Proxy methods to make this class act like a Text widget ---
+    def get(self, *args, **kwargs): return self.text.get(*args, **kwargs)
+    def insert(self, *args, **kwargs): return self.text.insert(*args, **kwargs)
+    def delete(self, *args, **kwargs): return self.text.delete(*args, **kwargs)
+    def tag_add(self, *args, **kwargs): return self.text.tag_add(*args, **kwargs)
+    def tag_remove(self, *args, **kwargs): return self.text.tag_remove(*args, **kwargs)
+    def tag_config(self, *args, **kwargs): return self.text.tag_config(*args, **kwargs)
+    def bind(self, *args, **kwargs): self.text.bind(*args, **kwargs)
+    def index(self, *args, **kwargs): return self.text.index(*args, **kwargs)
+    def edit_modified(self, *args, **kwargs): return self.text.edit_modified(*args, **kwargs)
+    def edit_reset(self, *args, **kwargs): return self.text.edit_reset(*args, **kwargs)
 
-    def insert(self, *args, **kwargs):
-        return self.text.insert(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        return self.text.delete(*args, **kwargs)
-
-    def tag_config(self, *args, **kwargs):
-        return self.text.tag_config(*args, **kwargs)
-
-    def tag_add(self, *args, **kwargs):
-        return self.text.tag_add(*args, **kwargs)
-
-    def tag_remove(self, *args, **kwargs):
-        return self.text.tag_remove(*args, **kwargs)
-
-    def index(self, *args, **kwargs):
-        return self.text.index(*args, **kwargs)
-
-    @property
-    def edit_reset(self):
-        return self.text.edit_reset
-
-    def bind(self, *args, **kwargs):
-        self.text.bind(*args, **kwargs)
-
-
+# --- Validation Window (Themed) ---
 class ValidationResultsWindow(tk.Toplevel):
     def __init__(self, parent, errors):
-        super().__init__(parent);
-        self.title("Validation Results");
-        self.geometry("600x300");
-        self.configure(bg="#2a2d3b");
-        self.transient(parent);
+        super().__init__(parent)
+        self.title("Validation Results")
+        self.geometry("600x300")
+        self.configure(bg=theme.WIDGET_BG)
+        self.transient(parent)
         self.grab_set()
-        text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg="#1b1e2b", fg="white", font=("Consolas", 10));
+        
+        text_area = tk.Text(self, wrap=tk.WORD, 
+                                bg=theme.WIDGET_BG, 
+                                fg=theme.FG_COLOR, 
+                                font=theme.FONT_NORMAL,
+                                borderwidth=0,
+                                highlightthickness=0)
         text_area.pack(expand=True, fill="both", padx=10, pady=10)
+        
         if not errors:
             text_area.insert(tk.END, "Validation successful! No errors found.")
         else:
-            for error in errors: text_area.insert(tk.END, f"Line {error['line']}: {error['error']}\n")
-        text_area.config(state=tk.DISABLED);
-        close_button = ttk.Button(self, text="Close", command=self.destroy);
+            for error in errors:
+                text_area.insert(tk.END, f"Line {error['line']}: {error['error']}\n")
+        
+        text_area.config(state=tk.DISABLED)
+        close_button = ttk.Button(self, text="Close", command=self.destroy)
         close_button.pack(pady=5)
 
 
-# --- GUI Creation Functions ---
+# --- GUI Creation Functions (Wiring everything up) ---
 def create_command_reference(parent, script_editor_widget):
-    ref_frame = tk.LabelFrame(parent, text="Command Reference", bg="#2a2d3b", fg="white", padx=5, pady=5)
+    ref_frame = ttk.Frame(parent, style='TFrame', padding=5)
 
     # --- Filter Widgets ---
-    filter_frame = tk.Frame(ref_frame, bg="#2a2d3b")
+    filter_frame = ttk.Frame(ref_frame, style='TFrame')
     filter_frame.pack(fill=tk.X, pady=(0, 5))
     filter_frame.grid_columnconfigure((0,1,2,3), weight=1) # Make columns resizable
 
     # --- Treeview ---
-    tree_frame = tk.Frame(ref_frame)
+    tree_frame = ttk.Frame(ref_frame, style='TFrame')
     tree_frame.pack(fill=tk.BOTH, expand=True)
     tree = ttk.Treeview(tree_frame, columns=('device', 'params', 'desc'), show='tree headings')
     
@@ -284,7 +317,7 @@ def create_command_reference(parent, script_editor_widget):
 
 
     columns = {'#0': 'cmd', 'device': 'device', 'params': 'params', 'desc': 'desc'}
-    widths = {'#0': 150, 'device': 80, 'params': 200, 'desc': 250}
+    widths = {'#0': 200, 'device': 60, 'params': 60, 'desc': 300}
 
     for i, (col_id, col_key) in enumerate(columns.items()):
         tree.heading(col_id, text=col_key.capitalize() if col_id!='#0' else 'Command')
@@ -294,7 +327,10 @@ def create_command_reference(parent, script_editor_widget):
         var.trace_add("write", apply_filters)
         filter_vars[col_key] = var
         
-        entry = EntryWithPlaceholder(filter_frame, placeholder=f"Filter {col_key.capitalize()}...", style="Search.TEntry")
+        # FIX: Remove old, incorrect style from placeholder entry and add textvariable
+        entry = EntryWithPlaceholder(filter_frame, 
+                                     textvariable=var,
+                                     placeholder=f"Filter {col_key.capitalize()}...")
         entry.grid(row=0, column=i, sticky='ew', padx=(0 if i==0 else 2, 0))
 
     def sort_column(col_id, reverse, preserve=False):
@@ -339,7 +375,11 @@ def create_command_reference(parent, script_editor_widget):
     # Using 'after' gives the UI a moment to draw before sorting.
     tree.after(100, lambda: sort_column('#0', False))
 
-    context_menu = tk.Menu(parent, tearoff=0)
+    context_menu = tk.Menu(parent, tearoff=0, 
+                           bg=theme.WIDGET_BG, 
+                           fg=theme.FG_COLOR,
+                           activebackground=theme.PRIMARY_ACCENT,
+                           activeforeground=theme.FG_COLOR)
 
     def get_selected_command():
         selected_item = tree.focus()
@@ -371,18 +411,19 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     Creates the main scripting area, including the editor and command reference.
     Returns a dictionary containing file commands and a callback to update the recent menu.
     """
-    scripting_area = tk.Frame(parent, bg="#21232b")
+    scripting_area = ttk.Frame(parent, style='TFrame')
     scripting_area.pack(fill=tk.BOTH, expand=True)
 
     # Get a reference to the root window for thread-safe GUI updates
     root = scripting_area.winfo_toplevel()
 
-    paned_window = ttk.PanedWindow(scripting_area, orient=tk.HORIZONTAL)
+    paned_window = ttk.PanedWindow(scripting_area, orient=tk.HORIZONTAL, style='TPanedwindow')
     paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
-    left_pane = tk.Frame(paned_window, bg="#21232b")
-    paned_window.add(left_pane, weight=3)
-    right_pane = tk.Frame(paned_window, bg="#21232b")
-    paned_window.add(right_pane, weight=2)
+    left_pane = ttk.Frame(paned_window, style='TFrame')
+    paned_window.add(left_pane, weight=1) # The script editor will be the only thing here now
+
+    # The right_pane and the command_ref_widget that was created here have been removed,
+    # as the command reference is now created in its own collapsible panel in main.py.
 
     # --- Scripting State Variables ---
     script_runner = None
@@ -404,7 +445,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         # --- Intercept ERROR messages to display them prominently ---
         if "_ERROR:" in message:
             # The root.after is crucial to prevent threading issues with Tkinter
-            root.after(0, lambda: status_label.config(fg="#db2828")) # Bright Red
+            root.after(0, lambda: status_label.config(foreground=theme.ERROR_RED)) # Bright Red
             root.after(0, lambda: status_var.set(message))
 
         if "DONE:" in message: message_queue.put(message)
@@ -413,28 +454,28 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     shared_gui_refs['terminal_cb'] = terminal_wrapper
 
     # --- UI Creation ---
-    control_frame = tk.Frame(left_pane, bg="#2a2d3b");
+    control_frame = ttk.Frame(left_pane, style='TFrame');
     control_frame.pack(fill=tk.X, pady=(0, 0))
-    editor_frame = tk.LabelFrame(left_pane, text="Script Editor", bg="#2a2d3b", fg="white", padx=5, pady=5);
+    editor_frame = ttk.LabelFrame(left_pane, style='TFrame')
     editor_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-    script_editor = TextWithLineNumbers(editor_frame);
+    script_editor = ScriptEditor(editor_frame, keywords=list(COMMANDS.keys())) # Use the rebuilt composite widget
     script_editor.pack(fill="both", expand=True)
-    script_editor.tag_config("exec_highlight", background="yellow", foreground="black");
-    script_editor.tag_config("selection_highlight", background="#003366");
-    script_editor.tag_config("error_highlight", background="#552222")
-    script_editor.text.tag_lower("selection_highlight", "sel");
-    script_editor.insert(tk.END, "# Example Script\n# Type commands here or load a file.\n")
-    # Mark the initial, default script as "unmodified" to prevent the save dialog
-    script_editor.text.edit_reset()
-    script_editor.text.edit_modified(False)
 
-    command_ref_widget = create_command_reference(right_pane, script_editor.text);
-    command_ref_widget.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
+    # Configure tags for execution and error highlighting
+    script_editor.tag_config("exec_highlight", background=theme.WARNING_YELLOW, foreground="black")
+    script_editor.tag_config("selection_highlight", background=theme.SECONDARY_ACCENT)
+    script_editor.tag_config("error_highlight", background=theme.ERROR_RED, foreground=theme.FG_COLOR)
+    
+    script_editor.insert(tk.END, "# Example Script\n# Type commands here or load a file.\n")
+    script_editor.edit_reset()
+    script_editor.edit_modified(False)
+
+    # The command reference is no longer created here.
 
     def update_window_title():
         filename = "Untitled"
         if current_filepath: filename = os.path.basename(current_filepath)
-        modified_star = "*" if script_editor.text.edit_modified() else "";
+        modified_star = "*" if script_editor.edit_modified() else "";
         root.title(f"{filename}{modified_star} - Multi-Device Controller")
 
     def on_text_modified(event):
@@ -447,18 +488,19 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
                 with open(current_filepath, 'w') as f:
                     f.write(script_editor.get('1.0', tk.END))
                 # Mark as unmodified to prevent the "unsaved" dialog
-                script_editor.text.edit_modified(False)
+                script_editor.edit_modified(False)
                 update_window_title() # Update title to remove '*'
             except Exception as e:
                 status_var.set(f"Autosave Error: {e}")
 
         # Update the highlight to follow the cursor's current line
-        current_line = int(script_editor.text.index(tk.INSERT).split('.')[0])
+        current_line = int(script_editor.index(tk.INSERT).split('.')[0])
         update_selection_highlight(current_line)
 
-    script_editor.text.bind("<<Modified>>", on_text_modified)
+    # Add the binding for autosave/title update. The highlighter binds itself.
+    script_editor.bind("<<Modified>>", on_text_modified, add='+')
 
-    status_var = tk.StringVar(value="Idle")
+    status_var = tk.StringVar(value="Status: Idle")
 
     # --- Recent Files Menu Management ---
     def update_recent_files_display():
@@ -479,7 +521,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
 
     # --- File Operations ---
     def check_unsaved_changes():
-        if not script_editor.text.edit_modified(): return True
+        if not script_editor.edit_modified(): return True
         response = messagebox.askyesnocancel("Unsaved Changes", "You have unsaved changes. Do you want to save them?")
         if response is True:
             return save_script()
@@ -492,7 +534,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         nonlocal current_filepath
         if not check_unsaved_changes(): return
         script_editor.delete('1.0', tk.END);
-        script_editor.text.edit_modified(False);
+        script_editor.edit_modified(False);
         current_filepath = None;
         update_window_title();
         update_selection_highlight(1)
@@ -503,7 +545,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
             try:
                 with open(current_filepath, 'w') as f:
                     f.write(script_editor.get('1.0', tk.END))
-                script_editor.text.edit_modified(False);
+                script_editor.edit_modified(False);
                 update_window_title();
                 status_var.set(f"Saved to {os.path.basename(current_filepath)}");
                 add_to_recent_files(current_filepath)
@@ -539,7 +581,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
                 script_editor.delete('1.0', tk.END);
                 script_editor.insert('1.0', f.read())
             current_filepath = filepath;
-            script_editor.text.edit_modified(False);
+            script_editor.edit_modified(False);
             update_window_title();
             update_selection_highlight(1);
             status_var.set(f"Loaded {os.path.basename(current_filepath)}")
@@ -695,15 +737,15 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
             last_selection_highlight = line_num
 
     def on_line_click(event):
-        index = script_editor.text.index(f"@{event.x},{event.y}")
+        index = script_editor.index(f"@{event.x},{event.y}")
         line_num = int(index.split('.')[0])
         update_selection_highlight(line_num)
 
-    script_editor.text.bind("<Button-1>", on_line_click)
+    script_editor.bind("<Button-1>", on_line_click)
     update_selection_highlight(1)
 
     # --- Control Buttons ---
-    btn_container = tk.Frame(control_frame, bg="#2a2d3b");
+    btn_container = ttk.Frame(control_frame, style='TFrame');
     btn_container.pack(fill=tk.X, padx=10, pady=(5, 0))
 
     cycle_start_button = ttk.Button(btn_container, text="Cycle Start", command=handle_cycle_start,
@@ -723,14 +765,16 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     feed_hold_button.config(state=tk.DISABLED)
 
     # --- Status Label ---
-    font_status_line = ("Segoe UI", 12, "bold") # New, larger font
-    status_label = tk.Label(control_frame, textvariable=status_var, bg=control_frame['bg'], fg="cyan", anchor='w', font=font_status_line);
+    status_label = ttk.Label(control_frame, textvariable=status_var, anchor='w', 
+                             font=theme.FONT_LARGE_BOLD, 
+                             foreground=theme.PRIMARY_ACCENT,
+                             background=theme.BG_COLOR)
     status_label.pack(side=tk.LEFT, padx=10, pady=(5, 5), fill=tk.X, expand=True)
     update_window_title()
 
     # --- Callback to reset status color ---
     def reset_status_color(*args):
-        status_label.config(fg="cyan")
+        status_label.config(foreground=theme.PRIMARY_ACCENT)
 
     status_var.trace_add("write", reset_status_color)
 
@@ -738,7 +782,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     # --- Return file commands and menu update callback ---
     file_commands = {
         "new": new_script,
-        "load": load_script,
+        "open": load_script,
         "save": save_script,
         "save_as": save_script_as,
         "validate": lambda: check_script_validity(show_success=True)
@@ -747,5 +791,6 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         "file_commands": file_commands,
         "update_recent_menu_callback": set_recent_menu_reference,
         "check_unsaved": check_unsaved_changes,
-        "load_specific_script": load_specific_script
+        "load_specific_script": load_specific_script,
+        "script_editor": script_editor # Expose the script editor widget
     }

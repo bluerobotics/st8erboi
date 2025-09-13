@@ -2,40 +2,134 @@ import tkinter as tk
 from tkinter import ttk
 import threading
 import comms
-from scripting_gui import create_scripting_interface
+from scripting_gui import create_scripting_interface, create_command_reference # Import both functions
 from manual_controls import create_manual_controls_display
 from status_panel import create_status_bar
 from terminal import create_terminal_panel
-from styles import configure_styles
-from top_menu import create_top_menu
 import json
 import os
+import theme  # Import the new theme file
+
+# Import GUI components
+from top_menu import create_top_menu
 
 GUI_UPDATE_INTERVAL_MS = 100
 
+class CollapsiblePanel(ttk.Frame):
+    """A collapsible panel with a side trigger bar."""
+    def __init__(self, parent, text="Controls", width=350, **kwargs):
+        super().__init__(parent, style='TFrame', **kwargs)
+        self.text = text
+        self.width = width
+        self.is_collapsed = True
+
+        self.trigger_canvas = tk.Canvas(self, width=30, bg=theme.SECONDARY_ACCENT, highlightthickness=0)
+        self.trigger_canvas.pack(side=tk.LEFT, fill=tk.Y)
+
+        self.content_panel = ttk.Frame(self, width=self.width, style='TFrame')
+        # Content panel is not packed initially
+
+        self.draw_trigger_text()
+        self.trigger_canvas.bind("<Button-1>", self.toggle_panel)
+        self.trigger_canvas.bind("<Enter>", lambda e: self.trigger_canvas.config(bg=theme.PRIMARY_ACCENT))
+        self.trigger_canvas.bind("<Leave>", lambda e: self.trigger_canvas.config(bg=theme.SECONDARY_ACCENT))
+
+    def draw_trigger_text(self):
+        self.trigger_canvas.delete("all")
+        display_text = "Show " + self.text if self.is_collapsed else "Hide " + self.text
+        self.trigger_canvas.create_text(15, 150, text=display_text, angle=90, font=theme.FONT_BOLD, fill=theme.FG_COLOR, anchor="center")
+
+    def toggle_panel(self, event=None):
+        if self.is_collapsed:
+            self.content_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        else:
+            self.content_panel.pack_forget()
+        self.is_collapsed = not self.is_collapsed
+        self.draw_trigger_text()
+
+    def get_content_frame(self):
+        return self.content_panel
 
 class MainApplication:
     def __init__(self, root):
         self.root = root
-        self.root.title("Multi-Device Controller")
-        self.root.configure(bg="#21232b")
+        self.root.title("st8erboi GUI")
+        self.root.configure(bg=theme.BG_COLOR)
+
+        # Configure ttk styles to match the theme
+        self.style = ttk.Style()
+        self.style.theme_use('clam') # Use a theme that allows full color customization
+
+        # General widget styling
+        self.style.configure('.', background=theme.BG_COLOR, foreground=theme.FG_COLOR, font=theme.FONT_NORMAL)
+        self.style.map('.', background=[('active', theme.SECONDARY_ACCENT)])
+
+        # Frame styling
+        self.style.configure('TFrame', background=theme.BG_COLOR)
+
+        # Label styling
+        self.style.configure('TLabel', background=theme.BG_COLOR, foreground=theme.FG_COLOR, font=theme.FONT_NORMAL)
+        self.style.configure('Header.TLabel', font=theme.FONT_BOLD)
+
+        # Button styling
+        self.style.configure('TButton', background=theme.WIDGET_BG, foreground=theme.FG_COLOR, borderwidth=1, focusthickness=3, focuscolor=theme.PRIMARY_ACCENT)
+        self.style.map('TButton',
+            background=[('active', theme.PRIMARY_ACCENT)],
+            foreground=[('active', theme.FG_COLOR)]
+        )
+
+        # Entry styling
+        self.style.configure('TEntry', fieldbackground=theme.WIDGET_BG, foreground=theme.FG_COLOR, insertcolor=theme.FG_COLOR)
         
-        # --- Maximize Window on Start ---
-        self.root.state('zoomed')
+        # --- Custom Button Styles ---
+        self.style.configure('Green.TButton', background=theme.SUCCESS_GREEN, foreground='black', font=theme.FONT_BOLD)
+        self.style.map('Green.TButton', background=[('active', '#88B369')]) # A slightly lighter green for hover
+
+        self.style.configure('Red.TButton', background=theme.ERROR_RED, foreground='black', font=theme.FONT_BOLD)
+        self.style.map('Red.TButton', background=[('active', '#D05C65')]) # A slightly lighter red for hover
+        
+        self.style.configure('Small.TButton', font=theme.FONT_NORMAL)
+
+        # Custom style for the toggle-like Checkbutton
+        self.style.configure('OrangeToggle.TButton', font=theme.FONT_NORMAL)
+        self.style.map('OrangeToggle.TButton',
+            foreground=[('selected', theme.WARNING_YELLOW), ('!selected', theme.FG_COLOR)],
+        )
+
+        # Treeview (used in command reference)
+        self.style.configure("Treeview",
+            background=theme.WIDGET_BG,
+            foreground=theme.FG_COLOR,
+            fieldbackground=theme.WIDGET_BG,
+            borderwidth=1
+        )
+        self.style.map("Treeview",
+            background=[('selected', theme.SELECTION_BG)],
+            foreground=[('selected', theme.SELECTION_FG)]
+        )
+        self.style.map("Treeview.Heading",
+            background=[('active', theme.PRIMARY_ACCENT), ('!active', theme.SECONDARY_ACCENT)],
+            foreground=[('active', theme.FG_COLOR), ('!active', theme.FG_COLOR)]
+        )
+
+        # Paned Window Separator
+        self.style.configure('TPanedwindow', background=theme.BG_COLOR)
+        self.style.configure('TPanedwindow.Sash', background=theme.SECONDARY_ACCENT, sashthickness=6)
+
+        self.root.state('zoomed') # Start maximized
 
         self.autosave_var = tk.BooleanVar(value=True)
+        
+        # Initialize the status variable first, as other components need it.
+        self.status_var = tk.StringVar(value="Initializing...")
+
         self.shared_gui_refs = self.initialize_shared_variables()
         
-        # The command_funcs need to be initialized after comms functions are available
+        # Initialize command functions, which use the comms module correctly
         self.command_funcs = self.initialize_command_functions()
-        self.shared_gui_refs['command_funcs'] = self.command_funcs
-
-        self.setup_styles()
-        self.create_widgets()
-
-        # --- Bind the unsaved changes check to the window's close button ---
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.shared_gui_refs['command_funcs'] = self.command_funcs # Make funcs available to script processor
         
+        self.create_widgets()
         self.load_last_script()
 
     def initialize_shared_variables(self):
@@ -151,17 +245,17 @@ class MainApplication:
         return shared_gui_refs
 
     def initialize_command_functions(self):
+        # Correctly call functions from the comms module
         send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, self.shared_gui_refs)
         send_gantry_cmd = lambda msg: comms.send_to_device("gantry", msg, self.shared_gui_refs)
 
-        def send_global_abort():
-            if 'terminal_cb' in self.shared_gui_refs:
-                comms.log_to_terminal("--- GLOBAL ABORT TRIGGERED ---", self.shared_gui_refs.get('terminal_cb'))
+        # Abort now sends to both
+        def abort_all():
             send_fillhead_cmd("ABORT")
             send_gantry_cmd("ABORT")
 
         return {
-            "abort": send_global_abort,
+            "abort": abort_all,
             "clear_errors": lambda: send_fillhead_cmd("CLEAR_ERRORS"),
             "send_fillhead": send_fillhead_cmd,
             "send_gantry": send_gantry_cmd
@@ -171,41 +265,84 @@ class MainApplication:
         """
         Configures the application's styles.
         """
-        configure_styles()
+        # The styles are now configured in __init__
+        pass
 
     def create_widgets(self):
         """
         Creates the main UI layout and populates it with components.
         """
         # --- Main Layout Frames ---
-        left_bar_frame = tk.Frame(self.root, bg="#21232b", width=350)
+        main_frame = ttk.Frame(self.root, style='TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Right-side container for the collapsible panels
+        right_panels_container = ttk.Frame(main_frame, style='TFrame')
+        right_panels_container.pack(side=tk.RIGHT, fill=tk.Y, pady=10, padx=(0, 10))
+
+        # Central container for the main content
+        center_container = ttk.Frame(main_frame, style='TFrame')
+        center_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Left-side container for the status bar
+        left_bar_frame = ttk.Frame(center_container, width=350, style='TFrame')
         left_bar_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0), pady=10)
         left_bar_frame.pack_propagate(False)
 
-        manual_control_widgets = create_manual_controls_display(self.root, self.command_funcs, self.shared_gui_refs)
-        manual_control_widgets['main_container'].pack(side=tk.LEFT, fill=tk.Y, pady=10, padx=(10, 0))
+        # Main content area (scripting, console)
+        main_content_frame = ttk.Frame(center_container, style='TFrame')
+        main_content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        terminal_widgets = create_terminal_panel(self.root, self.shared_gui_refs)
+        terminal_widgets = create_terminal_panel(main_content_frame, self.shared_gui_refs)
         self.shared_gui_refs.update(terminal_widgets)
         terminal_widgets['terminal_frame'].pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(0, 10))
 
-        main_content_frame = tk.Frame(self.root, bg="#21232b")
-        main_content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # --- Populate UI Components ---
-        self.scripting_gui_refs = create_scripting_interface(main_content_frame, self.command_funcs, self.shared_gui_refs, self.autosave_var)
-        self.shared_gui_refs.update(self.scripting_gui_refs)
+        # Create Collapsible Panels on the right
+        manual_controls_collapsible = CollapsiblePanel(right_panels_container, text="Manual", width=350)
+        manual_controls_collapsible.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # Add a separator for clean delineation
+        separator = ttk.Separator(right_panels_container, orient='vertical')
+        separator.pack(side=tk.LEFT, fill=tk.Y, padx=2)
 
-        file_commands = self.scripting_gui_refs.get('file_commands', {})
-        menu_widgets = create_top_menu(self.root, file_commands, self.autosave_var)
-        self.recent_files_menu = menu_widgets['recent_files_menu']
-        self.scripting_gui_refs['update_recent_menu_callback'](self.recent_files_menu)
+        cmd_ref_collapsible = CollapsiblePanel(right_panels_container, text="Commands", width=450)
+        cmd_ref_collapsible.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # Populate the collapsible panels' content frames
+        manual_controls_content = manual_controls_collapsible.get_content_frame()
+        manual_control_widgets = create_manual_controls_display(manual_controls_content, self.command_funcs, self.shared_gui_refs)
+        manual_control_widgets['main_container'].pack(fill=tk.BOTH, expand=True)
+        
+        cmd_ref_content = cmd_ref_collapsible.get_content_frame()
 
+        # Create scripting GUI in the main content area
+        self.scripting_gui_refs = create_scripting_interface(
+            main_content_frame, 
+            self.command_funcs, 
+            self.shared_gui_refs, 
+            self.autosave_var
+        )
+        
+        # Now that the script editor exists, populate the command reference
+        command_ref_widget = create_command_reference(cmd_ref_content, self.scripting_gui_refs['script_editor'])
+        command_ref_widget.pack(fill=tk.BOTH, expand=True)
+
+        # Populate the left status bar
         status_widgets = create_status_bar(left_bar_frame, self.shared_gui_refs)
         self.shared_gui_refs.update(status_widgets)
 
-        abort_btn = ttk.Button(left_bar_frame, text="🛑 ABORT ALL", style="Abort.TButton", command=self.command_funcs.get("abort"))
-        abort_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+        abort_btn = ttk.Button(left_bar_frame, text="🛑 ABORT ALL", style="Red.TButton", command=self.command_funcs.get("abort"))
+        abort_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=10, padx=5)
+
+
+        # Create Top Menu (and pass it the file commands from the scripting GUI)
+        file_commands = self.scripting_gui_refs['file_commands']
+        self.menubar, self.recent_files_menu = create_top_menu(self.root, file_commands, self.autosave_var)
+
+        # Pass the recent files menu reference to the scripting gui
+        self.scripting_gui_refs['update_recent_menu_callback'](self.recent_files_menu)
 
     def setup_menu(self):
         """
@@ -217,7 +354,7 @@ class MainApplication:
         """
         Handles the window close event, checking for unsaved changes before exiting.
         """
-        # The check_unsaved function from scripting_gui shows a dialog and returns True if it's safe to close
+        # Ask the scripting GUI to check for unsaved changes before closing
         if self.scripting_gui_refs['check_unsaved']():
             self.root.destroy()
 
@@ -241,10 +378,9 @@ class MainApplication:
         """
         Starts the communication threads and the main event loop.
         """
-        # --- Start Communication Threads ---
+        # Start the communication threads, calling functions from the comms module
         threading.Thread(target=comms.recv_loop, args=(self.shared_gui_refs,), daemon=True).start()
         threading.Thread(target=comms.monitor_connections, args=(self.shared_gui_refs,), daemon=True).start()
-
         self.root.mainloop()
 
 

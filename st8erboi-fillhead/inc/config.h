@@ -200,7 +200,7 @@
  * @{
  */
 #define PINCH_VALVE_PINCH_TORQUE_PERCENT    75.0f     ///< Target torque (%) for closing the valve during normal operation.
-#define PINCH_VALVE_PINCH_VEL_MMS           1.0f      ///< Speed (mm/s) for the closing (pinching) move.
+#define PINCH_VALVE_PINCH_VEL_MMS           2.0f      ///< Speed (mm/s) for the closing (pinching) move.
 #define PINCH_VALVE_OPEN_VEL_MMS            10.0f     ///< Speed (mm/s) for the opening move (returning to the homed position).
 #define PINCH_VALVE_OPEN_ACCEL_MMSS         50.0f     ///< Acceleration (mm/s^2) for the opening move.
 /** @} */
