@@ -21,34 +21,68 @@ class CollapsiblePanel(ttk.Frame):
         super().__init__(parent, style='TFrame', **kwargs)
         self.text = text
         self.width = width
-        self.is_collapsed = True
+        self.is_collapsed = True  # start collapsed by default
 
         self.trigger_canvas = tk.Canvas(self, width=30, bg=theme.SECONDARY_ACCENT, highlightthickness=0)
         self.trigger_canvas.pack(side=tk.LEFT, fill=tk.Y)
 
         self.content_panel = ttk.Frame(self, width=self.width, style='TFrame')
-        # Content panel is not packed initially
+        # Start collapsed: don't pack content
+        self.content_panel.pack_propagate(False)
+        self.configure(width=int(self.trigger_canvas.cget('width')))
 
         self.draw_trigger_text()
         self.trigger_canvas.bind("<Button-1>", self.toggle_panel)
         self.trigger_canvas.bind("<Enter>", lambda e: self.trigger_canvas.config(bg=theme.PRIMARY_ACCENT))
         self.trigger_canvas.bind("<Leave>", lambda e: self.trigger_canvas.config(bg=theme.SECONDARY_ACCENT))
 
+    def get_content_frame(self):
+        return self.content_panel
+
     def draw_trigger_text(self):
         self.trigger_canvas.delete("all")
         display_text = "Show " + self.text if self.is_collapsed else "Hide " + self.text
         self.trigger_canvas.create_text(15, 150, text=display_text, angle=90, font=theme.FONT_BOLD, fill=theme.FG_COLOR, anchor="center")
 
+    def _update_parent_sash(self):
+        """If this panel is in a Panedwindow, update the sash position."""
+        self.update_idletasks()
+        try:
+            pw = self.master
+            if isinstance(pw, ttk.Panedwindow):
+                panes = pw.panes()
+                if str(self) in panes:
+                    sash_index = panes.index(str(self)) - 1
+                    if sash_index >= 0:
+                        trigger_width = self.trigger_canvas.winfo_width()
+                        total_width = pw.winfo_width()
+                        
+                        if self.is_collapsed:
+                            # Move sash to make this pane only trigger_width wide
+                            target_pos = total_width - trigger_width
+                            # Add a small buffer for the sash itself
+                            if target_pos < total_width - 5:
+                                target_pos -= 5
+                            pw.sashpos(sash_index, target_pos)
+                        else:
+                            # Move sash to make this pane its full configured width
+                            target_pos = total_width - self.width
+                            pw.sashpos(sash_index, target_pos)
+        except Exception:
+            pass # Fail silently
+
     def toggle_panel(self, event=None):
         if self.is_collapsed:
+            # Expand to configured width
             self.content_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            self.configure(width=self.width)
         else:
+            # Collapse to trigger width
             self.content_panel.pack_forget()
+            self.configure(width=int(self.trigger_canvas.cget('width')))
         self.is_collapsed = not self.is_collapsed
         self.draw_trigger_text()
-
-    def get_content_frame(self):
-        return self.content_panel
+        self.after(10, self._update_parent_sash) # Let geometry manager update before moving sash
 
 class MainApplication:
     def __init__(self, root):
@@ -93,8 +127,29 @@ class MainApplication:
         # Custom style for the toggle-like Checkbutton
         self.style.configure('OrangeToggle.TButton', font=theme.FONT_NORMAL)
         self.style.map('OrangeToggle.TButton',
-            foreground=[('selected', theme.WARNING_YELLOW), ('!selected', theme.FG_COLOR)],
+            foreground=[('selected', 'black'), ('!selected', theme.FG_COLOR)],
+            background=[('selected', theme.WARNING_YELLOW), ('!selected', theme.WIDGET_BG)]
         )
+
+        # Blue accent button used for utility actions
+        self.style.configure('Blue.TButton', background=theme.PRIMARY_ACCENT, foreground='black', font=theme.FONT_BOLD)
+        self.style.map('Blue.TButton', background=[('active', '#72B9F2')])
+
+        # Ghost/neutral button for low-emphasis actions
+        self.style.configure('Ghost.TButton', background=theme.WIDGET_BG, foreground=theme.FG_COLOR, borderwidth=1)
+        self.style.map('Ghost.TButton', background=[('active', theme.SECONDARY_ACCENT)])
+
+        # Additional accent buttons for differentiation
+        self.style.configure('Yellow.TButton', background=theme.WARNING_YELLOW, foreground='black', font=theme.FONT_BOLD)
+        self.style.map('Yellow.TButton', background=[('active', '#F0CD8C')])
+        self.style.configure('Gray.TButton', background=theme.SECONDARY_ACCENT, foreground=theme.FG_COLOR, font=theme.FONT_BOLD)
+        self.style.map('Gray.TButton', background=[('active', '#505868')])
+
+        # Card-like containers and subtle labels
+        self.style.configure('Card.TLabelframe', background=theme.WIDGET_BG, foreground=theme.FG_COLOR, borderwidth=1)
+        self.style.configure('Card.TLabelframe.Label', background=theme.WIDGET_BG, foreground=theme.FG_COLOR, font=theme.FONT_BOLD)
+        self.style.configure('Card.TFrame', background=theme.WIDGET_BG)
+        self.style.configure('Subtle.TLabel', background=theme.WIDGET_BG, foreground=theme.COMMENT_COLOR, font=theme.FONT_NORMAL)
 
         # Treeview (used in command reference)
         self.style.configure("Treeview",
@@ -280,9 +335,17 @@ class MainApplication:
         right_panels_container = ttk.Frame(main_frame, style='TFrame')
         right_panels_container.pack(side=tk.RIGHT, fill=tk.Y, pady=10, padx=(0, 10))
 
-        # Central container for the main content
-        center_container = ttk.Frame(main_frame, style='TFrame')
-        center_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Add a separator for clean delineation before the manual controls
+        separator = ttk.Separator(main_frame, orient='vertical')
+        separator.pack(side=tk.RIGHT, fill=tk.Y, pady=10, padx=5)
+
+        # Create a horizontal splitter for center content and commands (resizable)
+        splitter = ttk.Panedwindow(main_frame, orient=tk.HORIZONTAL, style='TPanedwindow')
+        splitter.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=10, padx=(10, 0))
+
+        # Central container for the main content (left pane of splitter)
+        center_container = ttk.Frame(splitter, style='TFrame')
+        splitter.add(center_container, weight=1)
         
         # Left-side container for the status bar
         left_bar_frame = ttk.Frame(center_container, width=350, style='TFrame')
@@ -299,17 +362,38 @@ class MainApplication:
 
 
         # --- Populate UI Components ---
-        # Create Collapsible Panels on the right
-        manual_controls_collapsible = CollapsiblePanel(right_panels_container, text="Manual", width=350)
+        # Create Collapsible Panel for Manual Controls (fixed on the far right)
+        manual_controls_collapsible = CollapsiblePanel(right_panels_container, text="Manual Controls", width=260)
         manual_controls_collapsible.pack(side=tk.LEFT, fill=tk.Y)
-        
-        # Add a separator for clean delineation
-        separator = ttk.Separator(right_panels_container, orient='vertical')
-        separator.pack(side=tk.LEFT, fill=tk.Y, padx=2)
 
-        cmd_ref_collapsible = CollapsiblePanel(right_panels_container, text="Commands", width=450)
-        cmd_ref_collapsible.pack(side=tk.LEFT, fill=tk.Y)
-        
+        # Commands panel lives in the splitter (right pane), resizable
+        cmd_ref_collapsible = CollapsiblePanel(splitter, text="Commands", width=560)
+        splitter.add(cmd_ref_collapsible) # Add the pane
+        cmd_ref_collapsible.get_content_frame().pack_propagate(True)
+
+        def set_initial_sash_pos(event=None):
+            # This function runs once after the window is drawn to set the sash.
+            # We unbind immediately to ensure it's not called again on resize.
+            splitter.unbind("<Configure>")
+
+            def position_sash():
+                """Calculates and sets the sash position."""
+                trigger_width = int(cmd_ref_collapsible.trigger_canvas.cget('width'))
+                splitter_width = splitter.winfo_width()
+                # Position sash so the right pane is only trigger_width wide,
+                # leaving a few pixels for the sash handle itself.
+                target_pos = splitter_width - (trigger_width + 5)
+                if target_pos > 0:
+                    splitter.sashpos(0, target_pos)
+
+            # Schedule this to run after a short delay. This allows the Tkinter
+            # event loop to process all initial geometry calculations, ensuring
+            # winfo_width() returns a correct, stable value.
+            splitter.after(10, position_sash)
+
+        # Bind to the splitter's configure event, which fires when it's first sized.
+        splitter.bind("<Configure>", set_initial_sash_pos, add="+")
+
         # Populate the collapsible panels' content frames
         manual_controls_content = manual_controls_collapsible.get_content_frame()
         manual_control_widgets = create_manual_controls_display(manual_controls_content, self.command_funcs, self.shared_gui_refs)
