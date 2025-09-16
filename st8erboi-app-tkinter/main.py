@@ -180,9 +180,8 @@ class MainApplication:
 
         self.shared_gui_refs = self.initialize_shared_variables()
         
-        # Initialize command functions, which use the comms module correctly
-        self.command_funcs = self.initialize_command_functions()
-        self.shared_gui_refs['command_funcs'] = self.command_funcs # Make funcs available to script processor
+        # Command functions are now initialized and added within initialize_shared_variables
+        self.command_funcs = self.shared_gui_refs['command_funcs']
         
         self.create_widgets()
         self.load_last_script()
@@ -190,6 +189,7 @@ class MainApplication:
     def initialize_shared_variables(self):
         """
         Initializes the shared state and functions for the application.
+        Now also handles the creation of command functions to ensure correct scope.
         """
         # --- Shared State and Functions ---
         shared_gui_refs = {
@@ -282,6 +282,8 @@ class MainApplication:
             'vac_leak_duration_var': tk.StringVar(value='10')
         }
 
+        # Define the send functions first, using the dictionary that will be passed around.
+        # This makes the reference live, so additions to it (like terminal_cb) are seen.
         send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
         send_gantry_cmd = lambda msg: comms.send_to_device("gantry", msg, shared_gui_refs)
 
@@ -291,30 +293,21 @@ class MainApplication:
             send_fillhead_cmd("ABORT")
             send_gantry_cmd("ABORT")
 
+        # Create the command functions and add them directly to the dictionary.
         command_funcs = {
             "abort": send_global_abort,
             "clear_errors": lambda: send_fillhead_cmd("CLEAR_ERRORS"),
             "send_fillhead": send_fillhead_cmd,
             "send_gantry": send_gantry_cmd
         }
+        shared_gui_refs['command_funcs'] = command_funcs
+        
         return shared_gui_refs
 
     def initialize_command_functions(self):
-        # Correctly call functions from the comms module
-        send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, self.shared_gui_refs)
-        send_gantry_cmd = lambda msg: comms.send_to_device("gantry", msg, self.shared_gui_refs)
-
-        # Abort now sends to both
-        def abort_all():
-            send_fillhead_cmd("ABORT")
-            send_gantry_cmd("ABORT")
-
-        return {
-            "abort": abort_all,
-            "clear_errors": lambda: send_fillhead_cmd("CLEAR_ERRORS"),
-            "send_fillhead": send_fillhead_cmd,
-            "send_gantry": send_gantry_cmd
-        }
+        # This method is now obsolete and can be removed.
+        # Its logic has been merged into initialize_shared_variables.
+        pass
 
     def setup_styles(self):
         """

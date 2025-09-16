@@ -5,27 +5,31 @@ import tkinter as tk  # For TclError and StringVar
 from script_validator import COMMANDS
 
 
-class ScriptRunner:
-    def __init__(self, script_content, command_funcs, gui_refs, status_callback, completion_callback, message_queue,
-                 line_offset=0):
-        
-        self.command_funcs = command_funcs
-        self.gui_refs = gui_refs
-        self.status_callback = status_callback
-        self.completion_callback = completion_callback
-        self.message_queue = message_queue
-        self.line_offset = line_offset # This is the original line number of the first line of script_content
+class ScriptRunner(threading.Thread):
+    """
+    Runs a script in a separate thread to avoid blocking the GUI.
+    Handles script parsing, command execution, and status reporting.
+    """
+    def __init__(self, script_content, shared_gui_refs, status_cb, completion_cb, msg_q, line_offset=0):
+        super().__init__(daemon=True)
+        self.script_content = script_content
+        self.gui_refs = shared_gui_refs
+        # Correctly extract command_funcs from the shared_gui_refs
+        self.command_funcs = shared_gui_refs.get('command_funcs', {})
+        self.status_cb = status_cb
+        self.completion_cb = completion_cb
+        self.msg_q = msg_q
+        self.line_offset = line_offset
+        self._stop_event = threading.Event()
         self.is_running = False
-        self.thread = None
         self.runtime_defaults = {}
-
-        # --- New: Pre-process the script to expand loops ---
+        # To map expanded lines back to original source lines
         try:
             expanded_content, self.line_map = self._expand_loops(script_content, line_offset)
             self.script_lines = expanded_content
         except Exception as e:
             self.script_lines = [f"Error processing script: {e}"]
-            self.line_map = [1 + line_offset]
+            self.line_map = {0: 1 + line_offset}
 
     def _expand_loops(self, content, start_offset):
         original_lines = content.splitlines()
@@ -75,23 +79,65 @@ class ScriptRunner:
         processed_lines_with_nums = process_block(lines_with_nums)
         
         final_lines = [line for line, num in processed_lines_with_nums]
-        final_map = [num for line, num in processed_lines_with_nums]
+        final_map = {i: num for i, (line, num) in enumerate(processed_lines_with_nums)}
         
         return final_lines, final_map
 
-    def start(self):
-        if self.is_running: return
-        self.is_running = True
-        while not self.message_queue.empty():
-            try:
-                self.message_queue.get_nowait()
-            except queue.Empty:
-                continue
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
-
     def stop(self):
+        """Signals the script execution thread to stop."""
+        print("[DEBUG] ScriptRunner.stop() called.")
+        self._stop_event.set()
         self.is_running = False
+
+    def run(self):
+        """The main execution loop for the script thread."""
+        print("[DEBUG] ScriptRunner.run() started.")
+        self.is_running = True
+        
+        # Clear any stale messages from the queue before starting
+        cleared_count = 0
+        while not self.msg_q.empty():
+            try:
+                self.msg_q.get_nowait()
+                cleared_count += 1
+            except queue.Empty:
+                break
+        if cleared_count > 0:
+            print(f"[DEBUG] Cleared {cleared_count} stale messages from queue.")
+
+        for i, line in enumerate(self.script_lines):
+            if self._stop_event.is_set():
+                self.status_cb("Script stopped by user.", -1)
+                print("[DEBUG] ScriptRunner stop event detected.")
+                break
+
+            original_line_num = self.line_map.get(i, i + self.line_offset + 1)
+            self.status_cb(f"Executing line {original_line_num}...", original_line_num)
+            
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            try:
+                print(f"[DEBUG] Processing line {original_line_num}: '{line}'")
+                # Pass the correct, current line number to the processing method
+                if not self._process_line(line, original_line_num):
+                    print(f"[DEBUG] _process_line returned False for line {original_line_num}. Halting.")
+                    # Stop execution if _process_line returns False
+                    break
+            except Exception as e:
+                error_msg = f"Runtime Error on line {original_line_num}: {e}"
+                self.status_cb(error_msg, original_line_num)
+                print(f"[DEBUG] Exception during _process_line: {e}")
+                # Halt execution on error
+                break
+        
+        self.is_running = False
+        print("[DEBUG] ScriptRunner.run() finished.")
+        # Always call the completion callback when the loop finishes for any reason.
+        if self.completion_cb:
+            print("[DEBUG] Calling completion_cb.")
+            self.completion_cb()
 
     def _get_default(self, command_name, param_index):
         param_def = COMMANDS[command_name]['params'][param_index]
@@ -115,25 +161,25 @@ class ScriptRunner:
 
     def _handle_wait(self, args, line_num, is_seconds=False):
         if not args:
-            self.status_callback(f"Error on L{line_num}: WAIT command requires a duration.", line_num)
+            self.status_cb(f"Error on L{line_num}: WAIT command requires a duration.", line_num)
             self.is_running = False
             return False
         try:
             duration = float(args[0])
             duration_ms = duration * 1000 if is_seconds else duration
             unit = "s" if is_seconds else "ms"
-            self.status_callback(f"L{line_num}: Waiting for {duration} {unit}...", line_num)
+            self.status_cb(f"L{line_num}: Waiting for {duration} {unit}...", line_num)
 
             start_time = time.time()
             end_time = start_time + (duration_ms / 1000.0)
             while time.time() < end_time:
                 if not self.is_running: return False
                 remaining_time = end_time - time.time()
-                self.status_callback(f"L{line_num}: Waiting... {remaining_time:.1f}s remaining", line_num)
+                self.status_cb(f"L{line_num}: Waiting... {remaining_time:.1f}s remaining", line_num)
                 time.sleep(0.1) # Update GUI 10 times per second
             return True
         except ValueError:
-            self.status_callback(f"Error on L{line_num}: Invalid duration for WAIT command.", line_num)
+            self.status_cb(f"Error on L{line_num}: Invalid duration for WAIT command.", line_num)
             self.is_running = False
             return False
 
@@ -144,7 +190,7 @@ class ScriptRunner:
             target_psi = float(target_psi_str)
             timeout_s = float(args[1]) if len(args) > 1 else float(self.runtime_defaults.get("VACUUM_TIMEOUT", 60))
         except (ValueError, IndexError, tk.TclError):
-            self.status_callback(f"Error on L{line_num}: Invalid parameters for WAIT_UNTIL_VACUUM.", line_num)
+            self.status_cb(f"Error on L{line_num}: Invalid parameters for WAIT_UNTIL_VACUUM.", line_num)
             self.is_running = False
             return False
 
@@ -152,20 +198,20 @@ class ScriptRunner:
         while True:
             if not self.is_running: return False
             if time.time() - start_time > timeout_s:
-                self.status_callback(f"Error on L{line_num}: Timeout waiting for vacuum target.", line_num)
+                self.status_cb(f"Error on L{line_num}: Timeout waiting for vacuum target.", line_num)
                 self.is_running = False
                 return False
 
             try:
                 psig_str = self.gui_refs['vacuum_psig_var'].get().split()[0]
                 current_psi = float(psig_str)
-                self.status_callback(f"L{line_num}: Waiting for vacuum <= {target_psi:.2f}, current: {current_psi:.2f}",
+                self.status_cb(f"L{line_num}: Waiting for vacuum <= {target_psi:.2f}, current: {current_psi:.2f}",
                                      line_num)
                 if current_psi <= target_psi:
-                    self.status_callback(f"L{line_num}: Vacuum target reached ({current_psi:.2f} PSIG).", line_num)
+                    self.status_cb(f"L{line_num}: Vacuum target reached ({current_psi:.2f} PSIG).", line_num)
                     return True
             except (ValueError, IndexError, tk.TclError):
-                self.status_callback(f"L{line_num}: Waiting for vacuum... (current value invalid)", line_num)
+                self.status_cb(f"L{line_num}: Waiting for vacuum... (current value invalid)", line_num)
 
             time.sleep(0.2)
 
@@ -176,7 +222,7 @@ class ScriptRunner:
             target_temp = float(target_temp_str)
             timeout_s = float(args[1]) if len(args) > 1 else float(self.runtime_defaults.get("HEATER_TIMEOUT", 100))
         except (ValueError, IndexError, tk.TclError):
-            self.status_callback(f"Error on L{line_num}: Invalid parameters for WAIT_UNTIL_HEATER_AT_TEMP.", line_num)
+            self.status_cb(f"Error on L{line_num}: Invalid parameters for WAIT_UNTIL_HEATER_AT_TEMP.", line_num)
             self.is_running = False
             return False
 
@@ -189,139 +235,136 @@ class ScriptRunner:
         while True:
             if not self.is_running: return False
             if time.time() - start_time > timeout_s:
-                self.status_callback(f"Error on L{line_num}: Timeout waiting for heater target.", line_num)
+                self.status_cb(f"Error on L{line_num}: Timeout waiting for heater target.", line_num)
                 self.is_running = False
                 return False
 
             try:
                 temp_str = self.gui_refs['temp_c_var'].get().split()[0]
                 current_temp = float(temp_str)
-                self.status_callback(f"L{line_num}: Waiting for temp in range [{lower_bound:.1f}..{upper_bound:.1f}]C, current: {current_temp:.1f}C",
+                self.status_cb(f"L{line_num}: Waiting for temp in range [{lower_bound:.1f}..{upper_bound:.1f}]C, current: {current_temp:.1f}C",
                                      line_num)
                 if lower_bound <= current_temp <= upper_bound:
-                    self.status_callback(f"L{line_num}: Heater target reached ({current_temp:.1f} C).", line_num)
+                    self.status_cb(f"L{line_num}: Heater target reached ({current_temp:.1f} C).", line_num)
                     return True
             except (ValueError, IndexError, tk.TclError):
-                self.status_callback(f"L{line_num}: Waiting for temp... (current value invalid)", line_num)
+                self.status_cb(f"L{line_num}: Waiting for temp... (current value invalid)", line_num)
 
             time.sleep(0.2)
 
-    def _run(self):
-        for i, line in enumerate(self.script_lines):
-            # MODIFIED: Use the line map to get the correct original line number
-            line_num = self.line_map[i]
-            if not self.is_running:
-                self.status_callback("Stopped", -1)
-                break
+    def _process_line(self, line, line_num):
+        sub_commands = line.split(',')
+        commands_to_wait_for = []
 
-            line = line.strip()
-            if not line or line.startswith('#'):
-                if i == len(self.script_lines) - 1: self.status_callback("Idle", -1)
-                continue
+        for sub_cmd_str in sub_commands:
+            if not self.is_running: return False
+            sub_cmd_str = sub_cmd_str.strip()
+            if not sub_cmd_str: continue
 
-            self.status_callback(f"L{line_num}: Processing '{line}'", line_num)
+            parts = sub_cmd_str.split()
+            command_word = parts[0].upper()
+            args = parts[1:]
+            command_info = COMMANDS.get(command_word)
 
-            sub_commands = line.split(',')
-            commands_to_wait_for = []
+            if not command_info:
+                self.status_cb(f"Error on L{line_num}: Unknown command '{command_word}'.", line_num)
+                self.is_running = False
+                return False
 
-            for sub_cmd_str in sub_commands:
-                if not self.is_running: break
-                sub_cmd_str = sub_cmd_str.strip()
-                if not sub_cmd_str: continue
+            device = command_info['device']
+            
+            # --- Special Handling for Script-Aware Commands ---
+            # Update the GUI's own variables to keep them in sync with the script
+            if command_word == "SET_HEATER_SETPOINT" and len(args) > 0:
+                # CORRECTED: Uses the real command and the correct GUI variable.
+                self.gui_refs['pid_setpoint_var'].set(args[0])
+            if command_word == "SET_VACUUM_TARGET" and len(args) > 0:
+                self.gui_refs['vac_target_var'].set(args[0])
 
-                parts = sub_cmd_str.split()
-                command_word = parts[0].upper()
-                args = parts[1:]
-                command_info = COMMANDS.get(command_word)
-
-                if not command_info:
-                    self.status_callback(f"Error on L{line_num}: Unknown command '{command_word}'.", line_num)
-                    self.is_running = False
-                    break
-
-                device = command_info['device']
-                
-                # --- Special Handling for Script-Aware Commands ---
-                # Update the GUI's own variables to keep them in sync with the script
-                if command_word == "SET_HEATER_SETPOINT" and len(args) > 0:
-                    # CORRECTED: Uses the real command and the correct GUI variable.
-                    self.gui_refs['pid_setpoint_var'].set(args[0])
-                if command_word == "SET_VACUUM_TARGET" and len(args) > 0:
-                    self.gui_refs['vac_target_var'].set(args[0])
-
-                if device == "script":
-                    if command_word == "WAIT_MS":
-                        if not self._handle_wait(args, line_num, is_seconds=False): break
-                    elif command_word == "WAIT_S":
-                        if not self._handle_wait(args, line_num, is_seconds=True): break
-                    elif command_word == "WAIT_UNTIL_VACUUM":
-                        if not self._handle_wait_until_vacuum(args, line_num): break
-                    elif command_word == "WAIT_UNTIL_HEATER_AT_TEMP":
-                        if not self._handle_wait_until_heater_at_temp(args, line_num): break
-                    elif command_word.startswith("SET_DEFAULT_"):
-                        key = command_word.replace("SET_DEFAULT_", "")
-                        if len(args) == 1: self.runtime_defaults[key] = args[0]
+            if device == "script":
+                if command_word == "WAIT_MS":
+                    if not self._handle_wait(args, line_num, is_seconds=False): return False
+                elif command_word == "WAIT_S":
+                    if not self._handle_wait(args, line_num, is_seconds=True): return False
+                elif command_word == "WAIT_UNTIL_VACUUM":
+                    if not self._handle_wait_until_vacuum(args, line_num): return False
+                elif command_word == "WAIT_UNTIL_HEATER_AT_TEMP":
+                    if not self._handle_wait_until_heater_at_temp(args, line_num): return False
+                elif command_word.startswith("SET_DEFAULT_"):
+                    key = command_word.replace("SET_DEFAULT_", "")
+                    if len(args) == 1: self.runtime_defaults[key] = args[0]
+            # --- NEW: Special handling for 'both' device commands like ABORT ---
+            elif device == "both":
+                # The validator ensures this is a known command, so we can call it directly.
+                # Currently, only "ABORT" uses device "both".
+                func = self.command_funcs.get(command_word.lower())
+                if func:
+                    print(f"[DEBUG] Calling global command: '{command_word}'")
+                    func()
                 else:
-                    params_def = command_info['params']
-                    full_args = list(args)
-
-                    if len(args) < len(params_def):
-                        for j in range(len(args), len(params_def)):
-                            param_def = params_def[j]
-                            default_val = self._get_default(command_word, j)
-
-                            if default_val is not None:
-                                full_args.append(str(default_val))
-                            elif not param_def.get("optional"):
-                                self.status_callback(f"Error on L{line_num}: Missing required parameter '{param_def['name']}' for {command_word}.", line_num)
-                                self.is_running = False
-                                break
-
-                    if not self.is_running: continue
-
-                    final_command_str = f"{command_word} {' '.join(full_args)}" if full_args else command_word
-                    send_func = self.command_funcs.get(f"send_{device}")
-                    if send_func:
-                        send_func(final_command_str)
-                        # Add any command that elicits a "_DONE" response to this list.
-                        if "MOVE" in command_word or \
-                           "HOME" in command_word or \
-                           "OPEN" in command_word or \
-                           "CLOSE" in command_word or \
-                           "VACUUM_LEAK_TEST" in command_word or \
-                           "INJECT_STATOR" in command_word or \
-                           "INJECT_ROTOR" in command_word:
-                            commands_to_wait_for.append(command_word)
-                time.sleep(0.05)
-
-            if not self.is_running: break
-            if commands_to_wait_for:
-                if not self._wait_for_done_messages(commands_to_wait_for, line_num):
+                    self.status_cb(f"Error on L{line_num}: No handler for global command '{command_word}'.", line_num)
                     self.is_running = False
+                    return False
+            else:
+                params_def = command_info['params']
+                full_args = list(args)
 
-            if not self.is_running: break
+                if len(args) < len(params_def):
+                    for j in range(len(args), len(params_def)):
+                        param_def = params_def[j]
+                        default_val = self._get_default(command_word, j)
 
-        self.is_running = False
-        if self.completion_callback: self.completion_callback()
+                        if default_val is not None:
+                            full_args.append(str(default_val))
+                        elif not param_def.get("optional"):
+                            self.status_cb(f"Error on L{line_num}: Missing required parameter '{param_def['name']}' for {command_word}.", line_num)
+                            self.is_running = False
+                            return False
+
+                if not self.is_running: return False
+
+                final_command_str = f"{command_word} {' '.join(full_args)}" if full_args else command_word
+                send_func = self.command_funcs.get(f"send_{device}")
+                if send_func:
+                    print(f"[DEBUG] Sending command to {device}: '{final_command_str}'")
+                    send_func(final_command_str)
+                    # Add any command that elicits a "_DONE" response to this list.
+                    if "MOVE" in command_word or \
+                       "HOME" in command_word or \
+                       "OPEN" in command_word or \
+                       "CLOSE" in command_word or \
+                       "VACUUM_LEAK_TEST" in command_word or \
+                       "INJECT_STATOR" in command_word or \
+                       "INJECT_ROTOR" in command_word:
+                        commands_to_wait_for.append(command_word)
+            time.sleep(0.05)
+
+        if not self.is_running: return False
+        if commands_to_wait_for:
+            if not self._wait_for_done_messages(commands_to_wait_for, line_num):
+                self.is_running = False
+                return False
+
+        return True
 
     def _wait_for_done_messages(self, commands, line_num, timeout_s=600):
         start_time = time.time()
 
         wait_list = list(commands)
-        self.status_callback(f"L{line_num}: Waiting for DONE: {', '.join(wait_list)}", line_num)
+        self.status_cb(f"L{line_num}: Waiting for DONE: {', '.join(wait_list)}", line_num)
 
         while wait_list:
             if not self.is_running:
-                self.status_callback("Stopped", -1)
+                self.status_cb("Stopped", -1)
                 return False
 
             if time.time() - start_time > timeout_s:
-                self.status_callback(f"Error on L{line_num}: Timeout waiting for DONE: {', '.join(wait_list)}",
+                self.status_cb(f"Error on L{line_num}: Timeout waiting for DONE: {', '.join(wait_list)}",
                                      line_num)
                 return False
 
             try:
-                msg = self.message_queue.get(timeout=0.1)
+                msg = self.msg_q.get(timeout=0.1)
 
                 # Check for failure messages first
                 if "FAILED" in msg:
@@ -333,7 +376,7 @@ class ScriptRunner:
                             is_failure = True
 
                         if is_failure:
-                            self.status_callback(
+                            self.status_cb(
                                 f"Error on L{line_num}: Received FAILURE for {command_to_check}. Message: {msg}",
                                 line_num)
                             return False
@@ -365,11 +408,11 @@ class ScriptRunner:
 
                     if is_complete:
                         wait_list.pop(i)
-                        self.status_callback(f"L{line_num}: Received DONE for {command_to_check}", line_num)
+                        self.status_cb(f"L{line_num}: Received DONE for {command_to_check}", line_num)
                         break
 
             except queue.Empty:
                 continue
 
-        self.status_callback(f"L{line_num}: All operations complete.", line_num)
+        self.status_cb(f"L{line_num}: All operations complete.", line_num)
         return True

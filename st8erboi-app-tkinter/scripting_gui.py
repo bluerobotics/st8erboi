@@ -597,6 +597,60 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         load_specific_script(filepath)
 
     # --- Script Execution Logic ---
+    def handle_cycle_start():
+        print("[DEBUG] handle_cycle_start called")
+        nonlocal feed_hold_line
+        if not check_script_validity(): 
+            print("[DEBUG] Script validation failed.")
+            return
+
+        start_line_num = 1
+        if feed_hold_line is not None:
+            start_line_num = feed_hold_line
+            feed_hold_line = None
+        else:
+            try:
+                start_line_num = int(last_selection_highlight)
+            except (ValueError, TypeError):
+                start_line_num = 1
+
+        update_selection_highlight(start_line_num)
+        is_single_block = single_block_var.get()
+        all_lines = script_editor.get("1.0", tk.END).splitlines()
+
+        next_valid_line_num = -1
+        next_valid_line_content = ""
+        for i in range(start_line_num - 1, len(all_lines)):
+            line_content = all_lines[i].strip()
+            if line_content and not line_content.startswith('#'):
+                next_valid_line_num = i + 1
+                next_valid_line_content = all_lines[i]
+                break
+
+        if next_valid_line_num == -1:
+            status_var.set("End of script reached.")
+            on_run_finished()
+            print("[DEBUG] End of script reached before start.")
+            return
+
+        update_selection_highlight(next_valid_line_num)
+
+        if is_single_block:
+            errors = validate_single_line(next_valid_line_content, next_valid_line_num)
+            script_editor.tag_remove("error_highlight", "1.0", tk.END)
+            if errors:
+                ValidationResultsWindow(scripting_area, errors)
+                script_editor.tag_add("error_highlight", f"{next_valid_line_num}.0", f"{next_valid_line_num}.end")
+                status_var.set(f"Error on line {next_valid_line_num}.")
+                print(f"[DEBUG] Single block validation error on line {next_valid_line_num}.")
+                return
+            print(f"[DEBUG] Running single block: line {next_valid_line_num}, content: '{next_valid_line_content}'")
+            run_script_from_content(next_valid_line_content, next_valid_line_num - 1, is_step=True)
+        else:
+            content_from_line = "\n".join(all_lines[next_valid_line_num - 1:])
+            print(f"[DEBUG] Running script from line {next_valid_line_num}. Content passed to runner:\n---\n{content_from_line}\n---")
+            run_script_from_content(content_from_line, next_valid_line_num - 1, is_step=False)
+
     def set_buttons_state(state):
         cycle_start_button.config(state=state)
         is_running = state == tk.DISABLED
@@ -629,14 +683,17 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
 
     def run_script_from_content(content, line_offset=0, is_step=False):
         nonlocal script_runner
+        print(f"[DEBUG] run_script_from_content called. line_offset={line_offset}, is_step={is_step}")
         set_buttons_state(tk.DISABLED)
         completion_callback = on_step_finished if is_step else on_run_finished
-        script_runner = ScriptRunner(content, command_funcs, shared_gui_refs, status_callback_handler,
+        script_runner = ScriptRunner(content, shared_gui_refs, status_callback_handler,
                                      completion_callback, message_queue, line_offset);
         script_runner.start()
+        print("[DEBUG] ScriptRunner thread started.")
 
     def check_script_validity(show_success=False):
         script_content = script_editor.get("1.0", tk.END);
+        from script_validator import validate_script
         errors = validate_script(script_content);
         script_editor.tag_remove("error_highlight", "1.0", tk.END)
         if errors:
@@ -652,7 +709,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
 
     def handle_feed_hold():
         nonlocal feed_hold_line
-        command_funcs['abort']()
+        shared_gui_refs['command_funcs']['abort']()
 
         if script_runner and script_runner.is_running:
             feed_hold_line = last_exec_highlight
@@ -668,65 +725,19 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         nonlocal script_runner, feed_hold_line
         if script_runner and script_runner.is_running:
             script_runner.stop()
-        command_funcs['abort']()
+        shared_gui_refs['command_funcs']['abort']()
 
         # Explicitly clear any lingering execution highlight immediately.
         script_editor.tag_remove("exec_highlight", "1.0", tk.END)
 
         # Send CLEAR_ERRORS to both devices. Gantry will ignore it for now.
-        command_funcs['send_fillhead']("CLEAR_ERRORS")
-        command_funcs['send_gantry']("CLEAR_ERRORS")
+        shared_gui_refs['command_funcs']['send_fillhead']("CLEAR_ERRORS")
+        shared_gui_refs['command_funcs']['send_gantry']("CLEAR_ERRORS")
 
         feed_hold_line = None
         on_run_finished()
         update_selection_highlight(1)
         status_var.set("Script reset. Ready to start from line 1.")
-
-    def handle_cycle_start():
-        nonlocal feed_hold_line
-        start_line_num = 1
-        if feed_hold_line is not None:
-            start_line_num = feed_hold_line
-            feed_hold_line = None
-        else:
-            try:
-                start_line_num = int(last_selection_highlight)
-            except (ValueError, TypeError):
-                start_line_num = 1
-
-        update_selection_highlight(start_line_num)
-        is_single_block = single_block_var.get()
-        all_lines = script_editor.get("1.0", tk.END).splitlines()
-
-        next_valid_line_num = -1
-        next_valid_line_content = ""
-        for i in range(start_line_num - 1, len(all_lines)):
-            line_content = all_lines[i].strip()
-            if line_content and not line_content.startswith('#'):
-                next_valid_line_num = i + 1
-                next_valid_line_content = all_lines[i]
-                break
-
-        if next_valid_line_num == -1:
-            status_var.set("End of script reached.")
-            on_run_finished()
-            return
-
-        update_selection_highlight(next_valid_line_num)
-
-        if is_single_block:
-            errors = validate_single_line(next_valid_line_content, next_valid_line_num)
-            script_editor.tag_remove("error_highlight", "1.0", tk.END)
-            if errors:
-                ValidationResultsWindow(scripting_area, errors)
-                script_editor.tag_add("error_highlight", f"{next_valid_line_num}.0", f"{next_valid_line_num}.end")
-                status_var.set(f"Error on line {next_valid_line_num}.")
-                return
-            run_script_from_content(next_valid_line_content, next_valid_line_num - 1, is_step=True)
-        else:
-            if not check_script_validity(): return
-            content_from_line = "\n".join(all_lines[next_valid_line_num - 1:])
-            run_script_from_content(content_from_line, next_valid_line_num - 1, is_step=False)
 
     def update_selection_highlight(line_num):
         nonlocal last_selection_highlight
