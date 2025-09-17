@@ -90,7 +90,7 @@ class CollapsiblePanel(ttk.Frame):
 class MainApplication:
     def __init__(self, root):
         self.root = root
-        self.root.title("st8erboi GUI")
+        self.root.title("st8erboi controller")
         self.root.configure(bg=theme.BG_COLOR)
 
         # Configure ttk styles to match the theme
@@ -492,7 +492,7 @@ def main():
                 root.iconbitmap(ico_path)
                 
                 # Force Windows to associate the icon with the app
-                myappid = u'st8erboi.scripting.gui.1' 
+                myappid = u'tekbic.st8erboi.st8erboi-controller.1.0' 
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             else:
                 print("NOTE: To set the taskbar icon on Windows, 'icon.ico' must exist in the same folder as the script.")
