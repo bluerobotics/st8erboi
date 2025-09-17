@@ -10,6 +10,8 @@ import json
 import os
 import theme  # Import the new theme file
 import tkinter.font as tkfont
+import platform
+import ctypes
 
 # Import GUI components
 from top_menu import create_top_menu
@@ -470,13 +472,33 @@ def main():
     """
     root = tk.Tk()
     
-    # --- NEW: Set Application Icon ---
+    # --- Set Application Icon ---
     try:
-        # This works for PNG files and is more cross-platform
-        img = tk.PhotoImage(file='logo.png')
-        root.tk.call('wm', 'iconphoto', root._w, img)
-    except tk.TclError:
-        print("Could not find logo.png in the root folder. Skipping icon set.")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Set the top-left window icon (uses .png)
+        png_path = os.path.join(script_dir, 'icon.png')
+        if os.path.exists(png_path):
+            img = tk.PhotoImage(file=png_path)
+            root.tk.call('wm', 'iconphoto', root._w, img)
+        else:
+             print(f"Could not find icon.png at '{png_path}'.")
+
+        # Set the taskbar icon (requires .ico on Windows)
+        if platform.system() == "Windows":
+            ico_path = os.path.join(script_dir, 'icon.ico')
+            if os.path.exists(ico_path):
+                # This is the most reliable way to set the taskbar icon
+                root.iconbitmap(ico_path)
+                
+                # Force Windows to associate the icon with the app
+                myappid = u'st8erboi.scripting.gui.1' 
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+            else:
+                print("NOTE: To set the taskbar icon on Windows, 'icon.ico' must exist in the same folder as the script.")
+
+    except Exception as e:
+        print(f"An error occurred while setting the icon: {e}")
         
     app = MainApplication(root)
     app.run()
