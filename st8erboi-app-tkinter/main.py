@@ -9,6 +9,7 @@ from terminal import create_terminal_panel
 import json
 import os
 import theme  # Import the new theme file
+import tkinter.font as tkfont
 
 # Import GUI components
 from top_menu import create_top_menu
@@ -416,7 +417,8 @@ class MainApplication:
 
         # Create Top Menu (and pass it the file commands from the scripting GUI)
         file_commands = self.scripting_gui_refs['file_commands']
-        self.menubar, self.recent_files_menu = create_top_menu(self.root, file_commands, self.autosave_var)
+        edit_commands = self.scripting_gui_refs['edit_commands']
+        self.menubar, self.recent_files_menu = create_top_menu(self.root, file_commands, edit_commands, self.autosave_var)
 
         # Pass the recent files menu reference to the scripting gui
         self.scripting_gui_refs['update_recent_menu_callback'](self.recent_files_menu)
@@ -467,6 +469,15 @@ def main():
     and starts the communication threads.
     """
     root = tk.Tk()
+    
+    # --- NEW: Set Application Icon ---
+    try:
+        # This works for PNG files and is more cross-platform
+        img = tk.PhotoImage(file='logo.png')
+        root.tk.call('wm', 'iconphoto', root._w, img)
+    except tk.TclError:
+        print("Could not find logo.png in the root folder. Skipping icon set.")
+        
     app = MainApplication(root)
     app.run()
 

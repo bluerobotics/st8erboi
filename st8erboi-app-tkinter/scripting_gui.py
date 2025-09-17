@@ -5,10 +5,123 @@ import os
 import json
 from functools import partial
 import re
+import tkinter.font as tkfont
 
 from script_validator import COMMANDS, validate_single_line
 from script_processor import ScriptRunner
 import theme
+
+# --- Find/Replace Frame ---
+class FindReplaceFrame(ttk.Frame):
+    def __init__(self, parent, script_editor_text, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.text_widget = script_editor_text
+        
+        self.configure(style='Card.TFrame')
+
+        # --- Widgets ---
+        find_label = ttk.Label(self, text="Find:")
+        self.find_entry = ttk.Entry(self, width=30)
+        
+        replace_label = ttk.Label(self, text="Replace:")
+        self.replace_entry = ttk.Entry(self, width=30)
+        
+        self.find_next_button = ttk.Button(self, text="Find Next", command=self.find_next)
+        self.replace_button = ttk.Button(self, text="Replace", command=self.replace)
+        self.replace_all_button = ttk.Button(self, text="Replace All", command=self.replace_all)
+        
+        close_button = ttk.Button(self, text="✕", command=self.hide, style="Red.TButton", width=2)
+
+        # --- Layout ---
+        find_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.find_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.find_next_button.grid(row=0, column=2, padx=5, pady=5)
+        self.replace_button.grid(row=0, column=3, padx=5, pady=5)
+        
+        replace_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.replace_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        self.replace_all_button.grid(row=1, column=2, padx=(5,5), pady=5, columnspan=2, sticky="ew")
+
+        close_button.grid(row=0, column=4, padx=5, pady=5, sticky='e')
+
+        self.grid_columnconfigure(1, weight=1)
+        
+        # Bind enter key for quick searching
+        self.find_entry.bind("<Return>", self.find_next)
+        self.replace_entry.bind("<Return>", self.replace)
+
+    def show(self):
+        self.pack(fill='x', pady=(5,0), padx=10)
+        self.find_entry.focus_set()
+        
+    def hide(self):
+        self.pack_forget()
+
+    def find_next(self, event=None):
+        find_text = self.find_entry.get()
+        if not find_text:
+            return
+
+        start_pos = self.text_widget.index(tk.INSERT)
+        found_pos = self.text_widget.search(find_text, start_pos, stopindex=tk.END)
+        
+        if found_pos:
+            end_pos = f"{found_pos}+{len(find_text)}c"
+            self.text_widget.tag_remove(tk.SEL, "1.0", tk.END)
+            self.text_widget.tag_add(tk.SEL, found_pos, end_pos)
+            self.text_widget.mark_set(tk.INSERT, end_pos)
+            self.text_widget.see(found_pos)
+        else:
+            # Wrap search
+            found_pos = self.text_widget.search(find_text, "1.0", stopindex=tk.END)
+            if found_pos:
+                end_pos = f"{found_pos}+{len(find_text)}c"
+                self.text_widget.tag_remove(tk.SEL, "1.0", tk.END)
+                self.text_widget.tag_add(tk.SEL, found_pos, end_pos)
+                self.text_widget.mark_set(tk.INSERT, end_pos)
+                self.text_widget.see(found_pos)
+            else:
+                 messagebox.showinfo("Not Found", f"Cannot find '{find_text}'", parent=self)
+
+    def replace(self, event=None):
+        find_text = self.find_entry.get()
+        replace_text = self.replace_entry.get()
+
+        if not self.text_widget.tag_ranges(tk.SEL):
+            self.find_next()
+            return
+        
+        selected_text = self.text_widget.get(tk.SEL_FIRST, tk.SEL_LAST)
+        if selected_text == find_text:
+            self.text_widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
+            self.text_widget.insert(tk.SEL_FIRST, replace_text)
+        
+        self.find_next()
+
+    def replace_all(self):
+        find_text = self.find_entry.get()
+        replace_text = self.replace_entry.get()
+        print(f"[DEBUG] Replace All: find='{find_text}', replace='{replace_text}'")
+        if not find_text:
+            return
+
+        count = 0
+        start_pos = "1.0"
+        while True:
+            found_pos = self.text_widget.search(find_text, start_pos, stopindex=tk.END)
+            print(f"[DEBUG] Loop {count}: start_pos='{start_pos}', found_pos='{found_pos}'")
+            if not found_pos:
+                break
+            
+            end_pos = f"{found_pos}+{len(find_text)}c"
+            self.text_widget.delete(found_pos, end_pos)
+            self.text_widget.insert(found_pos, replace_text)
+            
+            # Revert to the more correct logic for advancing the cursor
+            start_pos = f"{found_pos}+{len(replace_text)}c"
+            count += 1
+        
+        messagebox.showinfo("Replace All", f"Replaced {count} occurrence(s).", parent=self)
 
 # --- Helper Class for Placeholder Text ---
 class EntryWithPlaceholder(ttk.Entry):
@@ -85,7 +198,7 @@ class CustomText(tk.Text):
             fg=theme.FG_COLOR,
             insertbackground=theme.PRIMARY_ACCENT, # Cursor color
             borderwidth=0,
-            highlightthickness=0, # Remove the border
+            highlightthickness=0, # This removes the focus border
             font=theme.FONT_NORMAL,
             selectbackground=theme.SELECTION_BG,
             selectforeground=theme.SELECTION_FG,
@@ -94,6 +207,11 @@ class CustomText(tk.Text):
             wrap=tk.WORD,
             spacing3=3 # Add 3 pixels of spacing after each line
         )
+        
+        # --- Configure Tabs for 4-space indentation ---
+        font = tkfont.Font(font=self.cget("font"))
+        tab_width = font.measure('    ')
+        self.config(tabs=(tab_width,))
 
         # Create a proxy for the underlying widget
         self._orig = self._w + "_orig"
@@ -142,13 +260,16 @@ class TextLineNumbers(tk.Canvas):
 
 # --- Syntax Highlighter ---
 class SyntaxHighlighter:
-    def __init__(self, text_widget, keywords):
+    def __init__(self, text_widget, device_keywords, script_keywords):
         self.text = text_widget
-        self.keywords = keywords
+        self.device_keywords = device_keywords
+        self.script_keywords = script_keywords
         self.tags = {
             'command': {'foreground': theme.COMMAND_COLOR, 'font': theme.FONT_BOLD},
+            'script_command': {'foreground': theme.SCRIPT_COMMAND_COLOR, 'font': theme.FONT_BOLD},
             'parameter': {'foreground': theme.PARAMETER_COLOR},
             'comment': {'foreground': theme.COMMENT_COLOR},
+            'colon': {'foreground': theme.SELECTION_FG, 'font': theme.FONT_BOLD} # SELECTION_FG is white
         }
         self._configure_tags()
         # Use a flag to prevent re-highlighting while highlighting is in progress
@@ -172,11 +293,24 @@ class SyntaxHighlighter:
         for tag in self.tags.keys():
             self.text.tag_remove(tag, "1.0", "end")
 
-        # Highlight keywords
-        keyword_pattern = r'\b(' + '|'.join(self.keywords) + r')\b'
-        for match in re.finditer(keyword_pattern, content, re.IGNORECASE):
+        # Highlight device commands
+        if self.device_keywords:
+            keyword_pattern = r'\b(' + '|'.join(self.device_keywords) + r')\b'
+            for match in re.finditer(keyword_pattern, content, re.IGNORECASE):
+                start, end = match.span()
+                self.text.tag_add("command", f"1.0+{start}c", f"1.0+{end}c")
+
+        # Highlight script commands
+        if self.script_keywords:
+            keyword_pattern = r'\b(' + '|'.join(self.script_keywords) + r')\b'
+            for match in re.finditer(keyword_pattern, content, re.IGNORECASE):
+                start, end = match.span()
+                self.text.tag_add("script_command", f"1.0+{start}c", f"1.0+{end}c")
+
+        # Highlight colons
+        for match in re.finditer(r':', content):
             start, end = match.span()
-            self.text.tag_add("command", f"1.0+{start}c", f"1.0+{end}c")
+            self.text.tag_add("colon", f"1.0+{start}c", f"1.0+{end}c")
 
         # Highlight numbers (integers and floats)
         for match in re.finditer(r'\b-?\d+(\.\d+)?\b', content):
@@ -192,11 +326,11 @@ class SyntaxHighlighter:
 # --- Themed Script Editor (Rebuilt with Line Numbers) ---
 
 class ScriptEditor(tk.Frame):
-    def __init__(self, parent, keywords, **kwargs):
+    def __init__(self, parent, device_keywords, script_keywords, **kwargs):
         super().__init__(parent, **kwargs)
         self.config(bg=theme.WIDGET_BG)
 
-        # Create components
+        # --- Layout ---
         self.text = CustomText(self)
         self.linenumbers = TextLineNumbers(self, width=40, bg=theme.WIDGET_BG, highlightthickness=0, borderwidth=0)
         self.linenumbers.attach(self.text)
@@ -204,24 +338,26 @@ class ScriptEditor(tk.Frame):
         self.vsb = ttk.Scrollbar(self, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=self.vsb.set)
         
-        # Pack components
         self.linenumbers.pack(side="left", fill="y")
         self.vsb.pack(side="right", fill="y")
         self.text.pack(side="right", fill="both", expand=True)
-
-        # Bind events
+        
+        # --- Event Bindings ---
         self.text.bind("<<Change>>", self._on_change)
         self.text.bind("<Configure>", self._on_change)
         self.text.bind("<KeyRelease>", self._highlight_current_line)
         self.text.bind("<Button-1>", self._on_change)
+        self.text.bind("<Tab>", self._on_tab)
 
         self.text.tag_configure("current_line", background=theme.SECONDARY_ACCENT)
         self._highlight_current_line()
         
-        # Attach syntax highlighter
-        # FIX: Pass self.text, not self, to the highlighter.
-        self.highlighter = SyntaxHighlighter(self.text, keywords)
+        self.highlighter = SyntaxHighlighter(self.text, device_keywords, script_keywords)
     
+    def _on_tab(self, event):
+        self.text.insert(tk.INSERT, "    ")
+        return 'break' # Prevents the default tab behavior
+
     def _highlight_current_line(self, event=None):
         self.text.tag_remove("current_line", "1.0", "end")
         self.text.tag_add("current_line", "insert linestart", "insert lineend+1c")
@@ -458,8 +594,21 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     control_frame.pack(fill=tk.X, pady=(0, 0))
     editor_frame = ttk.LabelFrame(left_pane, style='TFrame')
     editor_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-    script_editor = ScriptEditor(editor_frame, keywords=list(COMMANDS.keys())) # Use the rebuilt composite widget
+    
+    # --- Separate keywords for syntax highlighting ---
+    device_keywords = [cmd for cmd, details in COMMANDS.items() if details['device'] not in ['script', 'both']]
+    script_keywords = [cmd for cmd, details in COMMANDS.items() if details['device'] in ['script', 'both']]
+    
+    script_editor = ScriptEditor(editor_frame, device_keywords=device_keywords, script_keywords=script_keywords)
     script_editor.pack(fill="both", expand=True)
+
+    # --- NEW: Find/Replace Frame ---
+    find_replace_frame = FindReplaceFrame(left_pane, script_editor.text)
+    # The frame is created but not packed, so it starts hidden.
+
+    # Add binding to show it
+    script_editor.text.bind("<Control-f>", lambda e: find_replace_frame.show())
+
 
     # Configure tags for execution and error highlighting
     script_editor.tag_config("exec_highlight", background=theme.WARNING_YELLOW, foreground="black")
@@ -748,9 +897,13 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
             last_selection_highlight = line_num
 
     def on_line_click(event):
+        nonlocal feed_hold_line
         index = script_editor.index(f"@{event.x},{event.y}")
         line_num = int(index.split('.')[0])
         update_selection_highlight(line_num)
+        # When user clicks a line, it implies they want to start from there,
+        # so clear any pending feed hold resume state.
+        feed_hold_line = None
 
     script_editor.bind("<Button-1>", on_line_click)
     update_selection_highlight(1)
@@ -798,8 +951,14 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         "save_as": save_script_as,
         "validate": lambda: check_script_validity(show_success=True)
     }
+    
+    edit_commands = {
+        "find_replace": find_replace_frame.show
+    }
+    
     return {
         "file_commands": file_commands,
+        "edit_commands": edit_commands,
         "update_recent_menu_callback": set_recent_menu_reference,
         "check_unsaved": check_unsaved_changes,
         "load_specific_script": load_specific_script,

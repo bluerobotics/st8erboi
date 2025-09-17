@@ -5,6 +5,9 @@ Contains the command reference with validation rules (min/max) and default value
 Also contains the script validation logic.
 """
 
+import re
+
+
 COMMANDS = {
     # --- Fillhead Commands (Formerly Injector) ---
     "INJECT_STATOR": {
@@ -153,16 +156,11 @@ COMMANDS = {
     "REPEAT": {
         "device": "script",
         "params": [{"name": "Count", "type": int, "min": 1, "max": 10000}],
-        "help": "Starts a block of commands to be repeated 'Count' times. Must be on its own line and closed with END_REPEAT."
-    },
-    "END_REPEAT": {
-        "device": "script",
-        "params": [],
-        "help": "Marks the end of a REPEAT block. Must be on its own line."
+        "help": "Repeats the following indented block of commands 'Count' times."
     },
     "WAIT_MS": {"device": "script", "params": [{"name": "Milliseconds", "type": float, "min": 0, "max": 600000}],
                 "help": "Pauses script execution for a given time in milliseconds."},
-    "WAIT_S": {"device": "script", "params": [{"name": "Seconds", "type": float, "min": 0, "max": 600}],
+    "WAIT": {"device": "script", "params": [{"name": "Seconds", "type": float, "min": 0, "max": 600}],
                "help": "Pauses script execution for a given time in seconds."},
     "WAIT_UNTIL_VACUUM": {"device": "script",
                           "params": [{"name": "Target-PSI", "type": float, "min": -14.5, "max": 0, "optional": True},
@@ -210,7 +208,15 @@ def _validate_line(line_content, line_num):
 
         parts = sub_cmd_str.split()
         command_word = parts[0].upper()
-        args = parts[1:]
+
+        # --- NEW: Extract only numeric parts for arguments ---
+        args = []
+        for part in parts[1:]:
+            # Match a floating point or integer number at the start of the string.
+            # This allows for comments/units after the number (e.g., "5 ml", "100_ms")
+            match = re.match(r'^-?\d+(\.\d+)?', part)
+            if match:
+                args.append(match.group(0))
 
         if command_word not in COMMANDS:
             errors.append({"line": line_num, "error": f"In '{sub_cmd_str}': Unknown command '{command_word}'."})
@@ -220,14 +226,15 @@ def _validate_line(line_content, line_num):
         params_def = command_info['params']
         num_required_params = sum(1 for p in params_def if not p.get("optional"))
 
-        if len(args) < num_required_params or len(args) > len(params_def):
-            expected = f"{num_required_params}" if num_required_params == len(
-                params_def) else f"{num_required_params}-{len(params_def)}"
+        if len(args) < num_required_params:
             errors.append({"line": line_num,
-                           "error": f"In '{sub_cmd_str}': Incorrect parameter count for '{command_word}'. Expected {expected}, but got {len(args)}."})
+                           "error": f"In '{sub_cmd_str}': Not enough numeric parameters for '{command_word}'. Expected at least {num_required_params}, but found {len(args)}."})
             continue
 
-        for j, arg in enumerate(args):
+        # Allow more "arguments" than defined, since they are comments, but only validate the ones that map to params.
+        args_to_validate = args[:len(params_def)]
+
+        for j, arg in enumerate(args_to_validate):
             param_def = params_def[j]
             param_name = param_def['name']
             try:
@@ -252,29 +259,48 @@ def validate_script(script_content):
     """Validates an entire script against the command reference."""
     errors = []
     lines = script_content.splitlines()
-    repeat_stack = []
+    indent_stack = [0]  # Stack of indentation levels (in spaces)
 
     for i, line in enumerate(lines):
         line_num = i + 1
         line_content = line.strip()
         if not line_content or line_content.startswith('#'):
             continue
+
+        leading_spaces = len(line) - len(line.lstrip(' '))
         
-        # Check loop syntax based on the first command of the line
+        # Check indentation rules
+        if leading_spaces > indent_stack[-1]:
+            # Indent should only happen after a REPEAT command
+            prev_line_idx = i - 1
+            prev_line_content = ""
+            # Find the previous non-empty line
+            while prev_line_idx >= 0:
+                prev_line_content = lines[prev_line_idx].strip()
+                if prev_line_content:
+                    break
+                prev_line_idx -= 1
+
+            if not prev_line_content.upper().startswith("REPEAT"):
+                errors.append({"line": line_num, "error": "Unexpected indent."})
+            indent_stack.append(leading_spaces)
+        elif leading_spaces < indent_stack[-1]:
+            # Dedent must match a previous indentation level
+            while indent_stack and leading_spaces < indent_stack[-1]:
+                indent_stack.pop()
+            if not indent_stack or leading_spaces != indent_stack[-1]:
+                errors.append({"line": line_num, "error": "Dedent does not match any outer indentation level."})
+
+        # Validate the command itself
         first_command_word = line_content.split(',')[0].strip().split()[0].upper()
-        if first_command_word == "REPEAT":
-            repeat_stack.append(line_num)
-        elif first_command_word == "END_REPEAT":
-            if not repeat_stack:
-                errors.append({"line": line_num, "error": "END_REPEAT found without a matching REPEAT."})
-            else:
-                repeat_stack.pop()
+        if first_command_word == "END_REPEAT":
+            errors.append({"line": line_num, "error": "END_REPEAT is no longer used. Use indentation to define blocks."})
+            continue
 
         errors.extend(_validate_line(line, line_num))
 
-    if repeat_stack:
-        for ln in repeat_stack:
-            errors.append({"line": ln, "error": "This REPEAT does not have a matching END_REPEAT."})
+    if len(indent_stack) > 1:
+        errors.append({"line": len(lines), "error": "Unexpected end of file: missing dedent for a REPEAT block."})
 
     return errors
 

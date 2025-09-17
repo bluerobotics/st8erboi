@@ -26,6 +26,7 @@ WARNING_YELLOW = "#E5C07B"    # Yellow/Orange for "Single Block"
 COMMAND_COLOR = "#61AFEF"     # Blue for commands
 PARAMETER_COLOR = "#E5C07B"   # Orange for parameters
 COMMENT_COLOR = "#7F848E"     # A lighter grey for comments
+SCRIPT_COMMAND_COLOR = "#C678DD" # Purple for script-control commands (e.g., REPEAT, WAIT)
 
 # --- Selection Colors ---
 SELECTION_BG = "#4B6E9C"      # A subtle blue for selection, with good contrast.

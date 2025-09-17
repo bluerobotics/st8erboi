@@ -2,6 +2,7 @@ import time
 import threading
 import queue
 import tkinter as tk  # For TclError and StringVar
+import re
 from script_validator import COMMANDS
 
 
@@ -32,51 +33,71 @@ class ScriptRunner(threading.Thread):
             self.line_map = {0: 1 + line_offset}
 
     def _expand_loops(self, content, start_offset):
-        original_lines = content.splitlines()
-        
-        # Create a list of tuples: (line_content, original_line_number)
-        lines_with_nums = [(line, i + 1 + start_offset) for i, line in enumerate(original_lines)]
-        
-        def process_block(block_with_nums):
-            expanded_block = []
+        lines_with_nums = [(line, i + 1 + start_offset) for i, line in enumerate(content.splitlines())]
+
+        def _expand_recursive(block_with_nums):
+            expanded_list = []
             i = 0
             while i < len(block_with_nums):
                 line, line_num = block_with_nums[i]
-                parts = line.strip().split()
-                command = parts[0].upper() if parts else ""
+                
+                if line.strip().upper().startswith("REPEAT"):
+                    parts = line.strip().split()
+                    
+                    # Allow for an optional colon and comments, e.g., "REPEAT 100:"
+                    count = 0
+                    # Find the first numeric argument for the count
+                    for part in parts[1:]:
+                        match = re.match(r'^-?\d+(\.\d+)?', part)
+                        if match:
+                            count = int(float(match.group(0))) # float then int to handle "100.0"
+                            break
+                    
+                    line_indent = len(line) - len(line.lstrip(' '))
 
-                if command == "REPEAT":
-                    count = int(parts[1])
-                    nesting_level = 1
-                    end_index = -1
-                    
-                    # Find the matching END_REPEAT
+                    # Find the first non-empty, indented line to start the block
+                    body_start_index = -1
+                    block_indent = -1
                     for j in range(i + 1, len(block_with_nums)):
-                        sub_line, _ = block_with_nums[j]
-                        sub_parts = sub_line.strip().split()
-                        sub_command = sub_parts[0].upper() if sub_parts else ""
-                        if sub_command == "REPEAT":
-                            nesting_level += 1
-                        elif sub_command == "END_REPEAT":
-                            nesting_level -= 1
-                            if nesting_level == 0:
-                                end_index = j
+                        if block_with_nums[j][0].strip():
+                            body_indent = len(block_with_nums[j][0]) - len(block_with_nums[j][0].lstrip(' '))
+                            if body_indent > line_indent:
+                                body_start_index = j
+                                block_indent = body_indent
+                            break # Found first non-empty line, stop searching
+
+                    # If no indented block was found, just skip the REPEAT line
+                    if body_start_index == -1:
+                        i += 1
+                        continue
+
+                    # Find the end of the block
+                    body_end_index = body_start_index
+                    for j in range(body_start_index, len(block_with_nums)):
+                        line_content = block_with_nums[j][0]
+                        # A non-empty line with less or equal indent ends the block
+                        if line_content.strip():
+                            current_line_indent = len(line_content) - len(line_content.lstrip(' '))
+                            if current_line_indent < block_indent:
+                                body_end_index = j - 1 # The block ended on the previous line
                                 break
+                        # If we haven't broken, this line is part of the block
+                        body_end_index = j
                     
-                    loop_body_with_nums = block_with_nums[i + 1 : end_index]
-                    processed_body = process_block(loop_body_with_nums)
+                    loop_body_with_nums = block_with_nums[body_start_index : body_end_index + 1]
+                    
+                    expanded_body = _expand_recursive(loop_body_with_nums)
                     
                     for _ in range(count):
-                        expanded_block.extend(processed_body)
+                        expanded_list.extend(expanded_body)
                     
-                    i = end_index # Move the pointer past the processed block
-                
+                    i = body_end_index + 1
                 else:
-                    expanded_block.append((line, line_num))
-                i += 1
-            return expanded_block
-
-        processed_lines_with_nums = process_block(lines_with_nums)
+                    expanded_list.append((line, line_num))
+                    i += 1
+            return expanded_list
+            
+        processed_lines_with_nums = _expand_recursive(lines_with_nums)
         
         final_lines = [line for line, num in processed_lines_with_nums]
         final_map = {i: num for i, (line, num) in enumerate(processed_lines_with_nums)}
@@ -85,7 +106,6 @@ class ScriptRunner(threading.Thread):
 
     def stop(self):
         """Signals the script execution thread to stop."""
-        print("[DEBUG] ScriptRunner.stop() called.")
         self._stop_event.set()
         self.is_running = False
 
@@ -263,7 +283,14 @@ class ScriptRunner(threading.Thread):
 
             parts = sub_cmd_str.split()
             command_word = parts[0].upper()
-            args = parts[1:]
+            
+            # --- NEW: Extract only numeric parts for arguments ---
+            args = []
+            for part in parts[1:]:
+                match = re.match(r'^-?\d+(\.\d+)?', part)
+                if match:
+                    args.append(match.group(0))
+
             command_info = COMMANDS.get(command_word)
 
             if not command_info:
@@ -284,7 +311,7 @@ class ScriptRunner(threading.Thread):
             if device == "script":
                 if command_word == "WAIT_MS":
                     if not self._handle_wait(args, line_num, is_seconds=False): return False
-                elif command_word == "WAIT_S":
+                elif command_word == "WAIT":
                     if not self._handle_wait(args, line_num, is_seconds=True): return False
                 elif command_word == "WAIT_UNTIL_VACUUM":
                     if not self._handle_wait_until_vacuum(args, line_num): return False

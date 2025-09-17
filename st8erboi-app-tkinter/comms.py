@@ -257,7 +257,8 @@ def recv_loop(gui_refs):
                 parse_gantry_telemetry(msg, gui_refs)
             elif msg.startswith(("INFO:", "DONE:", "ERROR:", "DISCOVERY:", "FILLHEAD_DONE:", "FH_DONE:",
                                  "FILLHEAD_INFO:", "FH_INFO:", "FILLHEAD_ERROR:", "FH_ERROR:",
-                                 "GANTRY_DONE:", "GANTRY_INFO:", "GANTRY_ERROR:")):
+                                 "GANTRY_DONE:", "GANTRY_INFO:", "GANTRY_ERROR:",
+                                 "FILLHEAD_START:", "GANTRY_START:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", terminal_cb)
                 for key, device in devices.items():
                     if device["ip"] == source_ip:

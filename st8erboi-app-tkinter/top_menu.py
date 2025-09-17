@@ -5,7 +5,7 @@ from tkinter import Menu
 import theme
 
 
-def create_top_menu(parent, file_commands, autosave_var):
+def create_top_menu(parent, file_commands, edit_commands, autosave_var):
     """
     Creates the main application menu bar.
     """
@@ -43,6 +43,15 @@ def create_top_menu(parent, file_commands, autosave_var):
     file_menu.add_command(label="Exit", command=parent.quit)
     
     menubar.add_cascade(label="File", menu=file_menu)
+
+    # --- NEW: Edit Menu ---
+    edit_menu = Menu(menubar, tearoff=0, 
+                     bg=theme.WIDGET_BG, 
+                     fg=theme.FG_COLOR,
+                     activebackground=theme.PRIMARY_ACCENT,
+                     activeforeground=theme.FG_COLOR)
+    edit_menu.add_command(label="Find/Replace", command=edit_commands['find_replace'], accelerator="Ctrl+F")
+    menubar.add_cascade(label="Edit", menu=edit_menu)
 
     parent.config(menu=menubar)
 
