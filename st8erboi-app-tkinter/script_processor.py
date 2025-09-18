@@ -125,6 +125,10 @@ class ScriptRunner(threading.Thread):
         if cleared_count > 0:
             print(f"[DEBUG] Cleared {cleared_count} stale messages from queue.")
 
+        # Clear the injection target display at the beginning of the script
+        if self.gui_refs:
+            self.gui_refs['injection_target_ml_var'].set('---')
+
         for i, line in enumerate(self.script_lines):
             if self._stop_event.is_set():
                 self.status_cb("Script stopped by user.", -1)
@@ -158,6 +162,10 @@ class ScriptRunner(threading.Thread):
         if self.completion_cb:
             print("[DEBUG] Calling completion_cb.")
             self.completion_cb()
+
+        # Clear the injection target display at the end of the script
+        if self.gui_refs:
+            self.gui_refs['injection_target_ml_var'].set('---')
 
     def _get_default(self, command_name, param_index):
         param_def = COMMANDS[command_name]['params'][param_index]

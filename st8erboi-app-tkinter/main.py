@@ -191,6 +191,9 @@ class MainApplication:
         self.style.configure('Subtle.TLabel', background=theme.CARD_BG, foreground=theme.COMMENT_COLOR, font=theme.FONT_NORMAL)
         self.style.configure('CardBorder.TFrame', background=theme.SECONDARY_ACCENT)
 
+        # Custom Progress Bar (for torque meters)
+        self.style.configure('Card.Vertical.TProgressbar', background=theme.PRIMARY_ACCENT, troughcolor=theme.CARD_BG)
+
         # Treeview (used in command reference)
         self.style.configure("Treeview",
             background=theme.WIDGET_BG,
@@ -256,6 +259,9 @@ class MainApplication:
             'vacuum_state_var': tk.StringVar(value='---'),
             'inject_cumulative_ml_var': tk.StringVar(value='---'),
             'inject_active_ml_var': tk.StringVar(value='---'),
+            'total_dispensed_var': tk.StringVar(value='--- ml'),
+            'cycle_dispensed_var': tk.StringVar(value='--- / --- ml'),
+            'injection_target_ml_var': tk.StringVar(value='---'),
 
             # --- Fillhead Component States ---
             'fillhead_injector_state_var': tk.StringVar(value='---'),
@@ -347,7 +353,15 @@ class MainApplication:
         def update_heater_display(*args):
             try:
                 temp_val = shared_gui_refs['temp_c_var'].get().split()[0]
-                setpoint_val = shared_gui_refs['pid_setpoint_var'].get()
+                
+                heater_state = shared_gui_refs['fillhead_heater_state_var'].get().upper()
+                is_on = "ON" in heater_state or "ACTIVE" in heater_state
+
+                if is_on:
+                    setpoint_val = shared_gui_refs['pid_setpoint_var'].get()
+                else:
+                    setpoint_val = "---"
+
                 shared_gui_refs['heater_display_var'].set(f"{temp_val} / {setpoint_val} °C")
             except (IndexError, ValueError, tk.TclError):
                 # Handle cases where vars are not yet valid floats or are empty
@@ -355,6 +369,30 @@ class MainApplication:
 
         shared_gui_refs['temp_c_var'].trace_add("write", update_heater_display)
         shared_gui_refs['pid_setpoint_var'].trace_add("write", update_heater_display)
+        shared_gui_refs['fillhead_heater_state_var'].trace_add("write", update_heater_display)
+
+        def update_total_dispensed(*args):
+            try:
+                total_val = shared_gui_refs['inject_cumulative_ml_var'].get().split()[0]
+                shared_gui_refs['total_dispensed_var'].set(f"{total_val} ml")
+            except (IndexError, ValueError, tk.TclError):
+                shared_gui_refs['total_dispensed_var'].set("--- ml")
+
+        shared_gui_refs['inject_cumulative_ml_var'].trace_add("write", update_total_dispensed)
+
+        def update_cycle_dispensed(*args):
+            try:
+                active_val = shared_gui_refs['inject_active_ml_var'].get().split()[0]
+                target_val = shared_gui_refs['injection_target_ml_var'].get()
+                if target_val == '---':
+                    shared_gui_refs['cycle_dispensed_var'].set(f"{active_val} / --- ml")
+                else:
+                    shared_gui_refs['cycle_dispensed_var'].set(f"{active_val} / {float(target_val):.2f} ml")
+            except (IndexError, ValueError, tk.TclError):
+                shared_gui_refs['cycle_dispensed_var'].set("--- / --- ml")
+
+        shared_gui_refs['inject_active_ml_var'].trace_add("write", update_cycle_dispensed)
+        shared_gui_refs['injection_target_ml_var'].trace_add("write", update_cycle_dispensed)
 
         return shared_gui_refs
 
