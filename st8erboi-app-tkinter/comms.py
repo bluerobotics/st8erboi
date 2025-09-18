@@ -193,6 +193,10 @@ def parse_fillhead_telemetry(msg, gui_refs):
         if 'temp_c_var' in gui_refs:
             gui_refs['temp_c_var'].set(f'{safe_float(parts.get("h_pv")):.1f} °C')
 
+        if 'pid_setpoint_var' in gui_refs:
+            # Update the GUI's setpoint from the device's telemetry
+            gui_refs['pid_setpoint_var'].set(f'{safe_float(parts.get("h_sp")):.1f}')
+
         if 'vacuum_psig_var' in gui_refs: gui_refs['vacuum_psig_var'].set(f"{safe_float(parts.get('vac_pv')):.2f} PSIG")
         if 'pid_output_var' in gui_refs: gui_refs['pid_output_var'].set(f'{safe_float(parts.get("h_op")):.1f}%')
         if 'vacuum_state_var' in gui_refs: gui_refs['vacuum_state_var'].set(

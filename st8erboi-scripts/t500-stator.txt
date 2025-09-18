@@ -13,18 +13,18 @@ MOVE_Z -62 mm
 MOVE_Z -68 mm 2 mm/s
 VACUUM_ON
 VACUUM_VALVE_OPEN
- 5 sec
+WAIT 5 sec
 VACUUM_LEAK_TEST 
-WAIT_UNTIL_HEATER_AT_TEMP
+WAIT_UNTIL_HEATER_AT_TEMP 65 C
 VACUUM_ON
 INJECTION_VALVE_OPEN
 INJECT_STATOR 30 ml 0.4 ml/s
- 5 sec
+WAIT 5 sec
 INJECT_STATOR 15 ml 0.2 ml/s
 VACUUM_VALVE_CLOSE
- 10 sec
+WAIT 10 sec
 INJECTION_VALVE_CLOSE
-WAIT_S 10 sec
+WAIT 10 sec
 MOVE_Z -62 mm 1 mm/s
 MOVE_Z -55 mm 4 mm/s
 VACUUM_OFF
@@ -34,18 +34,18 @@ MOVE_Z 0 mm
 # PURGE ROUTINE
 MOVE_X 400 mm, MOVE_Y 41 mm
 
-REPEAT 100 times:
+CYCLE 100 times:
     INJECTION_VALVE_OPEN
 	INJECT_STATOR 5 ml 0.2 ml/s
 	INJECTION_VALVE_CLOSE
-	WAIT_S 200 sec
+	WAIT 200 sec
 
-REPEAT 2 times:
-    WAIT_S 1 sec
-    REPEAT 1 times:
-        WAIT_S 1 sec
+CYCLE 200 times:
+    WAIT 1 sec
+    CYCLE 2 times:
+        WAIT 1 sec
 
-WAIT_S 100 sec
+WAIT 100 sec
 
 MACHINE_HOME_MOVE
 INJECTION_VALVE_HOME_UNTUBED
@@ -54,88 +54,6 @@ INJECTION_VALVE_CLOSE
 INJECTION_VALVE_OPEN
 
 MOVE_X 400 mm
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

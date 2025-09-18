@@ -3,7 +3,6 @@ from tkinter import ttk
 import threading
 import comms
 from scripting_gui import create_scripting_interface, create_command_reference # Import both functions
-from manual_controls import create_manual_controls_display
 from status_panel import create_status_bar
 from terminal import create_terminal_panel
 import json
@@ -119,24 +118,61 @@ class MainApplication:
         self.style.configure('TEntry', fieldbackground=theme.WIDGET_BG, foreground=theme.FG_COLOR, insertcolor=theme.FG_COLOR)
         
         # --- Custom Button Styles ---
-        self.style.configure('Green.TButton', background=theme.SUCCESS_GREEN, foreground='black', font=theme.FONT_BOLD)
-        self.style.map('Green.TButton', background=[('active', '#88B369')]) # A slightly lighter green for hover
+        self.style.configure('Green.TButton', background=theme.SUCCESS_GREEN, foreground='black', font=theme.FONT_BOLD, borderwidth=1, bordercolor=theme.SUCCESS_GREEN)
+        self.style.map('Green.TButton', 
+            background=[('pressed', theme.PRESSED_GREEN), ('active', theme.ACTIVE_GREEN)],
+            foreground=[('pressed', 'black'), ('active', 'black')],
+            relief=[('pressed', 'sunken'), ('active', 'raised')],
+            bordercolor=[('active', theme.FG_COLOR), ('!active', theme.SUCCESS_GREEN)]
+        )
+        # New style for when the script is actively running (button is disabled)
+        self.style.configure('Running.Green.TButton', font=theme.FONT_BOLD, borderwidth=1, bordercolor=theme.RUNNING_GREEN)
+        self.style.map('Running.Green.TButton', 
+            foreground=[('disabled', 'white')],
+            background=[('disabled', theme.RUNNING_GREEN)]
+        )
 
-        self.style.configure('Red.TButton', background=theme.ERROR_RED, foreground='black', font=theme.FONT_BOLD)
-        self.style.map('Red.TButton', background=[('active', '#D05C65')]) # A slightly lighter red for hover
+        self.style.configure('Red.TButton', background=theme.ERROR_RED, foreground='black', font=theme.FONT_BOLD, borderwidth=1, bordercolor=theme.ERROR_RED)
+        self.style.map('Red.TButton', 
+            background=[('pressed', theme.PRESSED_RED), ('active', theme.ACTIVE_RED)],
+            foreground=[('pressed', 'black'), ('active', 'black')],
+            relief=[('pressed', 'sunken'), ('active', 'raised')],
+            bordercolor=[('active', theme.FG_COLOR), ('!active', theme.ERROR_RED)]
+        )
+        # New style for when the script is held
+        self.style.configure('Holding.Red.TButton', background=theme.HOLDING_RED, foreground='white', font=theme.FONT_BOLD, borderwidth=1, bordercolor=theme.HOLDING_RED)
+        self.style.map('Holding.Red.TButton', 
+            background=[('pressed', theme.PRESSED_HOLDING_RED), ('active', theme.ACTIVE_HOLDING_RED)],
+            foreground=[('pressed', 'white'), ('active', 'white')],
+            relief=[('pressed', 'sunken'), ('active', 'raised')],
+            bordercolor=[('active', theme.FG_COLOR), ('!active', theme.HOLDING_RED)]
+        )
         
         self.style.configure('Small.TButton', font=theme.FONT_NORMAL)
 
         # Custom style for the toggle-like Checkbutton
-        self.style.configure('OrangeToggle.TButton', font=theme.FONT_NORMAL)
+        self.style.configure('OrangeToggle.TButton', font=theme.FONT_BOLD)
         self.style.map('OrangeToggle.TButton',
             foreground=[('selected', 'black'), ('!selected', theme.FG_COLOR)],
-            background=[('selected', theme.WARNING_YELLOW), ('!selected', theme.WIDGET_BG)]
+            background=[
+                ('selected', 'pressed', theme.PRESSED_ORANGE),
+                ('selected', 'active', theme.ACTIVE_ORANGE),
+                ('selected', theme.PRESSED_ORANGE), # Make the "on" state darker
+                ('!selected', 'pressed', theme.PRESSED_GRAY),
+                ('!selected', 'active', theme.SECONDARY_ACCENT),
+                ('!selected', theme.WIDGET_BG)
+            ],
+            relief=[('pressed', 'sunken'), ('active', 'raised')]
         )
 
         # Blue accent button used for utility actions
-        self.style.configure('Blue.TButton', background=theme.PRIMARY_ACCENT, foreground='black', font=theme.FONT_BOLD)
-        self.style.map('Blue.TButton', background=[('active', '#72B9F2')])
+        self.style.configure('Blue.TButton', background=theme.PRIMARY_ACCENT, foreground='black', font=theme.FONT_BOLD, borderwidth=1, bordercolor=theme.PRIMARY_ACCENT)
+        self.style.map('Blue.TButton', 
+            background=[('pressed', theme.PRESSED_BLUE), ('active', theme.ACTIVE_BLUE)],
+            foreground=[('pressed', 'black'), ('active', 'black')],
+            relief=[('pressed', 'sunken'), ('active', 'raised')],
+            bordercolor=[('active', theme.FG_COLOR), ('!active', theme.PRIMARY_ACCENT)]
+        )
 
         # Ghost/neutral button for low-emphasis actions
         self.style.configure('Ghost.TButton', background=theme.WIDGET_BG, foreground=theme.FG_COLOR, borderwidth=1)
@@ -149,10 +185,11 @@ class MainApplication:
         self.style.map('Gray.TButton', background=[('active', '#505868')])
 
         # Card-like containers and subtle labels
-        self.style.configure('Card.TLabelframe', background=theme.WIDGET_BG, foreground=theme.FG_COLOR, borderwidth=1)
-        self.style.configure('Card.TLabelframe.Label', background=theme.WIDGET_BG, foreground=theme.FG_COLOR, font=theme.FONT_BOLD)
-        self.style.configure('Card.TFrame', background=theme.WIDGET_BG)
-        self.style.configure('Subtle.TLabel', background=theme.WIDGET_BG, foreground=theme.COMMENT_COLOR, font=theme.FONT_NORMAL)
+        self.style.configure('Card.TLabelframe', background=theme.CARD_BG, foreground=theme.FG_COLOR)
+        self.style.configure('Card.TLabelframe.Label', background=theme.CARD_BG, foreground=theme.FG_COLOR, font=theme.FONT_BOLD)
+        self.style.configure('Card.TFrame', background=theme.CARD_BG)
+        self.style.configure('Subtle.TLabel', background=theme.CARD_BG, foreground=theme.COMMENT_COLOR, font=theme.FONT_NORMAL)
+        self.style.configure('CardBorder.TFrame', background=theme.SECONDARY_ACCENT)
 
         # Treeview (used in command reference)
         self.style.configure("Treeview",
@@ -271,6 +308,7 @@ class MainApplication:
             'vacuum_psig_var': tk.StringVar(value='0.00 PSIG'),
             'temp_c_var': tk.StringVar(value='0.0 °C'),
             'pid_setpoint_var': tk.StringVar(value='25.0'), # Default setpoint
+            'heater_display_var': tk.StringVar(value='--- / --- °C'),
 
             # Heater variables
             'heater_setpoint_var': tk.StringVar(value='70.0'),
@@ -305,6 +343,19 @@ class MainApplication:
         }
         shared_gui_refs['command_funcs'] = command_funcs
         
+        # --- NEW: Combined Heater Display Logic ---
+        def update_heater_display(*args):
+            try:
+                temp_val = shared_gui_refs['temp_c_var'].get().split()[0]
+                setpoint_val = shared_gui_refs['pid_setpoint_var'].get()
+                shared_gui_refs['heater_display_var'].set(f"{temp_val} / {setpoint_val} °C")
+            except (IndexError, ValueError, tk.TclError):
+                # Handle cases where vars are not yet valid floats or are empty
+                shared_gui_refs['heater_display_var'].set("--- / --- °C")
+
+        shared_gui_refs['temp_c_var'].trace_add("write", update_heater_display)
+        shared_gui_refs['pid_setpoint_var'].trace_add("write", update_heater_display)
+
         return shared_gui_refs
 
     def initialize_command_functions(self):
@@ -327,17 +378,9 @@ class MainApplication:
         main_frame = ttk.Frame(self.root, style='TFrame')
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Right-side container for the collapsible panels
-        right_panels_container = ttk.Frame(main_frame, style='TFrame')
-        right_panels_container.pack(side=tk.RIGHT, fill=tk.Y, pady=10, padx=(0, 10))
-
-        # Add a separator for clean delineation before the manual controls
-        separator = ttk.Separator(main_frame, orient='vertical')
-        separator.pack(side=tk.RIGHT, fill=tk.Y, pady=10, padx=5)
-
         # Create a horizontal splitter for center content and commands (resizable)
         splitter = ttk.Panedwindow(main_frame, orient=tk.HORIZONTAL, style='TPanedwindow')
-        splitter.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=10, padx=(10, 0))
+        splitter.pack(fill=tk.BOTH, expand=True, pady=10, padx=10)
 
         # Central container for the main content (left pane of splitter)
         center_container = ttk.Frame(splitter, style='TFrame')
@@ -358,10 +401,6 @@ class MainApplication:
 
 
         # --- Populate UI Components ---
-        # Create Collapsible Panel for Manual Controls (fixed on the far right)
-        manual_controls_collapsible = CollapsiblePanel(right_panels_container, text="Manual Controls", width=260)
-        manual_controls_collapsible.pack(side=tk.LEFT, fill=tk.Y)
-
         # Commands panel lives in the splitter (right pane), resizable
         cmd_ref_collapsible = CollapsiblePanel(splitter, text="Commands", width=560)
         splitter.add(cmd_ref_collapsible) # Add the pane
@@ -391,10 +430,6 @@ class MainApplication:
         splitter.bind("<Configure>", set_initial_sash_pos, add="+")
 
         # Populate the collapsible panels' content frames
-        manual_controls_content = manual_controls_collapsible.get_content_frame()
-        manual_control_widgets = create_manual_controls_display(manual_controls_content, self.command_funcs, self.shared_gui_refs)
-        manual_control_widgets['main_container'].pack(fill=tk.BOTH, expand=True)
-        
         cmd_ref_content = cmd_ref_collapsible.get_content_frame()
 
         # Create scripting GUI in the main content area
@@ -412,10 +447,6 @@ class MainApplication:
         # Populate the left status bar
         status_widgets = create_status_bar(left_bar_frame, self.shared_gui_refs)
         self.shared_gui_refs.update(status_widgets)
-
-        abort_btn = ttk.Button(left_bar_frame, text="🛑 ABORT ALL", style="Red.TButton", command=self.command_funcs.get("abort"))
-        abort_btn.pack(side=tk.BOTTOM, fill=tk.X, pady=10, padx=5)
-
 
         # Create Top Menu (and pass it the file commands from the scripting GUI)
         file_commands = self.scripting_gui_refs['file_commands']

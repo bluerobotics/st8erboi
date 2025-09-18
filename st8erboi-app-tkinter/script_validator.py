@@ -26,6 +26,17 @@ COMMANDS = {
         ],
         "help": "Injects a specific volume using the Rotor (1:1) cartridge settings."
     },
+    "JOG_MOVE": {
+        "device": "fillhead",
+        "params": [
+            {"name": "Dist-M0(mm)", "type": float, "min": -100, "max": 100},
+            {"name": "Dist-M1(mm)", "type": float, "min": -100, "max": 100},
+            {"name": "Speed(mm/s)", "type": float, "min": 0.01, "max": 5.0, "optional": True, "default": 1.0},
+            {"name": "Accel(mm/s^2)", "type": float, "min": 1, "max": 50.0, "optional": True, "default": 10.0},
+            {"name": "Torque(%)", "type": float, "min": 0, "max": 100, "optional": True, "default": 20}
+        ],
+        "help": "Jogs the injector motors by a relative distance. M0 is Machine, M1 is Cartridge."
+    },
     "SET_HEATER_SETPOINT": {
         "device": "fillhead",
         "params": [{"name": "Temp(°C)", "type": float, "min": 20, "max": 150}],
@@ -147,16 +158,22 @@ COMMANDS = {
         "params": [{"name": "Max-Dist(mm)", "type": float, "min": 1, "max": 1000, "optional": True}],
         "help": "Homes the gantry Z-axis. Searches up to Max-Dist(mm). If no distance is given, it uses the axis travel limit."
     },
+    "ENABLE_X": {"device": "gantry", "params": [], "help": "Enables the gantry X-axis motor."},
+    "ENABLE_Y": {"device": "gantry", "params": [], "help": "Enables the gantry Y-axis motor."},
+    "ENABLE_Z": {"device": "gantry", "params": [], "help": "Enables the gantry Z-axis motor."},
+    "DISABLE_X": {"device": "gantry", "params": [], "help": "Disables the gantry X-axis motor."},
+    "DISABLE_Y": {"device": "gantry", "params": [], "help": "Disables the gantry Y-axis motor."},
+    "DISABLE_Z": {"device": "gantry", "params": [], "help": "Disables the gantry Z-axis motor."},
     "START_DEMO": {"device": "gantry", "params": [], "help": "Starts the circle demo on the gantry."},
 
     # --- Global Commands ---
     "ABORT": {"device": "both", "params": [], "help": "Stops all motion on the target device."},
 
     # --- Script-Control Commands ---
-    "REPEAT": {
+    "CYCLE": {
         "device": "script",
         "params": [{"name": "Count", "type": int, "min": 1, "max": 10000}],
-        "help": "Repeats the following indented block of commands 'Count' times."
+        "help": "Cycles through the following indented block of commands 'Count' times."
     },
     "WAIT_MS": {"device": "script", "params": [{"name": "Milliseconds", "type": float, "min": 0, "max": 600000}],
                 "help": "Pauses script execution for a given time in milliseconds."},
@@ -167,7 +184,7 @@ COMMANDS = {
                                      {"name": "Timeout(s)", "type": float, "min": 1, "max": 600, "optional": True}],
                           "help": "Pauses until vacuum reaches the target pressure."},
     "WAIT_UNTIL_HEATER_AT_TEMP": {"device": "script", "params": [
-        {"name": "Target-Temp(C)", "type": float, "min": 20, "max": 150, "optional": True},
+        {"name": "Target-Temp(C)", "type": float, "min": 20, "max": 150},
         {"name": "Timeout(s)", "type": float, "min": 1, "max": 600, "optional": True}],
                                   "help": "Pauses until the heater reaches the target temperature."},
     "SET_DEFAULT_MOVE_VEL": {"device": "script",
@@ -197,8 +214,8 @@ def _validate_line(line_content, line_num):
     sub_commands = line_content.strip().split(',')
     
     command_word_for_line = sub_commands[0].strip().split()[0].upper()
-    if (command_word_for_line == "REPEAT" or command_word_for_line == "END_REPEAT") and len(sub_commands) > 1:
-        errors.append({"line": line_num, "error": "REPEAT and END_REPEAT commands must be on their own line."})
+    if (command_word_for_line == "CYCLE" or command_word_for_line == "END_REPEAT") and len(sub_commands) > 1:
+        errors.append({"line": line_num, "error": "CYCLE and END_REPEAT commands must be on their own line."})
         return errors # Stop processing this line as it's fundamentally malformed
 
     for sub_cmd_str in sub_commands:
@@ -281,7 +298,7 @@ def validate_script(script_content):
                     break
                 prev_line_idx -= 1
 
-            if not prev_line_content.upper().startswith("REPEAT"):
+            if not prev_line_content.upper().startswith("CYCLE"):
                 errors.append({"line": line_num, "error": "Unexpected indent."})
             indent_stack.append(leading_spaces)
         elif leading_spaces < indent_stack[-1]:
@@ -300,7 +317,7 @@ def validate_script(script_content):
         errors.extend(_validate_line(line, line_num))
 
     if len(indent_stack) > 1:
-        errors.append({"line": len(lines), "error": "Unexpected end of file: missing dedent for a REPEAT block."})
+        errors.append({"line": len(lines), "error": "Unexpected end of file: missing dedent for a CYCLE block."})
 
     return errors
 

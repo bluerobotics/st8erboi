@@ -41,10 +41,10 @@ class ScriptRunner(threading.Thread):
             while i < len(block_with_nums):
                 line, line_num = block_with_nums[i]
                 
-                if line.strip().upper().startswith("REPEAT"):
+                if line.strip().upper().startswith("CYCLE"):
                     parts = line.strip().split()
                     
-                    # Allow for an optional colon and comments, e.g., "REPEAT 100:"
+                    # Allow for an optional colon and comments, e.g., "CYCLE 100:"
                     count = 0
                     # Find the first numeric argument for the count
                     for part in parts[1:]:
@@ -66,7 +66,7 @@ class ScriptRunner(threading.Thread):
                                 block_indent = body_indent
                             break # Found first non-empty line, stop searching
 
-                    # If no indented block was found, just skip the REPEAT line
+                    # If no indented block was found, just skip the CYCLE line
                     if body_start_index == -1:
                         i += 1
                         continue
@@ -237,12 +237,11 @@ class ScriptRunner(threading.Thread):
 
     def _handle_wait_until_heater_at_temp(self, args, line_num):
         try:
-            # Reverted: Now correctly uses the 'pid_setpoint_var' which is bound to the UI.
-            target_temp_str = args[0] if len(args) > 0 else self.gui_refs['pid_setpoint_var'].get()
-            target_temp = float(target_temp_str)
+            # The temperature is now a required parameter.
+            target_temp = float(args[0])
             timeout_s = float(args[1]) if len(args) > 1 else float(self.runtime_defaults.get("HEATER_TIMEOUT", 100))
-        except (ValueError, IndexError, tk.TclError):
-            self.status_cb(f"Error on L{line_num}: Invalid parameters for WAIT_UNTIL_HEATER_AT_TEMP.", line_num)
+        except (ValueError, IndexError):
+            self.status_cb(f"Error on L{line_num}: Invalid or missing parameters for WAIT_UNTIL_HEATER_AT_TEMP.", line_num)
             self.is_running = False
             return False
 

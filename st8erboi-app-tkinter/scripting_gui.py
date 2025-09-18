@@ -381,8 +381,9 @@ class ScriptEditor(tk.Frame):
 
 # --- Validation Window (Themed) ---
 class ValidationResultsWindow(tk.Toplevel):
-    def __init__(self, parent, errors):
+    def __init__(self, parent, errors, on_close_callback=None):
         super().__init__(parent)
+        self.on_close_callback = on_close_callback
         self.title("Validation Results")
         self.geometry("600x300")
         self.configure(bg=theme.WIDGET_BG)
@@ -406,6 +407,11 @@ class ValidationResultsWindow(tk.Toplevel):
         text_area.config(state=tk.DISABLED)
         close_button = ttk.Button(self, text="Close", command=self.destroy)
         close_button.pack(pady=5)
+    
+    def destroy(self):
+        if self.on_close_callback:
+            self.on_close_callback()
+        super().destroy()
 
 
 # --- GUI Creation Functions (Wiring everything up) ---
@@ -567,6 +573,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     last_selection_highlight = 1
     current_filepath = None
     feed_hold_line = None
+    is_held_by_user = False # Flag to manage Hold state vs. a normal stop
     single_block_var = tk.BooleanVar(value=False)
 
     # --- Message Queue & Terminal ---
@@ -748,7 +755,9 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     # --- Script Execution Logic ---
     def handle_cycle_start():
         print("[DEBUG] handle_cycle_start called")
-        nonlocal feed_hold_line
+        nonlocal feed_hold_line, is_held_by_user
+        is_held_by_user = False # Always clear hold flag on a new run attempt
+
         if not check_script_validity(): 
             print("[DEBUG] Script validation failed.")
             return
@@ -800,10 +809,19 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
             print(f"[DEBUG] Running script from line {next_valid_line_num}. Content passed to runner:\n---\n{content_from_line}\n---")
             run_script_from_content(content_from_line, next_valid_line_num - 1, is_step=False)
 
-    def set_buttons_state(state):
-        cycle_start_button.config(state=state)
-        is_running = state == tk.DISABLED
-        feed_hold_button.config(state=tk.NORMAL if is_running else tk.DISABLED)
+    def update_button_states(running=False, holding=False):
+        if holding:
+            # Script is paused. Run is enabled to resume, Hold is prominent and enabled.
+            run_button.config(state=tk.NORMAL, style='Green.TButton', text='Run')
+            hold_button.config(state=tk.NORMAL, style='Holding.Red.TButton', text='Holding')
+        elif running:
+            # Script is running. Run is disabled and prominent, Hold is enabled.
+            run_button.config(state=tk.DISABLED, style='Running.Green.TButton', text='Running...')
+            hold_button.config(state=tk.NORMAL, style='Red.TButton', text='Hold')
+        else: # Idle
+            # Script is idle. Run is enabled, Hold is disabled.
+            run_button.config(state=tk.NORMAL, style='Green.TButton', text='Run')
+            hold_button.config(state=tk.DISABLED, style='Red.TButton', text='Hold')
 
     # MODIFIED: This function now safely schedules GUI updates on the main thread.
     def status_callback_handler(message, line_num):
@@ -821,11 +839,19 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         root.after(0, update_gui)
 
     def on_run_finished():
-        root.after(0, lambda: set_buttons_state(tk.NORMAL))
-        status_callback_handler("Idle", -1)
+        nonlocal is_held_by_user
+        if is_held_by_user:
+            # This was a user-initiated hold, not the end of the script
+            update_button_states(holding=True)
+            status_var.set(f"Hold active. Halted at line {feed_hold_line}.")
+            is_held_by_user = False # Reset the flag
+        else:
+            # The script finished normally
+            update_button_states(running=False, holding=False)
+            status_callback_handler("Idle", -1)
 
     def on_step_finished():
-        root.after(0, lambda: set_buttons_state(tk.NORMAL))
+        update_button_states(running=False, holding=False)
         current_line_num = int(last_selection_highlight)
         status_var.set(f"Step complete. Next line: {current_line_num + 1}");
         root.after(0, lambda: update_selection_highlight(current_line_num + 1))
@@ -833,20 +859,23 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     def run_script_from_content(content, line_offset=0, is_step=False):
         nonlocal script_runner
         print(f"[DEBUG] run_script_from_content called. line_offset={line_offset}, is_step={is_step}")
-        set_buttons_state(tk.DISABLED)
+        update_button_states(running=True) # Set running state visuals
         completion_callback = on_step_finished if is_step else on_run_finished
         script_runner = ScriptRunner(content, shared_gui_refs, status_callback_handler,
                                      completion_callback, message_queue, line_offset);
         script_runner.start()
         print("[DEBUG] ScriptRunner thread started.")
 
+    def clear_error_highlighting():
+        script_editor.tag_remove("error_highlight", "1.0", tk.END)
+
     def check_script_validity(show_success=False):
         script_content = script_editor.get("1.0", tk.END);
         from script_validator import validate_script
         errors = validate_script(script_content);
-        script_editor.tag_remove("error_highlight", "1.0", tk.END)
+        clear_error_highlighting() # Always clear previous errors
         if errors:
-            ValidationResultsWindow(scripting_area, errors);
+            ValidationResultsWindow(scripting_area, errors, on_close_callback=clear_error_highlighting);
             status_var.set(f"{len(errors)} error(s) found.")
             for error in errors: line_num = error['line']; script_editor.tag_add("error_highlight", f"{line_num}.0",
                                                                                  f"{line_num}.end")
@@ -857,23 +886,24 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
             return True
 
     def handle_feed_hold():
-        nonlocal feed_hold_line
+        nonlocal feed_hold_line, is_held_by_user
         shared_gui_refs['command_funcs']['abort']()
 
         if script_runner and script_runner.is_running:
+            is_held_by_user = True # Signal that the stop was intentional
             feed_hold_line = last_exec_highlight
-            script_runner.stop()
-            on_run_finished()
-            status_var.set(f"Feed Hold. Halted at line {feed_hold_line}.")
-            if feed_hold_line != -1:
-                update_selection_highlight(feed_hold_line)
+            script_runner.stop() # This will trigger on_run_finished
         else:
+            # If the script isn't running, just stop all motion.
             status_var.set("All motion stopped.")
+            update_button_states(running=False, holding=False)
 
     def handle_reset():
-        nonlocal script_runner, feed_hold_line
+        nonlocal script_runner, feed_hold_line, is_held_by_user
         if script_runner and script_runner.is_running:
             script_runner.stop()
+        
+        is_held_by_user = False # Ensure reset clears any hold state
         shared_gui_refs['command_funcs']['abort']()
 
         # Explicitly clear any lingering execution highlight immediately.
@@ -884,7 +914,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         shared_gui_refs['command_funcs']['send_gantry']("CLEAR_ERRORS")
 
         feed_hold_line = None
-        on_run_finished()
+        update_button_states(running=False, holding=False)
         update_selection_highlight(1)
         status_var.set("Script reset. Ready to start from line 1.")
 
@@ -912,21 +942,21 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     btn_container = ttk.Frame(control_frame, style='TFrame');
     btn_container.pack(fill=tk.X, padx=10, pady=(5, 0))
 
-    cycle_start_button = ttk.Button(btn_container, text="Cycle Start", command=handle_cycle_start,
+    run_button = ttk.Button(btn_container, text="Run", command=handle_cycle_start,
                                     style="Green.TButton")
-    cycle_start_button.pack(side=tk.LEFT, padx=(0, 5))
+    run_button.pack(side=tk.LEFT, padx=(0, 5))
 
-    feed_hold_button = ttk.Button(btn_container, text="Feed Hold", command=handle_feed_hold, style="Red.TButton")
-    feed_hold_button.pack(side=tk.LEFT, padx=5)
+    hold_button = ttk.Button(btn_container, text="Hold", command=handle_feed_hold, style="Red.TButton")
+    hold_button.pack(side=tk.LEFT, padx=5)
 
-    reset_button = ttk.Button(btn_container, text="Reset", command=handle_reset, style="Small.TButton")
+    reset_button = ttk.Button(btn_container, text="Reset", command=handle_reset, style="Blue.TButton")
     reset_button.pack(side=tk.LEFT, padx=5)
 
     single_block_switch = ttk.Checkbutton(btn_container, text="Single Block", variable=single_block_var,
                                           style="OrangeToggle.TButton")
     single_block_switch.pack(side=tk.LEFT, padx=5)
 
-    feed_hold_button.config(state=tk.DISABLED)
+    update_button_states(running=False, holding=False) # Initial state
 
     # --- Status Label ---
     status_label = ttk.Label(control_frame, textvariable=status_var, anchor='w', 
