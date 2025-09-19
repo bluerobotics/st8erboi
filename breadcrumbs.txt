@@ -2,3 +2,7 @@
 - your next mission is to make devices dynamic.  you should be able to unplug the gantry and the gantry status should disappear and all the gantry messages should leave the command reference
 - each device should be defined by a single .py file, for their status panel and acceptable commands and all that
 - devices should be hot swappable and the script validator needs to be able to throw errors if there are commands in the script that don't match the devices connected
+- the new pinch valves will be here, integrate them
+- there are safety and lockout considerations, test them all
+
+- make a pressboi device and start doing the firmware and device definition for that
