@@ -20,7 +20,7 @@
  * @name General System Commands
  * @{
  */
-#define CMD_STR_DISCOVER                    "DISCOVER_FILLHEAD"        ///< Command to initiate device discovery.
+#define CMD_STR_DISCOVER_DEVICE             "DISCOVER_DEVICE"          ///< Generic command for any device to respond to.
 #define CMD_STR_ENABLE                      "ENABLE"                   ///< Command to enable all motors.
 #define CMD_STR_DISABLE                     "DISABLE"                  ///< Command to disable all motors.
 #define CMD_STR_ABORT                       "ABORT"                    ///< Command to halt all ongoing operations.
@@ -91,7 +91,7 @@
 #define STATUS_PREFIX_START                 "FILLHEAD_START: "         ///< Prefix for messages indicating the start of an operation.
 #define STATUS_PREFIX_DONE                  "FILLHEAD_DONE: "          ///< Prefix for messages indicating the successful completion of an operation.
 #define STATUS_PREFIX_ERROR                 "FILLHEAD_ERROR: "         ///< Prefix for messages indicating an error or fault.
-#define STATUS_PREFIX_DISCOVERY             "DISCOVERY: "              ///< Prefix for the device discovery response.
+#define STATUS_PREFIX_DISCOVERY             "DISCOVERY_RESPONSE: "     ///< Prefix for the device discovery response.
 /** @} */
 
 /**
@@ -107,7 +107,7 @@ typedef enum {
 	// General Commands
 	CMD_ENABLE,                         ///< @see CMD_STR_ENABLE
 	CMD_DISABLE,                        ///< @see CMD_STR_DISABLE
-	CMD_DISCOVER,                       ///< @see CMD_STR_DISCOVER
+	CMD_DISCOVER_DEVICE,                ///< @see CMD_STR_DISCOVER_DEVICE
 	CMD_ABORT,                          ///< @see CMD_STR_ABORT
 	CMD_CLEAR_ERRORS,                   ///< @see CMD_STR_CLEAR_ERRORS
 

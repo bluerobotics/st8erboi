@@ -4,5 +4,4 @@
 - devices should be hot swappable and the script validator needs to be able to throw errors if there are commands in the script that don't match the devices connected
 - the new pinch valves will be here, integrate them
 - there are safety and lockout considerations, test them all
-
 - make a pressboi device and start doing the firmware and device definition for that

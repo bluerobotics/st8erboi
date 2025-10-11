@@ -329,6 +329,12 @@ class MainApplication:
             'vac_leak_duration_var': tk.StringVar(value='10')
         }
 
+        # --- System Status Variables (Heater, Vacuum, etc.) ---
+        shared_gui_refs.update({
+            "reset_and_hide_panel": self.reset_and_hide_panel,
+            "show_panel": self.show_panel
+        })
+
         # Define the send functions first, using the dictionary that will be passed around.
         # This makes the reference live, so additions to it (like terminal_cb) are seen.
         send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
@@ -395,6 +401,63 @@ class MainApplication:
         shared_gui_refs['injection_target_ml_var'].trace_add("write", update_cycle_dispensed)
 
         return shared_gui_refs
+
+    def reset_and_hide_panel(self, device_key):
+        """Resets all associated variables for a device and hides its panel."""
+        # Hide the panel first
+        panel = self.shared_gui_refs.get(f'{device_key}_panel')
+        if panel:
+            panel.pack_forget()
+
+        # Find all variables associated with the device based on a prefix
+        # This is a bit of a simplification. A more robust solution might
+        # have a predefined map of which variables belong to which device.
+        prefix_map = {
+            "fillhead": ["status_var_fillhead", "main_state_var", "feed_state_var", "error_state_var",
+                         "enabled_state1_var", "enabled_state2_var", "enabled_state3_var", "pos_mm0_var",
+                         "pos_mm1_var", "homed0_var", "homed1_var", "machine_steps_var", "cartridge_steps_var",
+                         "heater_mode_var", "vacuum_state_var", "inject_cumulative_ml_var", "inject_active_ml_var",
+                         "total_dispensed_var", "cycle_dispensed_var", "injection_target_ml_var",
+                         "fillhead_injector_state_var", "fillhead_inj_valve_state_var",
+                         "fillhead_vac_valve_state_var", "fillhead_heater_state_var", "fillhead_vacuum_state_var",
+                         "torque0_var", "torque1_var", "torque2_var", "torque3_var", "inj_valve_pos_var",
+                         "inj_valve_homed_var", "vac_valve_pos_var", "vac_valve_homed_var", "vacuum_psig_var",
+                         "temp_c_var", "pid_setpoint_var", "heater_display_var"],
+            "gantry": ["status_var_gantry", "fh_enabled_m0_var", "fh_enabled_m1_var", "fh_enabled_m2_var",
+                       "fh_enabled_m3_var", "fh_pos_m0_var", "fh_pos_m1_var", "fh_pos_m2_var", "fh_pos_m3_var",
+                       "fh_homed_m0_var", "fh_homed_m1_var", "fh_homed_m2_var", "fh_homed_m3_var", "fh_state_x_var",
+                       "fh_state_y_var", "fh_state_z_var", "fh_state_var", "fh_torque_m0_var", "fh_torque_m1_var",
+                       "fh_torque_m2_var", "fh_torque_m3_var"]
+        }
+
+        vars_to_reset = prefix_map.get(device_key, [])
+        for var_name in vars_to_reset:
+            var = self.shared_gui_refs.get(var_name)
+            if var:
+                if isinstance(var, tk.StringVar):
+                    # Reset based on type
+                    if "homed" in var_name:
+                        var.set("Not Homed")
+                    elif "enabled" in var_name:
+                        var.set("Disabled")
+                    elif "psig" in var_name:
+                        var.set("0.00 PSIG")
+                    elif "°C" in var_name:
+                        var.set("0.0 °C")
+                    elif "ml" in var_name:
+                        var.set("--- ml")
+                    elif "status_var" in var_name:
+                        var.set(f"🔌 {device_key.capitalize()} Disconnected")
+                    else:
+                        var.set("---")
+                elif isinstance(var, tk.DoubleVar):
+                    var.set(0.0)
+
+    def show_panel(self, device_key):
+        """Makes a device's status panel visible."""
+        panel = self.shared_gui_refs.get(f'{device_key}_panel')
+        if panel:
+            panel.pack(side=tk.TOP, fill="x", expand=True, pady=(0, 8))
 
     def initialize_command_functions(self):
         # This method is now obsolete and can be removed.
@@ -483,8 +546,12 @@ class MainApplication:
         command_ref_widget.pack(fill=tk.BOTH, expand=True)
 
         # Populate the left status bar
-        status_widgets = create_status_bar(left_bar_frame, self.shared_gui_refs)
-        self.shared_gui_refs.update(status_widgets)
+        status_widgets_dict = create_status_bar(left_bar_frame, self.shared_gui_refs)
+        self.shared_gui_refs.update(status_widgets_dict)
+
+        # Hide panels by default
+        self.shared_gui_refs['gantry_panel'].pack_forget()
+        self.shared_gui_refs['fillhead_panel'].pack_forget()
 
         # Create Top Menu (and pass it the file commands from the scripting GUI)
         file_commands = self.scripting_gui_refs['file_commands']
@@ -531,6 +598,7 @@ class MainApplication:
         # Start the communication threads, calling functions from the comms module
         threading.Thread(target=comms.recv_loop, args=(self.shared_gui_refs,), daemon=True).start()
         threading.Thread(target=comms.monitor_connections, args=(self.shared_gui_refs,), daemon=True).start()
+        threading.Thread(target=comms.discovery_loop, args=(self.shared_gui_refs,), daemon=True).start()
         self.root.mainloop()
 
 

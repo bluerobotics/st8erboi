@@ -46,10 +46,10 @@ def log_to_terminal(msg, terminal_cb_func):
         print(f"{timestr} {msg}")
 
 
-def discover(device_key, gui_refs):
-    """Sends a targeted discovery message, logging only if the checkbox is ticked."""
+def discover_devices(gui_refs):
+    """Sends a generic discovery message."""
     terminal_cb_func = gui_refs.get('terminal_cb')
-    msg = f"DISCOVER_{device_key.upper()} PORT={CLIENT_PORT}"
+    msg = f"DISCOVER_DEVICE PORT={CLIENT_PORT}"
 
     log_discovery = gui_refs.get('show_discovery_var', tk.BooleanVar(value=False)).get()
     if log_discovery:
@@ -59,7 +59,14 @@ def discover(device_key, gui_refs):
         # No lock needed for broadcast as it's less critical and frequent
         sock.sendto(msg.encode(), ('192.168.1.255', CLEARCORE_PORT))
     except Exception as e:
-        log_to_terminal(f"Discovery error for {device_key}: {e}", terminal_cb_func)
+        log_to_terminal(f"Discovery error: {e}", terminal_cb_func)
+
+
+def discovery_loop(gui_refs):
+    """Continuously sends out discovery messages."""
+    while True:
+        discover_devices(gui_refs)
+        time.sleep(DISCOVERY_INTERVAL)
 
 
 def send_to_device(device_key, msg, gui_refs):
@@ -80,7 +87,7 @@ def send_to_device(device_key, msg, gui_refs):
 
 
 def monitor_connections(gui_refs):
-    """Monitors device connection status and handles auto-discovery."""
+    """Monitors device connection status."""
     terminal_cb = gui_refs.get('terminal_cb')
     while True:
         now = time.time()
@@ -93,14 +100,10 @@ def monitor_connections(gui_refs):
                     device["ip"] = None
 
                     if prev_conn_status and not device["connected"]:
-                        status_text = f"🔌 {key.capitalize()} Disconnected"
-                        log_to_terminal(status_text, terminal_cb)
-                        gui_refs[f'status_var_{key}'].set(status_text)
-
-                if not device["connected"]:
-                    if now - device["last_discovery_attempt"] > DISCOVERY_INTERVAL:
-                        discover(key, gui_refs)
-                        device["last_discovery_attempt"] = now
+                        log_to_terminal(f"🔌 {key.capitalize()} Disconnected", terminal_cb)
+                        # NEW: Reset and hide the panel
+                        if 'reset_and_hide_panel' in gui_refs:
+                            gui_refs['reset_and_hide_panel'](key)
 
         time.sleep(HEARTBEAT_INTERVAL)
 
@@ -109,16 +112,19 @@ def handle_connection(device_key, source_ip, gui_refs):
     """Handles the logic for a new or existing connection."""
     with devices_lock:
         device = devices[device_key]
-
-        if not device["connected"] or device["ip"] != source_ip:
-            device["ip"] = source_ip
-            device["connected"] = True
-
-            status_text = f"✅ {device_key.capitalize()} Connected ({source_ip})"
-            log_to_terminal(status_text, gui_refs.get('terminal_cb'))
-            gui_refs[f'status_var_{device_key}'].set(status_text)
-
+        is_new_connection = not device["connected"]
+        device["ip"] = source_ip
         device["last_rx"] = time.time()
+        device["connected"] = True
+
+    if is_new_connection:
+        status_text = f"✅ {device_key.capitalize()} Connected ({source_ip})"
+        log_to_terminal(status_text, gui_refs.get('terminal_cb'))
+        if f'status_var_{device_key}' in gui_refs:
+            gui_refs[f'status_var_{device_key}'].set(status_text)
+        # NEW: Show the panel on new connection
+        if 'show_panel' in gui_refs:
+            gui_refs['show_panel'](device_key)
 
 
 # --- Parser Functions ---
@@ -245,7 +251,21 @@ def recv_loop(gui_refs):
             source_ip = addr[0]
             log_telemetry = gui_refs.get('show_telemetry_var', tk.BooleanVar(value=False)).get()
 
-            if msg == "DISCOVERY: FILLHEAD DISCOVERED":
+            if msg.startswith("DISCOVERY_RESPONSE:"):
+                try:
+                    # e.g., DISCOVERY_RESPONSE: DEVICE_ID=gantry
+                    parts = msg.split(" ")[1].split("=")
+                    if parts[0] == "DEVICE_ID":
+                        device_key = parts[1].lower()
+                        # This part is new, to dynamically add devices
+                        with devices_lock:
+                            if device_key not in devices:
+                                devices[device_key] = {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0}
+                                log_to_terminal(f"Discovered new device: {device_key}", terminal_cb)
+                        handle_connection(device_key, source_ip, gui_refs)
+                except IndexError:
+                    log_to_terminal(f"Malformed discovery response: {msg}", terminal_cb)
+            elif msg == "DISCOVERY: FILLHEAD DISCOVERED":
                 handle_connection("fillhead", source_ip, gui_refs)
             elif msg == "DISCOVERY: GANTRY DISCOVERED":
                 handle_connection("gantry", source_ip, gui_refs)

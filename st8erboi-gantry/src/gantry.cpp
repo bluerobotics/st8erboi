@@ -153,12 +153,6 @@ void Gantry::dispatchCommand(const Message& msg) {
 		reportEvent(STATUS_PREFIX_ERROR, "System is in an error state. Must clear errors to continue.");
 		return;
 	}
-    // The DISCOVER command is broadcast, so we'll receive messages not intended for us.
-    // If the message is a discovery command but not OUR discovery command, ignore it.
-    if (strncmp(msg.buffer, "DISCOVER_", 9) == 0 && strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
-        return; // This is a discovery command for another device.
-    }
-
     // Parse the command string into a GantryCommand enum.
     Command command = m_comms.parseCommand(msg.buffer);
 
@@ -210,20 +204,13 @@ void Gantry::dispatchCommand(const Message& msg) {
             break;
 
         // --- Miscellaneous Commands ---
-        case CMD_DISCOVER: {
-            // This is a special case. The discover command is broadcast, so we might
-            // receive one intended for the fillhead. If the command string doesn't
-            // match ours, we should just silently ignore it.
-            if (strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
-                return; // Not for us, so exit quietly.
-            }
-            // Extract the GUI's listening port from the discovery message.
+        case CMD_DISCOVER_DEVICE: {
             char* portStr = strstr(msg.buffer, "PORT=");
             if (portStr) {
                 m_comms.setGuiIp(msg.remoteIp);
                 m_comms.setGuiPort(atoi(portStr + 5));
                 m_comms.setGuiDiscovered(true);
-                reportEvent(STATUS_PREFIX_DISCOVERY, "GANTRY DISCOVERED");
+                reportEvent(STATUS_PREFIX_DISCOVERY, "DEVICE_ID=gantry");
             }
             break;
         }

@@ -151,7 +151,7 @@ Command CommsController::parseCommand(const char* msg) {
 	}
 
 	// General Commands
-	if (strncmp(msg, CMD_STR_DISCOVER, strlen(CMD_STR_DISCOVER)) == 0) return CMD_DISCOVER;
+	if (strncmp(msg, CMD_STR_DISCOVER_DEVICE, strlen(CMD_STR_DISCOVER_DEVICE)) == 0) return CMD_DISCOVER_DEVICE;
 	if (strcmp(msg, CMD_STR_ENABLE) == 0) return CMD_ENABLE;
 	if (strcmp(msg, CMD_STR_DISABLE) == 0) return CMD_DISABLE;
 	if (strcmp(msg, CMD_STR_ABORT) == 0) return CMD_ABORT;

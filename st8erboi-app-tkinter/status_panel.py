@@ -143,10 +143,10 @@ def create_status_bar(parent, shared_gui_refs):
         content_frame = ttk.Frame(container, style='Card.TFrame')
         content_frame.pack(fill='x', expand=True)
         
-        return content_frame
+        return outer_container, content_frame
 
     # --- Gantry Panel ---
-    gantry_content = create_device_frame(status_bar_container, "Gantry", shared_gui_refs['fh_state_var'], shared_gui_refs['status_var_gantry'])
+    gantry_outer_container, gantry_content = create_device_frame(status_bar_container, "Gantry", shared_gui_refs['fh_state_var'], shared_gui_refs['status_var_gantry'])
     gantry_axes_data = [
         {'label': 'X', 'pos_var': 'fh_pos_m0_var', 'homed_var': 'fh_homed_m0_var', 'torque_var': 'fh_torque_m0_var', 'state_var': 'fh_state_x_var'},
         {'label': 'Y', 'pos_var': 'fh_pos_m1_var', 'homed_var': 'fh_homed_m1_var', 'torque_var': 'fh_torque_m1_var', 'state_var': 'fh_state_y_var'},
@@ -173,7 +173,7 @@ def create_status_bar(parent, shared_gui_refs):
         axis_label.tracer()
 
     # --- Fillhead Panel ---
-    fillhead_content = create_device_frame(status_bar_container, "Fillhead", shared_gui_refs['main_state_var'], shared_gui_refs['status_var_fillhead'])
+    fillhead_outer_container, fillhead_content = create_device_frame(status_bar_container, "Fillhead", shared_gui_refs['main_state_var'], shared_gui_refs['status_var_fillhead'])
     
     # --- Injector, Machine, Cartridge, Dispensing Layout ---
     injector_container = ttk.Frame(fillhead_content, style='CardBorder.TFrame')
@@ -317,4 +317,8 @@ def create_status_bar(parent, shared_gui_refs):
     ttk.Label(heater_frame, textvariable=shared_gui_refs['heater_display_var'], font=font_small_readout, foreground=theme.WARNING_YELLOW, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
         
 
-    return status_bar_container
+    return {
+        "status_bar_container": status_bar_container,
+        "gantry_panel": gantry_outer_container,
+        "fillhead_panel": fillhead_outer_container
+    }

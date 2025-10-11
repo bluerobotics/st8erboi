@@ -178,17 +178,11 @@ void Fillhead::updateState() {
  * handles system-level commands itself.
  */
 void Fillhead::dispatchCommand(const Message& msg) {
-    // The DISCOVER command is broadcast, so we'll receive messages not intended for us.
-    // If the message is a discovery command but not OUR discovery command, ignore it.
-    if (strncmp(msg.buffer, "DISCOVER_", 9) == 0 && strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
-        return; // This is a discovery command for another device.
-    }
-
     Command command_enum = m_comms.parseCommand(msg.buffer);
     
     // If the system is in an error state, block most commands.
     if (m_mainState == STATE_ERROR) {
-        if (command_enum != CMD_CLEAR_ERRORS && command_enum != CMD_DISABLE && command_enum != CMD_DISCOVER) {
+        if (command_enum != CMD_CLEAR_ERRORS && command_enum != CMD_DISABLE && command_enum != CMD_DISCOVER_DEVICE) {
             m_comms.reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System is in ERROR state. Send CLEAR_ERRORS to reset.");
             return;
         }
@@ -211,20 +205,13 @@ void Fillhead::dispatchCommand(const Message& msg) {
     // --- Master Command Delegation Switchboard ---
     switch (command_enum) {
         // --- System-Level Commands (Handled by Fillhead) ---
-        case CMD_DISCOVER: {
-            // This is a special case. The discover command is broadcast, so we might
-            // receive one intended for the gantry. If the command string doesn't
-            // match ours, we should just silently ignore it.
-            if (strstr(msg.buffer, CMD_STR_DISCOVER) == NULL) {
-                return; // Not for us, so exit quietly.
-            }
-
+        case CMD_DISCOVER_DEVICE: {
             char* portStr = strstr(msg.buffer, "PORT=");
             if (portStr) {
                 m_comms.setGuiIp(msg.remoteIp);
                 m_comms.setGuiPort(atoi(portStr + 5));
                 m_comms.setGuiDiscovered(true);
-                m_comms.reportEvent(STATUS_PREFIX_DISCOVERY, "FILLHEAD DISCOVERED");
+                m_comms.reportEvent(STATUS_PREFIX_DISCOVERY, "DEVICE_ID=fillhead");
             }
             break;
         }

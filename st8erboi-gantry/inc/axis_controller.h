@@ -138,6 +138,12 @@ public:
 	 * @return `true` if the motor(s) are actively executing a move, `false` otherwise.
 	 */
 	bool isMoving();
+	
+	/**
+	 * @brief Checks if the axis is currently in enabled.
+	 * @return `true` if the motor(s) are enabled, `false` otherwise.
+	 */
+	bool isEnabled();
 
 	/**
 	 * @brief Checks if the axis has been successfully homed.
