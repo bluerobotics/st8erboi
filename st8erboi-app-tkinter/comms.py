@@ -47,7 +47,7 @@ devices = {
 def log_to_terminal(msg, gui_refs):
     """Safely logs a message to the GUI terminal by placing it on the queue."""
     timestr = datetime.datetime.now().strftime("[%H:%M:%S.%f]")[:-3]
-    full_msg = f"{timestr} {msg}"
+    full_msg = f"{timestr} {msg}\n"
     
     terminal_cb = gui_refs.get('terminal_cb')
     gui_queue = gui_refs.get('gui_queue')
