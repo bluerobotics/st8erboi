@@ -83,8 +83,8 @@ class DeviceSimulator(threading.Thread):
                 print(f"[{self.device_name}] Received from {addr}: {msg}")
                 gui_address = (addr[0], self.gui_app_port)
 
-                if msg == f"DISCOVER_{self.device_name.upper()} PORT={self.gui_app_port}":
-                    response = f"DISCOVERY: {self.device_name.upper()} DISCOVERED"
+                if msg.startswith("DISCOVER_DEVICE"):
+                    response = f"DISCOVERY_RESPONSE: DEVICE_ID={self.device_name}"
                     self.sock.sendto(response.encode(), gui_address)
                     print(f"[{self.device_name}] Sent discovery response to {gui_address}")
                 elif msg.startswith("DISCOVER_"):

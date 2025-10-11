@@ -11,6 +11,7 @@ import theme  # Import the new theme file
 import tkinter.font as tkfont
 import platform
 import ctypes
+from queue import Queue, Empty
 
 # Import GUI components
 from top_menu import create_top_menu
@@ -91,6 +92,9 @@ class MainApplication:
         self.root = root
         self.root.title("st8erboi controller")
         self.root.configure(bg=theme.BG_COLOR)
+
+        # Thread-safe queue for GUI updates
+        self.gui_queue = Queue()
 
         # Configure ttk styles to match the theme
         self.style = ttk.Style()
@@ -332,7 +336,8 @@ class MainApplication:
         # --- System Status Variables (Heater, Vacuum, etc.) ---
         shared_gui_refs.update({
             "reset_and_hide_panel": self.reset_and_hide_panel,
-            "show_panel": self.show_panel
+            "show_panel": self.show_panel,
+            "gui_queue": self.gui_queue
         })
 
         # Define the send functions first, using the dictionary that will be passed around.
@@ -545,6 +550,13 @@ class MainApplication:
         command_ref_widget = create_command_reference(cmd_ref_content, self.scripting_gui_refs['script_editor'])
         command_ref_widget.pack(fill=tk.BOTH, expand=True)
 
+        # "Searching for devices..." panel
+        self.searching_frame = ttk.Frame(left_bar_frame, style='Card.TFrame')
+        self.searching_label = ttk.Label(self.searching_frame, text="Searching for devices", font=theme.FONT_NORMAL, style='Subtle.TLabel')
+        self.searching_label.pack(pady=10, padx=10)
+        self.shared_gui_refs['searching_frame'] = self.searching_frame
+        self.searching_frame.pack(side=tk.TOP, fill="x", expand=False, pady=(0, 8))
+        
         # Populate the left status bar
         status_widgets_dict = create_status_bar(left_bar_frame, self.shared_gui_refs)
         self.shared_gui_refs.update(status_widgets_dict)
@@ -599,7 +611,33 @@ class MainApplication:
         threading.Thread(target=comms.recv_loop, args=(self.shared_gui_refs,), daemon=True).start()
         threading.Thread(target=comms.monitor_connections, args=(self.shared_gui_refs,), daemon=True).start()
         threading.Thread(target=comms.discovery_loop, args=(self.shared_gui_refs,), daemon=True).start()
+        self.animate_searching_text()
+        self.process_gui_queue()
         self.root.mainloop()
+
+    def animate_searching_text(self):
+        """Animates the searching text with trailing dots."""
+        base_text = "Searching for devices"
+        dot_count = 0
+        def update_text():
+            nonlocal dot_count
+            dots = "." * (dot_count % 4)
+            # Add padding with spaces to prevent the label from resizing
+            self.searching_label.config(text=f"{base_text}{dots:<3}")
+            dot_count += 1
+            self.root.after(400, update_text)
+        update_text()
+
+    def process_gui_queue(self):
+        """Processes messages from the GUI queue to safely update the UI."""
+        try:
+            while True:
+                task, args, kwargs = self.gui_queue.get_nowait()
+                task(*args, **kwargs)
+        except Empty:
+            pass  # Queue is empty, do nothing
+        finally:
+            self.root.after(100, self.process_gui_queue)
 
 
 def main():
