@@ -7,10 +7,9 @@ from functools import partial
 import re
 import tkinter.font as tkfont
 
-from script_validator import COMMANDS, validate_single_line
+from script_validator import validate_single_line, validate_script
 from script_processor import ScriptRunner
 import theme
-from devices import device_modules
 from comms import devices as comms_devices, devices_lock
 
 # --- Find/Replace Frame ---
@@ -417,7 +416,7 @@ class ValidationResultsWindow(tk.Toplevel):
 
 
 # --- GUI Creation Functions (Wiring everything up) ---
-def create_command_reference(parent, script_editor_widget):
+def create_command_reference(parent, script_editor_widget, scripting_commands, device_modules):
     ref_frame = ttk.Frame(parent, style='TFrame', padding=5)
 
     # --- Filter Widgets ---
@@ -434,7 +433,7 @@ def create_command_reference(parent, script_editor_widget):
     tree.tag_configure('disconnected', foreground=theme.COMMENT_COLOR)
 
     all_commands = []
-    for cmd, details in sorted(COMMANDS.items(), key=lambda item: (item[1]['device'], item[0])):
+    for cmd, details in sorted(scripting_commands.items(), key=lambda item: (item[1]['device'], item[0])):
         all_commands.append({
             'cmd': cmd,
             'device': details['device'].capitalize(),
@@ -580,6 +579,15 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
 
     # Get a reference to the root window for thread-safe GUI updates
     root = scripting_area.winfo_toplevel()
+    
+    # --- Get Device Manager and Commands ---
+    device_manager = shared_gui_refs.get('device_manager')
+    if not device_manager:
+        # Handle case where device manager isn't available
+        scripting_area.add(ttk.Label(scripting_area, text="Error: Device Manager not found."))
+        return {}
+    scripting_commands = device_manager.get_all_scripting_commands()
+    device_modules = device_manager.get_device_modules()
 
     paned_window = ttk.PanedWindow(scripting_area, orient=tk.HORIZONTAL, style='TPanedwindow')
     paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
@@ -625,8 +633,8 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     editor_frame.pack(fill=tk.BOTH, expand=True, pady=5)
     
     # --- Separate keywords for syntax highlighting ---
-    device_keywords = [cmd for cmd, details in COMMANDS.items() if details['device'] not in ['script', 'both']]
-    script_keywords = [cmd for cmd, details in COMMANDS.items() if details['device'] in ['script', 'both']]
+    device_keywords = [cmd for cmd, details in scripting_commands.items() if details['device'] not in ['script', 'both']]
+    script_keywords = [cmd for cmd, details in scripting_commands.items() if details['device'] in ['script', 'both']]
     
     script_editor = ScriptEditor(editor_frame, device_keywords=device_keywords, script_keywords=script_keywords)
     script_editor.pack(fill="both", expand=True)
@@ -816,7 +824,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         update_selection_highlight(next_valid_line_num)
 
         if is_single_block:
-            errors = validate_single_line(next_valid_line_content, next_valid_line_num)
+            errors = validate_single_line(next_valid_line_content, next_valid_line_num, scripting_commands)
             script_editor.tag_remove("error_highlight", "1.0", tk.END)
             if errors:
                 ValidationResultsWindow(scripting_area, errors)
@@ -884,7 +892,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         update_button_states(running=True) # Set running state visuals
         completion_callback = on_step_finished if is_step else on_run_finished
         script_runner = ScriptRunner(content, shared_gui_refs, status_callback_handler,
-                                     completion_callback, message_queue, line_offset);
+                                     completion_callback, message_queue, scripting_commands, line_offset);
         script_runner.start()
         print("[DEBUG] ScriptRunner thread started.")
 
@@ -893,8 +901,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
 
     def check_script_validity(show_success=False):
         script_content = script_editor.get("1.0", tk.END);
-        from script_validator import validate_script
-        errors = validate_script(script_content);
+        errors = validate_script(script_content, scripting_commands);
         clear_error_highlighting() # Always clear previous errors
         if errors:
             ValidationResultsWindow(scripting_area, errors, on_close_callback=clear_error_highlighting);
@@ -1014,5 +1021,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         "update_recent_menu_callback": set_recent_menu_reference,
         "check_unsaved": check_unsaved_changes,
         "load_specific_script": load_specific_script,
-        "script_editor": script_editor # Expose the script editor widget
+        "script_editor": script_editor, # Expose the script editor widget
+        "scripting_commands": scripting_commands, # Expose for command reference
+        "device_modules": device_modules # Expose for command reference
     }

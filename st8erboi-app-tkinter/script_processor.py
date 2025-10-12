@@ -3,15 +3,13 @@ import threading
 import queue
 import tkinter as tk  # For TclError and StringVar
 import re
-from script_validator import COMMANDS
-
 
 class ScriptRunner(threading.Thread):
     """
     Runs a script in a separate thread to avoid blocking the GUI.
     Handles script parsing, command execution, and status reporting.
     """
-    def __init__(self, script_content, shared_gui_refs, status_cb, completion_cb, msg_q, line_offset=0):
+    def __init__(self, script_content, shared_gui_refs, status_cb, completion_cb, msg_q, scripting_commands, line_offset=0):
         super().__init__(daemon=True)
         self.script_content = script_content
         self.gui_refs = shared_gui_refs
@@ -20,6 +18,7 @@ class ScriptRunner(threading.Thread):
         self.status_cb = status_cb
         self.completion_cb = completion_cb
         self.msg_q = msg_q
+        self.scripting_commands = scripting_commands
         self.line_offset = line_offset
         self._stop_event = threading.Event()
         self.is_running = False
@@ -168,7 +167,7 @@ class ScriptRunner(threading.Thread):
             self.gui_refs['injection_target_ml_var'].set('---')
 
     def _get_default(self, command_name, param_index):
-        param_def = COMMANDS[command_name]['params'][param_index]
+        param_def = self.scripting_commands[command_name]['params'][param_index]
         param_name = param_def['name']
 
         if command_name.startswith("MOVE"):
@@ -298,7 +297,7 @@ class ScriptRunner(threading.Thread):
                 if match:
                     args.append(match.group(0))
 
-            command_info = COMMANDS.get(command_word)
+            command_info = self.scripting_commands.get(command_word)
 
             if not command_info:
                 self.status_cb(f"Error on L{line_num}: Unknown command '{command_word}'.", line_num)

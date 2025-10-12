@@ -6,11 +6,10 @@ Also contains the script validation logic.
 """
 
 import re
-from devices import ALL_COMMANDS as COMMANDS
 
 # --- Validation Logic ---
 
-def _validate_line(line_content, line_num):
+def _validate_line(line_content, line_num, commands):
     """Helper function to validate a single, non-empty, non-comment line."""
     errors = []
     sub_commands = line_content.strip().split(',')
@@ -37,11 +36,11 @@ def _validate_line(line_content, line_num):
             if match:
                 args.append(match.group(0))
 
-        if command_word not in COMMANDS:
+        if command_word not in commands:
             errors.append({"line": line_num, "error": f"In '{sub_cmd_str}': Unknown command '{command_word}'."})
             continue
 
-        command_info = COMMANDS[command_word]
+        command_info = commands[command_word]
         params_def = command_info['params']
         num_required_params = sum(1 for p in params_def if not p.get("optional"))
 
@@ -74,7 +73,7 @@ def _validate_line(line_content, line_num):
     return errors
 
 
-def validate_script(script_content):
+def validate_script(script_content, commands):
     """Validates an entire script against the command reference."""
     errors = []
     lines = script_content.splitlines()
@@ -116,7 +115,7 @@ def validate_script(script_content):
             errors.append({"line": line_num, "error": "END_REPEAT is no longer used. Use indentation to define blocks."})
             continue
 
-        errors.extend(_validate_line(line, line_num))
+        errors.extend(_validate_line(line, line_num, commands))
 
     if len(indent_stack) > 1:
         errors.append({"line": len(lines), "error": "Unexpected end of file: missing dedent for a CYCLE block."})
@@ -124,9 +123,9 @@ def validate_script(script_content):
     return errors
 
 
-def validate_single_line(line_content, line_num):
+def validate_single_line(line_content, line_num, commands):
     """Validates a single line of a script."""
     line = line_content.strip()
     if not line or line.startswith('#'):
         return []
-    return _validate_line(line, line_num)
+    return _validate_line(line, line_num, commands)

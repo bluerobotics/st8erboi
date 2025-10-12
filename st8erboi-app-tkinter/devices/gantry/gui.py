@@ -84,7 +84,7 @@ def create_device_frame(parent, title, state_var, conn_var):
     content_frame.pack(fill='x', expand=True, pady=(5,0))
     return outer_container, content_frame
 
-def get_required_variables():
+def get_gui_variable_names():
     """Returns a list of tkinter variable names required by this GUI module."""
     return [
         'gantry_main_state_var', 'status_var_gantry',
@@ -99,7 +99,7 @@ def create_gui_components(parent, shared_gui_refs):
     """Creates the Gantry status panel."""
 
     # Initialize all required tkinter variables
-    for var_name in get_required_variables():
+    for var_name in get_gui_variable_names():
         if var_name.endswith('_var'):
             if 'torque' in var_name:
                 shared_gui_refs.setdefault(var_name, tk.DoubleVar(value=0.0))

@@ -3,7 +3,6 @@ import threading
 import time
 import datetime
 import tkinter as tk
-from devices import device_modules
 
 # --- Constants ---
 CLEARCORE_PORT = 8888
@@ -100,7 +99,7 @@ def send_to_device(device_key, msg, gui_refs):
         log_to_terminal(f"Cannot send to {device_key}: IP unknown.", gui_refs)
 
 
-def monitor_connections(gui_refs):
+def monitor_connections(gui_refs, device_manager):
     """Monitors device connection status."""
     terminal_cb = gui_refs.get('terminal_cb')
     gui_queue = gui_refs.get('gui_queue')
@@ -200,8 +199,9 @@ def handle_connection(device_key, source_ip, gui_refs):
 
 # --- Main Receive Loop ---
 
-def recv_loop(gui_refs):
+def recv_loop(gui_refs, device_manager):
     """Main network receive loop. Routes packets to the correct local parser."""
+    device_modules = device_manager.get_device_modules()
     while True:
         try:
             data, addr = sock.recvfrom(1024)

@@ -68,11 +68,11 @@ def create_stat(parent, label_text, var, row, col, unit=""):
     """Helper to create a formatted stat label in the grid."""
     frame = ttk.Frame(parent, style='Card.TFrame')
     frame.grid(row=row, column=col, sticky='ew', padx=5, pady=2)
-    ttk.Label(frame, text=label_text, style='Card.TLabel', anchor='w').pack(side=tk.LEFT)
-    val_label = ttk.Label(frame, textvariable=var, style='Card.TLabel', font=("JetBrains Mono", 12, "bold"), anchor='e')
+    ttk.Label(frame, text=label_text, style='Subtle.TLabel', anchor='w').pack(side=tk.LEFT)
+    val_label = ttk.Label(frame, textvariable=var, style='Subtle.TLabel', font=("JetBrains Mono", 12, "bold"), anchor='e')
     val_label.pack(side=tk.RIGHT)
     if unit:
-        ttk.Label(frame, text=unit, style='Card.TLabel', anchor='e').pack(side=tk.RIGHT)
+        ttk.Label(frame, text=unit, style='Subtle.TLabel', anchor='e').pack(side=tk.RIGHT)
 
 def create_gui_components(parent, shared_gui_refs):
     """Creates the Pressurizer status panel."""
@@ -82,7 +82,7 @@ def create_gui_components(parent, shared_gui_refs):
         if var_name.endswith('_var'):
             shared_gui_refs.setdefault(var_name, tk.StringVar(value='---'))
 
-    device_frame, _ = create_device_frame(
+    device_frame, content_frame = create_device_frame(
         parent, 
         "Pressurizer",
         shared_gui_refs['pressurizer_main_state_var'],
@@ -91,8 +91,6 @@ def create_gui_components(parent, shared_gui_refs):
     shared_gui_refs['pressurizer_panel'] = device_frame
     
     # --- Main Content ---
-    content_frame = ttk.Frame(device_frame, style='Card.TFrame')
-    content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
     content_frame.grid_columnconfigure(0, weight=1)
     content_frame.grid_columnconfigure(1, weight=1)
 
@@ -100,8 +98,8 @@ def create_gui_components(parent, shared_gui_refs):
     pressure_frame = ttk.Frame(content_frame, style='Card.TFrame')
     pressure_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(5, 10))
     pressure_frame.grid_columnconfigure(1, weight=1)
-    ttk.Label(pressure_frame, text="Pressure (msw):", style='Card.TLabel', font=("JetBrains Mono", 12)).grid(row=0, column=0, sticky='w')
-    pressure_val_label = ttk.Label(pressure_frame, textvariable=shared_gui_refs['pressurizer_pressure_var'], style='Card.TLabel', font=("JetBrains Mono", 28, "bold"), anchor='e')
+    ttk.Label(pressure_frame, text="Pressure (msw):", style='Subtle.TLabel', font=("JetBrains Mono", 12)).grid(row=0, column=0, sticky='w')
+    pressure_val_label = ttk.Label(pressure_frame, textvariable=shared_gui_refs['pressurizer_pressure_var'], style='Subtle.TLabel', font=("JetBrains Mono", 28, "bold"), anchor='e')
     pressure_val_label.grid(row=0, column=1, sticky='e')
 
     # Stats

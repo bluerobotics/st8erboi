@@ -13,7 +13,7 @@ import platform
 import ctypes
 from queue import Queue, Empty
 import device_actions # Import the new device actions
-from devices import device_modules, discovery_logs # Import the discovered device modules and logs
+from device_manager import DeviceManager # Import the new DeviceManager
 import datetime
 
 # Import GUI components
@@ -228,113 +228,35 @@ class MainApplication:
         # Initialize the status variable first, as other components need it.
         self.status_var = tk.StringVar(value="Initializing...")
 
-        self.shared_gui_refs = self.initialize_shared_variables()
+        # Initialize basic shared refs.
+        self.shared_gui_refs = {
+            'error_state_var': tk.StringVar(value='No Error'),
+            "reset_and_hide_panel": self.reset_and_hide_panel,
+            "show_panel": self.show_panel,
+            "gui_queue": self.gui_queue
+        }
         
-        # Command functions are now initialized and added within initialize_shared_variables
-        self.command_funcs = self.shared_gui_refs['command_funcs']
+        # --- Device Management ---
+        # DeviceManager needs shared_gui_refs to exist, but it can be populated after.
+        self.device_manager = DeviceManager(self.shared_gui_refs)
+        self.device_modules = self.device_manager.get_device_modules()
+        self.discovery_logs = self.device_manager.get_discovery_logs()
+        self.shared_gui_refs['device_manager'] = self.device_manager
+
+        # --- Populate device-specific shared refs ---
+        for device_name, device_data in self.device_modules.items():
+             self.shared_gui_refs[f'status_var_{device_name}'] = device_data['status_var']
+        
+        # Command functions are now aggregated by the device manager
+        self.command_funcs = self.device_manager.get_all_command_functions()
+        self.shared_gui_refs['command_funcs'] = self.command_funcs
         
         self.create_widgets()
         self.load_last_script()
 
     def initialize_shared_variables(self):
-        """
-        Initializes the shared state and functions for the application.
-        Now also handles the creation of command functions to ensure correct scope.
-        """
-        # --- Shared State and Functions ---
-        shared_gui_refs = {
-            'error_state_var': tk.StringVar(value='No Error'),
-
-            # --- Variables for internal MainApplication logic (tracers, etc.) ---
-            'temp_c_var': tk.StringVar(value='0.0 °C'),
-            'pid_setpoint_var': tk.StringVar(value='25.0'),
-            'fillhead_heater_state_var': tk.StringVar(value='---'),
-            'heater_display_var': tk.StringVar(value='--- / --- °C'),
-            'inject_cumulative_ml_var': tk.StringVar(value='---'),
-            'total_dispensed_var': tk.StringVar(value='--- ml'),
-            'inject_active_ml_var': tk.StringVar(value='---'),
-            'injection_target_ml_var': tk.StringVar(value='---'),
-            'cycle_dispensed_var': tk.StringVar(value='--- / --- ml'),
-        }
-
-        # --- DYNAMICALLY CREATE DEVICE-SPECIFIC STATUS VARS ---
-        for device_name in device_modules.keys():
-            shared_gui_refs[f'status_var_{device_name}'] = tk.StringVar(value=f'🔌 {device_name.capitalize()} Disconnected')
-
-
-        # --- System Status Variables (Heater, Vacuum, etc.) ---
-        shared_gui_refs.update({
-            "reset_and_hide_panel": self.reset_and_hide_panel,
-            "show_panel": self.show_panel,
-            "gui_queue": self.gui_queue
-        })
-
-        # Define the send functions first, using the dictionary that will be passed around.
-        # This makes the reference live, so additions to it (like terminal_cb) are seen.
-        send_fillhead_cmd = lambda msg: comms.send_to_device("fillhead", msg, shared_gui_refs)
-        send_gantry_cmd = lambda msg: comms.send_to_device("gantry", msg, shared_gui_refs)
-
-        def send_global_abort():
-            if 'terminal_cb' in shared_gui_refs:
-                comms.log_to_terminal("--- GLOBAL ABORT TRIGGERED ---", shared_gui_refs.get('terminal_cb'))
-            send_fillhead_cmd("ABORT")
-            send_gantry_cmd("ABORT")
-
-        # Create the command functions and add them directly to the dictionary.
-        command_funcs = {
-            "abort": send_global_abort,
-            "clear_errors": lambda: send_fillhead_cmd("CLEAR_ERRORS"),
-            "send_fillhead": send_fillhead_cmd,
-            "send_gantry": send_gantry_cmd
-        }
-        shared_gui_refs['command_funcs'] = command_funcs
-        
-        # --- NEW: Combined Heater Display Logic ---
-        def update_heater_display(*args):
-            try:
-                temp_val = shared_gui_refs['temp_c_var'].get().split()[0]
-                
-                heater_state = shared_gui_refs['fillhead_heater_state_var'].get().upper()
-                is_on = "ON" in heater_state or "ACTIVE" in heater_state
-
-                if is_on:
-                    setpoint_val = shared_gui_refs['pid_setpoint_var'].get()
-                else:
-                    setpoint_val = "---"
-
-                shared_gui_refs['heater_display_var'].set(f"{temp_val} / {setpoint_val} °C")
-            except (IndexError, ValueError, tk.TclError):
-                # Handle cases where vars are not yet valid floats or are empty
-                shared_gui_refs['heater_display_var'].set("--- / --- °C")
-
-        shared_gui_refs['temp_c_var'].trace_add("write", update_heater_display)
-        shared_gui_refs['pid_setpoint_var'].trace_add("write", update_heater_display)
-        shared_gui_refs['fillhead_heater_state_var'].trace_add("write", update_heater_display)
-
-        def update_total_dispensed(*args):
-            try:
-                total_val = shared_gui_refs['inject_cumulative_ml_var'].get().split()[0]
-                shared_gui_refs['total_dispensed_var'].set(f"{total_val} ml")
-            except (IndexError, ValueError, tk.TclError):
-                shared_gui_refs['total_dispensed_var'].set("--- ml")
-
-        shared_gui_refs['inject_cumulative_ml_var'].trace_add("write", update_total_dispensed)
-
-        def update_cycle_dispensed(*args):
-            try:
-                active_val = shared_gui_refs['inject_active_ml_var'].get().split()[0]
-                target_val = shared_gui_refs['injection_target_ml_var'].get()
-                if target_val == '---':
-                    shared_gui_refs['cycle_dispensed_var'].set(f"{active_val} / --- ml")
-                else:
-                    shared_gui_refs['cycle_dispensed_var'].set(f"{active_val} / {float(target_val):.2f} ml")
-            except (IndexError, ValueError, tk.TclError):
-                shared_gui_refs['cycle_dispensed_var'].set("--- / --- ml")
-
-        shared_gui_refs['inject_active_ml_var'].trace_add("write", update_cycle_dispensed)
-        shared_gui_refs['injection_target_ml_var'].trace_add("write", update_cycle_dispensed)
-
-        return shared_gui_refs
+        # This method's logic has been moved into __init__ to resolve a startup dependency issue.
+        pass
 
     def reset_and_hide_panel(self, device_key):
         """Resets all associated variables for a device and hides its panel."""
@@ -343,28 +265,10 @@ class MainApplication:
         if panel:
             panel.pack_forget()
 
-        # Find all variables associated with the device based on a prefix
-        # This is a bit of a simplification. A more robust solution might
-        # have a predefined map of which variables belong to which device.
-        prefix_map = {
-            "fillhead": ["status_var_fillhead", "main_state_var", "feed_state_var", "error_state_var",
-                         "enabled_state1_var", "enabled_state2_var", "enabled_state3_var", "pos_mm0_var",
-                         "pos_mm1_var", "homed0_var", "homed1_var", "machine_steps_var", "cartridge_steps_var",
-                         "heater_mode_var", "vacuum_state_var", "inject_cumulative_ml_var", "inject_active_ml_var",
-                         "total_dispensed_var", "cycle_dispensed_var", "injection_target_ml_var",
-                         "fillhead_injector_state_var", "fillhead_inj_valve_state_var",
-                         "fillhead_vac_valve_state_var", "fillhead_heater_state_var", "fillhead_vacuum_state_var",
-                         "torque0_var", "torque1_var", "torque2_var", "torque3_var", "inj_valve_pos_var",
-                         "inj_valve_homed_var", "vac_valve_pos_var", "vac_valve_homed_var", "vacuum_psig_var",
-                         "temp_c_var", "pid_setpoint_var", "heater_display_var"],
-            "gantry": ["status_var_gantry", "fh_enabled_m0_var", "fh_enabled_m1_var", "fh_enabled_m2_var",
-                       "fh_enabled_m3_var", "fh_pos_m0_var", "fh_pos_m1_var", "fh_pos_m2_var", "fh_pos_m3_var",
-                       "fh_homed_m0_var", "fh_homed_m1_var", "fh_homed_m2_var", "fh_homed_m3_var", "fh_state_x_var",
-                       "fh_state_y_var", "fh_state_z_var", "fh_state_var", "fh_torque_m0_var", "fh_torque_m1_var",
-                       "fh_torque_m2_var", "fh_torque_m3_var"]
-        }
-
-        vars_to_reset = prefix_map.get(device_key, [])
+        # Get the list of variables for this device from the device manager
+        device_vars_map = self.device_manager.get_all_device_variable_names()
+        vars_to_reset = device_vars_map.get(device_key, [])
+        
         for var_name in vars_to_reset:
             var = self.shared_gui_refs.get(var_name)
             if var:
@@ -436,7 +340,7 @@ class MainApplication:
         # --- Log device discovery messages to the GUI terminal ---
         if 'terminal_cb' in self.shared_gui_refs:
             terminal_cb = self.shared_gui_refs['terminal_cb']
-            for log_msg in discovery_logs:
+            for log_msg in self.discovery_logs:
                 timestr = datetime.datetime.now().strftime("[%H:%M:%S.%f]")[:-3]
                 full_msg = f"{timestr} [SYSTEM] {log_msg}\n"
                 terminal_cb(full_msg)
@@ -485,7 +389,12 @@ class MainApplication:
         )
         
         # Now that the script editor exists, populate the command reference
-        command_ref_widget = create_command_reference(cmd_ref_content, self.scripting_gui_refs['script_editor'])
+        command_ref_widget = create_command_reference(
+            cmd_ref_content, 
+            self.scripting_gui_refs['script_editor'],
+            self.scripting_gui_refs['scripting_commands'],
+            self.scripting_gui_refs['device_modules']
+        )
         command_ref_widget.pack(fill=tk.BOTH, expand=True)
 
         # "Searching for devices..." panel
@@ -503,18 +412,10 @@ class MainApplication:
         # The create_status_bar function now returns a container for device panels
         device_panel_container = self.shared_gui_refs.get('status_bar_container')
         if device_panel_container:
-            for device_name, modules in device_modules.items():
-                if hasattr(modules['gui'], 'create_gui_components'):
-                    # Create the panel using the device-specific function
-                    panel = modules['gui'].create_gui_components(device_panel_container, self.shared_gui_refs)
-                    
-                    # Store a reference to the panel and hide it initially
-                    self.shared_gui_refs[f'{device_name}_panel'] = panel
-                    panel.pack_forget()
-                    print(f"Created GUI panel for {device_name}")
+            self.device_manager.create_all_gui_components(device_panel_container)
 
         # Hide panels by default (redundant but safe)
-        for device_name in device_modules.keys():
+        for device_name in self.device_modules.keys():
             panel = self.shared_gui_refs.get(f'{device_name}_panel')
             if panel:
                 panel.pack_forget()
@@ -567,8 +468,8 @@ class MainApplication:
         Starts the communication threads and the main event loop.
         """
         # Start the communication threads, calling functions from the comms module
-        threading.Thread(target=comms.recv_loop, args=(self.shared_gui_refs,), daemon=True).start()
-        threading.Thread(target=comms.monitor_connections, args=(self.shared_gui_refs,), daemon=True).start()
+        threading.Thread(target=comms.recv_loop, args=(self.shared_gui_refs, self.device_manager), daemon=True).start()
+        threading.Thread(target=comms.monitor_connections, args=(self.shared_gui_refs, self.device_manager), daemon=True).start()
         threading.Thread(target=comms.discovery_loop, args=(self.shared_gui_refs,), daemon=True).start()
         self.animate_searching_text()
         self.process_gui_queue()

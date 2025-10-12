@@ -1,6 +1,27 @@
-def get_commands():
+def get_command_functions(send_cmd_func, shared_gui_refs):
     """
-    Returns a dictionary of commands for the Gantry device.
+    Returns a dictionary of functions that can be called directly
+    by the GUI or script processor.
+    """
+    return {
+        "home_x": lambda: send_cmd_func("HOME_X"),
+        "home_y": lambda: send_cmd_func("HOME_Y"),
+        "home_z": lambda: send_cmd_func("HOME_Z"),
+        "enable_x": lambda: send_cmd_func("ENABLE_X"),
+        "enable_y": lambda: send_cmd_func("ENABLE_Y"),
+        "enable_z": lambda: send_cmd_func("ENABLE_Z"),
+        "disable_x": lambda: send_cmd_func("DISABLE_X"),
+        "disable_y": lambda: send_cmd_func("DISABLE_Y"),
+        "disable_z": lambda: send_cmd_func("DISABLE_Z"),
+        "start_demo": lambda: send_cmd_func("START_DEMO"),
+        
+        # For script processor compatibility
+        "send_gantry": send_cmd_func
+    }
+
+def get_scripting_commands():
+    """
+    Returns a dictionary of commands for the scripting engine and command reference.
     """
     return {
         "MOVE_X": {"device": "gantry", "params": [{"name": "Dist(mm)", "type": float, "min": -2000, "max": 2000},

@@ -1,6 +1,42 @@
-def get_commands():
+def get_command_functions(send_cmd_func, shared_gui_refs):
     """
-    Returns a dictionary of commands for the Fillhead device.
+    Returns a dictionary of functions that can be called directly
+    by the GUI or script processor.
+    """
+    
+    # You can define helper functions here if needed, for example:
+    # def some_complex_action():
+    #     param = shared_gui_refs['some_var'].get()
+    #     send_cmd_func(f"DO_THING {param}")
+
+    return {
+        # --- Simple Commands ---
+        "clear_errors": lambda: send_cmd_func("CLEAR_ERRORS"),
+        "machine_home": lambda: send_cmd_func("MACHINE_HOME_MOVE"),
+        "cartridge_home": lambda: send_cmd_func("CARTRIDGE_HOME_MOVE"),
+        "enable_motors": lambda: send_cmd_func("ENABLE"),
+        "disable_motors": lambda: send_cmd_func("DISABLE"),
+        "heater_on": lambda: send_cmd_func("HEATER_ON"),
+        "heater_off": lambda: send_cmd_func("HEATER_OFF"),
+        "vacuum_on": lambda: send_cmd_func("VACUUM_ON"),
+        "vacuum_off": lambda: send_cmd_func("VACUUM_OFF"),
+        "pause_injection": lambda: send_cmd_func("PAUSE_INJECTION"),
+        "resume_injection": lambda: send_cmd_func("RESUME_INJECTION"),
+        "cancel_injection": lambda: send_cmd_func("CANCEL_INJECTION"),
+
+        # --- Commands with Parameters (example) ---
+        # This shows how you might handle commands that need GUI inputs.
+        # The actual implementation of these might live in a different controls.py
+        # or be handled by the scripting engine directly.
+        "set_heater_temp": lambda temp: send_cmd_func(f"SET_HEATER_SETPOINT {temp}"),
+
+        # --- For script processor compatibility ---
+        "send_fillhead": send_cmd_func 
+    }
+
+def get_scripting_commands():
+    """
+    Returns a dictionary of commands for the scripting engine and command reference.
     """
     return {
         "INJECT_STATOR": {

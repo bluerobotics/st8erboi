@@ -119,19 +119,19 @@ def create_gui_components(parent, shared_gui_refs):
     m0_frame = ttk.Frame(content_frame, style='Card.TFrame')
     m0_frame.pack(fill=tk.X, expand=True, pady=(5, 2))
     
-    m0_label = ttk.Label(m0_frame, text="M0 Pos:", style='Card.TLabel')
+    m0_label = ttk.Label(m0_frame, text="M0 Pos:", style='Subtle.TLabel')
     m0_label.pack(side=tk.LEFT)
     
-    m0_pos_label = ttk.Label(m0_frame, textvariable=shared_gui_refs['pressboi_pos_m0_var'], style='Card.TLabel', width=8)
+    m0_pos_label = ttk.Label(m0_frame, textvariable=shared_gui_refs['pressboi_pos_m0_var'], style='Subtle.TLabel', width=8)
     m0_pos_label.pack(side=tk.LEFT, padx=5)
 
-    m0_homed_label = ttk.Label(m0_frame, text="Not Homed", style='Card.TLabel', foreground=theme.ERROR_RED)
+    m0_homed_label = ttk.Label(m0_frame, text="Not Homed", style='Subtle.TLabel', foreground=theme.ERROR_RED)
     m0_homed_label.pack(side=tk.RIGHT)
     m0_homed_label.tracer = make_homed_tracer(shared_gui_refs['pressboi_homed_m0_var'], m0_homed_label)
     shared_gui_refs['pressboi_homed_m0_var'].trace_add('write', m0_homed_label.tracer)
     m0_homed_label.tracer()
 
-    m0_enabled_label = ttk.Label(m0_frame, text="Disabled", foreground=theme.ERROR_RED, style='Card.TLabel')
+    m0_enabled_label = ttk.Label(m0_frame, text="Disabled", foreground=theme.ERROR_RED, style='Subtle.TLabel')
     m0_enabled_label.pack(side=tk.RIGHT, padx=10)
     m0_enabled_label.tracer = make_state_tracer(shared_gui_refs['pressboi_enabled_m0_var'], m0_enabled_label)
     shared_gui_refs['pressboi_enabled_m0_var'].trace_add('write', m0_enabled_label.tracer)
@@ -143,19 +143,19 @@ def create_gui_components(parent, shared_gui_refs):
     m1_frame = ttk.Frame(content_frame, style='Card.TFrame')
     m1_frame.pack(fill=tk.X, expand=True, pady=(5, 2))
     
-    m1_label = ttk.Label(m1_frame, text="M1 Pos:", style='Card.TLabel')
+    m1_label = ttk.Label(m1_frame, text="M1 Pos:", style='Subtle.TLabel')
     m1_label.pack(side=tk.LEFT)
     
-    m1_pos_label = ttk.Label(m1_frame, textvariable=shared_gui_refs['pressboi_pos_m1_var'], style='Card.TLabel', width=8)
+    m1_pos_label = ttk.Label(m1_frame, textvariable=shared_gui_refs['pressboi_pos_m1_var'], style='Subtle.TLabel', width=8)
     m1_pos_label.pack(side=tk.LEFT, padx=5)
 
-    m1_homed_label = ttk.Label(m1_frame, text="Not Homed", style='Card.TLabel', foreground=theme.ERROR_RED)
+    m1_homed_label = ttk.Label(m1_frame, text="Not Homed", style='Subtle.TLabel', foreground=theme.ERROR_RED)
     m1_homed_label.pack(side=tk.RIGHT)
     m1_homed_label.tracer = make_homed_tracer(shared_gui_refs['pressboi_homed_m1_var'], m1_homed_label)
     shared_gui_refs['pressboi_homed_m1_var'].trace_add('write', m1_homed_label.tracer)
     m1_homed_label.tracer()
 
-    m1_enabled_label = ttk.Label(m1_frame, text="Disabled", foreground=theme.ERROR_RED, style='Card.TLabel')
+    m1_enabled_label = ttk.Label(m1_frame, text="Disabled", foreground=theme.ERROR_RED, style='Subtle.TLabel')
     m1_enabled_label.pack(side=tk.RIGHT, padx=10)
     m1_enabled_label.tracer = make_state_tracer(shared_gui_refs['pressboi_enabled_m1_var'], m1_enabled_label)
     shared_gui_refs['pressboi_enabled_m1_var'].trace_add('write', m1_enabled_label.tracer)

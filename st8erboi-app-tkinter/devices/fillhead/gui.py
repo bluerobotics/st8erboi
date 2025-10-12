@@ -116,7 +116,7 @@ def create_device_frame(parent, title, state_var, conn_var):
     content_frame.pack(fill='x', expand=True, pady=(5,0))
     return outer_container, content_frame
 
-def get_required_variables():
+def get_gui_variable_names():
     """Returns a list of tkinter variable names required by this GUI module."""
     return [
         'fillhead_main_state_var', 'status_var_fillhead',
@@ -129,7 +129,11 @@ def get_required_variables():
         'fillhead_vac_valve_pos_var', 'fillhead_vac_valve_homed_var', 'fillhead_torque3_var',
         'fillhead_vac_valve_state_var',
         'fillhead_vacuum_state_var', 'fillhead_vacuum_psig_var',
-        'fillhead_heater_state_var', 'fillhead_temp_c_var', 'fillhead_heater_display_var'
+        'fillhead_heater_state_var', 'fillhead_temp_c_var', 'fillhead_heater_display_var',
+        'pid_setpoint_var', # Added for heater display logic
+        'total_dispensed_var', # Added for total dispensed logic
+        'injection_target_ml_var', # Added for cycle dispensed logic
+        'cycle_dispensed_var' # Added for cycle dispensed logic
     ]
 
 
@@ -139,12 +143,56 @@ def create_gui_components(parent, shared_gui_refs):
     """Creates the Fillhead status panel."""
 
     # Initialize all required tkinter variables
-    for var_name in get_required_variables():
+    for var_name in get_gui_variable_names():
         if var_name.endswith('_var'):
             if 'torque' in var_name:
                 shared_gui_refs.setdefault(var_name, tk.DoubleVar(value=0.0))
             else:
                 shared_gui_refs.setdefault(var_name, tk.StringVar(value='---'))
+    
+    # --- Tracers moved from main.py ---
+    def update_heater_display(*args):
+        try:
+            temp_val = shared_gui_refs['fillhead_temp_c_var'].get().split()[0]
+            heater_state = shared_gui_refs['fillhead_heater_state_var'].get().upper()
+            is_on = "ON" in heater_state or "ACTIVE" in heater_state
+
+            if is_on:
+                setpoint_val = shared_gui_refs['pid_setpoint_var'].get()
+            else:
+                setpoint_val = "---"
+
+            shared_gui_refs['fillhead_heater_display_var'].set(f"{temp_val} / {setpoint_val} °C")
+        except (IndexError, ValueError, tk.TclError):
+            shared_gui_refs['fillhead_heater_display_var'].set("--- / --- °C")
+
+    shared_gui_refs['fillhead_temp_c_var'].trace_add("write", update_heater_display)
+    shared_gui_refs['pid_setpoint_var'].trace_add("write", update_heater_display)
+    shared_gui_refs['fillhead_heater_state_var'].trace_add("write", update_heater_display)
+
+    def update_total_dispensed(*args):
+        try:
+            total_val = shared_gui_refs['fillhead_inject_cumulative_ml_var'].get().split()[0]
+            shared_gui_refs['total_dispensed_var'].set(f"{total_val} ml")
+        except (IndexError, ValueError, tk.TclError):
+            shared_gui_refs['total_dispensed_var'].set("--- ml")
+
+    shared_gui_refs['fillhead_inject_cumulative_ml_var'].trace_add("write", update_total_dispensed)
+
+    def update_cycle_dispensed(*args):
+        try:
+            active_val = shared_gui_refs['fillhead_inject_active_ml_var'].get().split()[0]
+            target_val = shared_gui_refs['injection_target_ml_var'].get()
+            if target_val == '---':
+                shared_gui_refs['cycle_dispensed_var'].set(f"{active_val} / --- ml")
+            else:
+                shared_gui_refs['cycle_dispensed_var'].set(f"{active_val} / {float(target_val):.2f} ml")
+        except (IndexError, ValueError, tk.TclError):
+            shared_gui_refs['cycle_dispensed_var'].set("--- / --- ml")
+
+    shared_gui_refs['fillhead_inject_active_ml_var'].trace_add("write", update_cycle_dispensed)
+    shared_gui_refs['injection_target_ml_var'].trace_add("write", update_cycle_dispensed)
+
 
     # Helper variables
     font_small_readout = ("JetBrains Mono", 14, "bold")
@@ -251,6 +299,6 @@ def create_gui_components(parent, shared_gui_refs):
     heater_value_tracer = make_heater_value_tracer(shared_gui_refs['fillhead_temp_c_var'], heater_label)
     shared_gui_refs['fillhead_temp_c_var'].trace_add('write', heater_value_tracer)
     heater_value_tracer()
-    ttk.Label(heater_frame, textvariable=shared_gui_refs['fillhead_temp_c_var'], font=font_small_readout, foreground=theme.WARNING_YELLOW, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
+    ttk.Label(heater_frame, textvariable=shared_gui_refs['fillhead_heater_display_var'], font=font_small_readout, foreground=theme.WARNING_YELLOW, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
     
     return fillhead_outer_container
