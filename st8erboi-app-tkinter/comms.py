@@ -34,12 +34,7 @@ except OSError as e:
 
 # MODIFIED: Added a threading lock to prevent race conditions on the socket.
 socket_lock = threading.Lock()
-devices_lock = threading.Lock()
-
-devices = {
-    "fillhead": {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0},
-    "gantry": {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0}
-}
+devices_lock = threading.Lock() # This can still be useful to protect access to device_manager state
 
 
 # --- Communication Functions ---
@@ -84,9 +79,14 @@ def discovery_loop(gui_refs):
 
 def send_to_device(device_key, msg, gui_refs):
     """Sends a message to a specific device if its IP is known."""
+    device_manager = gui_refs.get('device_manager')
+    if not device_manager: return
+    
     with devices_lock:
-        device_ip = devices[device_key].get("ip")
-    if device_ip:
+        device_state = device_manager.get_device_state(device_key)
+
+    if device_state and device_state.get("ip"):
+        device_ip = device_state.get("ip")
         # MODIFIED: Added a lock to ensure thread-safe socket access.
         with socket_lock:
             try:
@@ -108,18 +108,18 @@ def monitor_connections(gui_refs, device_manager):
         now = time.time()
         with devices_lock:
             # Create a copy of items to avoid issues with dictionary size changes during iteration
-            device_items = list(devices.items())
+            device_items = list(device_manager.get_all_device_states().items())
 
         for key, device in device_items:
             with devices_lock:
                 # Re-fetch the device's current state inside the lock
-                device = devices[key]
-                prev_conn_status = device["connected"]
+                device_state = device_manager.get_device_state(key)
+                if not device_state: continue
+                prev_conn_status = device_state["connected"]
 
-            if prev_conn_status and (now - device["last_rx"]) > TIMEOUT_THRESHOLD:
+            if prev_conn_status and (now - device_state["last_rx"]) > TIMEOUT_THRESHOLD:
                 with devices_lock:
-                    devices[key]["connected"] = False
-                    devices[key]["ip"] = None
+                    device_manager.update_device_state(key, {"connected": False, "ip": None})
                 
                 log_to_terminal(f"🔌 {key.capitalize()} Disconnected", gui_refs)
                 
@@ -138,13 +138,14 @@ def update_searching_panel_visibility(gui_refs):
     """Shows or hides the 'searching for devices' panel."""
     searching_frame = gui_refs.get('searching_frame')
     status_bar_container = gui_refs.get('status_bar_container')
-    if not searching_frame or not status_bar_container:
+    device_manager = gui_refs.get('device_manager')
+    if not searching_frame or not status_bar_container or not device_manager:
         return
 
     any_connected = False
     with devices_lock:
-        for device in devices.values():
-            if device["connected"]:
+        for device_state in device_manager.get_all_device_states().values():
+            if device_state["connected"]:
                 any_connected = True
                 break
     
@@ -166,18 +167,23 @@ def queue_ui_update(gui_refs, var_name, value):
             value = safe_float(value)
         gui_queue.put((var.set, (value,), {}))
 
-def handle_connection(device_key, source_ip, gui_refs):
+def handle_connection(device_key, source_ip, gui_refs, device_manager):
     """Handles the logic for a new or existing connection."""
     gui_queue = gui_refs.get('gui_queue')
     is_new_connection = False
 
     with devices_lock:
-        device = devices[device_key]
-        if not device["connected"]:
+        device_state = device_manager.get_device_state(device_key)
+        if not device_state: return # Should not happen if discovery is working
+        
+        if not device_state["connected"]:
             is_new_connection = True
-        device["ip"] = source_ip
-        device["last_rx"] = time.time()
-        device["connected"] = True
+        
+        device_manager.update_device_state(device_key, {
+            "ip": source_ip,
+            "last_rx": time.time(),
+            "connected": True
+        })
 
     if is_new_connection:
         status_text = f"✅ {device_key.capitalize()} Connected ({source_ip})"
@@ -215,12 +221,10 @@ def recv_loop(gui_refs, device_manager):
                     parts = msg.split(" ")[1].split("=")
                     if parts[0] == "DEVICE_ID":
                         device_key = parts[1].lower()
-                        # This part is new, to dynamically add devices
-                        with devices_lock:
-                            if device_key not in devices:
-                                devices[device_key] = {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0}
-                                # log_to_terminal(f"Discovered new device: {device_key}", gui_refs) # This is redundant
-                        handle_connection(device_key, source_ip, gui_refs)
+                        # The device manager should already know about all possible devices.
+                        # We just need to handle its connection state.
+                        if device_key in device_modules:
+                            handle_connection(device_key, source_ip, gui_refs, device_manager)
                 except IndexError:
                     log_to_terminal(f"Malformed discovery response: {msg}", gui_refs)
             
@@ -229,7 +233,7 @@ def recv_loop(gui_refs, device_manager):
                 try:
                     device_key = msg.split("_TELEM:")[0].lower()
                     if device_key in device_modules:
-                        handle_connection(device_key, source_ip, gui_refs)
+                        handle_connection(device_key, source_ip, gui_refs, device_manager)
                         if log_telemetry:
                             log_to_terminal(f"[TELEM @{source_ip}]: {msg}", gui_refs)
                         
@@ -247,10 +251,11 @@ def recv_loop(gui_refs, device_manager):
                                  "GANTRY_DONE:", "GANTRY_INFO:", "GANTRY_ERROR:",
                                  "FILLHEAD_START:", "GANTRY_START:")):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", gui_refs)
-                for key, device in devices.items():
-                    if device["ip"] == source_ip:
-                        device["last_rx"] = time.time()
-                        break
+                with devices_lock:
+                    for key, device_state in device_manager.get_all_device_states().items():
+                        if device_state["ip"] == source_ip:
+                            device_manager.update_device_state(key, {"last_rx": time.time()})
+                            break
             else:
                 log_to_terminal(f"[UNHANDLED @{source_ip}]: {msg}", gui_refs)
 

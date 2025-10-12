@@ -1,4 +1,20 @@
 
+def get_schema():
+    """
+    Returns the telemetry schema for this device.
+    This is used by the simulator to generate mock telemetry data.
+    """
+    return {
+        'MAIN_STATE': 'STANDBY',
+        'pressure_psi': 0.0,
+        'enabled': 1,
+        'error_code': 0,
+        'cycles_programmed': 10,
+        'cycles_complete': 0,
+        'tank1_temp_c': 25.0,
+        'tank2_temp_c': 25.1
+    }
+
 def parse_telemetry(msg, gui_refs, queue_ui_update, safe_float):
     """Parses telemetry messages for the Pressurizer device."""
     # Make the check case-insensitive to handle potential firmware differences

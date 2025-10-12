@@ -5,6 +5,7 @@ import tkinter as tk
 class DeviceManager:
     def __init__(self, shared_gui_refs):
         self.devices = {}
+        self.device_state = {} # New dictionary for connection state
         self.discovery_logs = []
         self.shared_gui_refs = shared_gui_refs
         self.discover_devices()
@@ -32,6 +33,13 @@ class DeviceManager:
                         'commands': commands_module,
                         'telem': telem_module,
                         'status_var': tk.StringVar(value=f'🔌 {device_name.capitalize()} Disconnected')
+                    }
+                    # Initialize the state for this device
+                    self.device_state[device_name] = {
+                        "ip": None, 
+                        "last_rx": 0, 
+                        "connected": False, 
+                        "last_discovery_attempt": 0
                     }
                     self.log(f"Successfully loaded modules for '{device_name}'")
                 except ImportError as e:
@@ -94,6 +102,19 @@ class DeviceManager:
             # A more robust implementation would check if the device is actually connected
             sender = self.get_device_sender(device_name)
             sender("ABORT")
+
+    def get_device_state(self, device_name):
+        """Returns the connection state for a specific device."""
+        return self.device_state.get(device_name)
+
+    def get_all_device_states(self):
+        """Returns the dictionary of all device connection states."""
+        return self.device_state
+
+    def update_device_state(self, device_name, new_state):
+        """Updates the connection state for a specific device."""
+        if device_name in self.device_state:
+            self.device_state[device_name].update(new_state)
 
     def get_all_scripting_commands(self):
         """

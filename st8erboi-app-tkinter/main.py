@@ -393,7 +393,7 @@ class MainApplication:
             cmd_ref_content, 
             self.scripting_gui_refs['script_editor'],
             self.scripting_gui_refs['scripting_commands'],
-            self.scripting_gui_refs['device_modules']
+            self.device_manager
         )
         command_ref_widget.pack(fill=tk.BOTH, expand=True)
 

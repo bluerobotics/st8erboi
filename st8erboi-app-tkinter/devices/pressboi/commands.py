@@ -1,4 +1,4 @@
-def get_commands():
+def get_scripting_commands():
     """
     Returns a dictionary of commands for the Pressboi device.
     """

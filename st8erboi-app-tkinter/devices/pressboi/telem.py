@@ -1,5 +1,18 @@
 import tkinter as tk
 
+def get_schema():
+    """
+    Returns the telemetry schema for this device.
+    This is used by the simulator to generate mock telemetry data.
+    """
+    return {
+        'MAIN_STATE': 'STANDBY',
+        'pressure_psi': 0.0,
+        'temperature_c': 25.0,
+        'enabled': 1,
+        'error_code': 0
+    }
+
 def parse_telemetry(message, gui_refs, queue_ui_update, safe_float):
     """Parses telemetry messages for the Pressboi device."""
     if "PRESSBOI_TELEM:" not in message:

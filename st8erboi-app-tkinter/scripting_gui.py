@@ -10,7 +10,7 @@ import tkinter.font as tkfont
 from script_validator import validate_single_line, validate_script
 from script_processor import ScriptRunner
 import theme
-from comms import devices as comms_devices, devices_lock
+from comms import devices_lock
 
 # --- Find/Replace Frame ---
 class FindReplaceFrame(ttk.Frame):
@@ -416,7 +416,7 @@ class ValidationResultsWindow(tk.Toplevel):
 
 
 # --- GUI Creation Functions (Wiring everything up) ---
-def create_command_reference(parent, script_editor_widget, scripting_commands, device_modules):
+def create_command_reference(parent, script_editor_widget, scripting_commands, device_manager):
     ref_frame = ttk.Frame(parent, style='TFrame', padding=5)
 
     # --- Filter Widgets ---
@@ -448,8 +448,9 @@ def create_command_reference(parent, script_editor_widget, scripting_commands, d
         # Create device sections first
         device_parents = {}
         with devices_lock: # Safely access connection status
-            for device_name in sorted(device_modules.keys()):
-                is_connected = comms_devices.get(device_name, {}).get('connected', False)
+            device_states = device_manager.get_all_device_states()
+            for device_name in sorted(device_states.keys()):
+                is_connected = device_states[device_name].get('connected', False)
                 
                 # Set appearance and state based on connection
                 tags = () if is_connected else ('disconnected',)
