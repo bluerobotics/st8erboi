@@ -1,44 +1,42 @@
-COMMANDS = {
-    "PRESS_HOME": {
-        "device": "pressboi",
-        "params": [],
-        "help": "Homes both axes of the press."
-    },
-    "PRESS_MOVE_ABS": {
-        "device": "pressboi",
-        "params": [
-            {"name": "M0-Pos(mm)", "type": float, "min": 0, "max": 100},
-            {"name": "M1-Pos(mm)", "type": float, "min": 0, "max": 100},
-            {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 50, "optional": True, "default": 10}
-        ],
-        "help": "Moves both press axes to absolute positions."
-    },
-    "PRESS_MOVE_REL": {
-        "device": "pressboi",
-        "params": [
-            {"name": "M0-Dist(mm)", "type": float, "min": -100, "max": 100},
-            {"name": "M1-Dist(mm)", "type": float, "min": -100, "max": 100},
-            {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 50, "optional": True, "default": 10}
-        ],
-        "help": "Moves both press axes by a relative distance."
-    },
-    "PRESS_JOG": {
-        "device": "pressboi",
-        "params": [
-            {"name": "Motor(0/1)", "type": int, "min": 0, "max": 1},
-            {"name": "Dist(mm)", "type": float, "min": -20, "max": 20},
-            {"name": "Speed(mm/s)", "type": float, "min": 1, "max": 50, "optional": True, "default": 5}
-        ],
-        "help": "Jogs a single motor on the press by a relative distance."
-    },
-    "PRESS_ENABLE": {
-        "device": "pressboi",
-        "params": [],
-        "help": "Enables the press motors."
-    },
-    "PRESS_DISABLE": {
-        "device": "pressboi",
-        "params": [],
-        "help": "Disables the press motors."
+def get_commands():
+    """
+    Returns a dictionary of commands for the Pressurizer device.
+    """
+    return {
+        "PRESSURIZER_HOME": {"device": "pressurizer", "params": [], "help": "Homes the pressurizer."},
+        "PRESSURIZER_SET_PRESSURE": {
+            "device": "pressurizer",
+            "params": [
+                {"name": "Pressure(msw)", "type": float, "min": 0, "max": 100},
+                {"name": "Rate(msw/s)", "type": float, "min": 0.1, "max": 10, "optional": True}
+            ],
+            "help": "Sets the target pressure."
+        },
+        "PRESSURIZER_HOLD_STATIC": {
+            "device": "pressurizer",
+            "params": [
+                {"name": "Duration", "type": float, "min": 0},
+                {"name": "Units(s/m/h)", "type": str, "optional": True, "default": "s"}
+            ],
+            "help": "Holds the current position for a duration (s, m, or h)."
+        },
+        "PRESSURIZER_HOLD_PRESSURE": {
+            "device": "pressurizer",
+            "params": [
+                {"name": "Duration", "type": float, "min": 0},
+                {"name": "Units(s/m/h)", "type": str, "optional": True, "default": "s"}
+            ],
+            "help": "Holds the current pressure for a duration (s, m, or h)."
+        },
+        "PRESSURIZER_SET_TEMP": {
+            "device": "pressurizer",
+            "params": [
+                {"name": "Tank(1/2)", "type": int, "min": 1, "max": 2},
+                {"name": "Temp(C)", "type": float, "min": 0, "max": 100}
+            ],
+            "help": "Sets the temperature for a specific tank."
+        },
+        "PRESSURIZER_CLEAR_ERRORS": {"device": "pressurizer", "params": [], "help": "Clears any active errors on the device."},
+        "PRESSURIZER_ENABLE": {"device": "pressurizer", "params": [], "help": "Enables the motors."},
+        "PRESSURIZER_DISABLE": {"device": "pressurizer", "params": [], "help": "Disables the motors."}
     }
-}

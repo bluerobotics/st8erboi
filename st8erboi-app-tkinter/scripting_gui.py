@@ -10,6 +10,8 @@ import tkinter.font as tkfont
 from script_validator import COMMANDS, validate_single_line
 from script_processor import ScriptRunner
 import theme
+from devices import device_modules
+from comms import devices as comms_devices, devices_lock
 
 # --- Find/Replace Frame ---
 class FindReplaceFrame(ttk.Frame):
@@ -426,8 +428,11 @@ def create_command_reference(parent, script_editor_widget):
     # --- Treeview ---
     tree_frame = ttk.Frame(ref_frame, style='TFrame')
     tree_frame.pack(fill=tk.BOTH, expand=True)
-    tree = ttk.Treeview(tree_frame, columns=('device', 'params', 'desc'), show='tree headings')
+    tree = ttk.Treeview(tree_frame, columns=('params', 'desc'), show='tree headings')
     
+    # --- Tag for styling disconnected devices ---
+    tree.tag_configure('disconnected', foreground=theme.COMMENT_COLOR)
+
     all_commands = []
     for cmd, details in sorted(COMMANDS.items(), key=lambda item: (item[1]['device'], item[0])):
         all_commands.append({
@@ -440,8 +445,28 @@ def create_command_reference(parent, script_editor_widget):
     def populate_tree(commands_to_display):
         for item in tree.get_children():
             tree.delete(item)
+
+        # Create device sections first
+        device_parents = {}
+        with devices_lock: # Safely access connection status
+            for device_name in sorted(device_modules.keys()):
+                is_connected = comms_devices.get(device_name, {}).get('connected', False)
+                
+                # Set appearance and state based on connection
+                tags = () if is_connected else ('disconnected',)
+                is_open = is_connected # Expand if connected, collapse if not
+                
+                parent_id = tree.insert('', 'end', text=device_name.capitalize(), values=('', ''), open=is_open, tags=tags)
+                device_parents[device_name] = parent_id
+
+        # Populate commands under the correct device section
         for cmd_data in commands_to_display:
-            tree.insert('', 'end', text=cmd_data['cmd'], values=(cmd_data['device'], cmd_data['params'], cmd_data['desc']))
+            device_key = cmd_data['device'].lower()
+            parent_id = device_parents.get(device_key)
+            if parent_id:
+                # Use same tags as parent for consistent styling
+                tags = tree.item(parent_id, 'tags')
+                tree.insert(parent_id, 'end', text=cmd_data['cmd'], values=(cmd_data['params'], cmd_data['desc']), tags=tags)
 
     filter_vars = {}
     def apply_filters(*args):
@@ -458,8 +483,8 @@ def create_command_reference(parent, script_editor_widget):
              sort_column(tree.sort_by, tree.sort_rev, True)
 
 
-    columns = {'#0': 'cmd', 'device': 'device', 'params': 'params', 'desc': 'desc'}
-    widths = {'#0': 200, 'device': 60, 'params': 60, 'desc': 300}
+    columns = {'#0': 'cmd', 'params': 'params', 'desc': 'desc'}
+    widths = {'#0': 200, 'params': 120, 'desc': 300}
 
     for i, (col_id, col_key) in enumerate(columns.items()):
         tree.heading(col_id, text=col_key.capitalize() if col_id!='#0' else 'Command')
@@ -469,36 +494,33 @@ def create_command_reference(parent, script_editor_widget):
         var.trace_add("write", apply_filters)
         filter_vars[col_key] = var
         
-        # FIX: Remove old, incorrect style from placeholder entry and add textvariable
         entry = EntryWithPlaceholder(filter_frame, 
                                      textvariable=var,
                                      placeholder=f"Filter {col_key.capitalize()}...")
         entry.grid(row=0, column=i, sticky='ew', padx=(0 if i==0 else 2, 0))
 
     def sort_column(col_id, reverse, preserve=False):
-        # The text of the header is stored in tree.heading(col_id, "text")
+        # This function will now sort items WITHIN each device parent
         header_text = tree.heading(col_id, "text").replace(" ▲", "").replace(" ▼", "")
         
-        # Reset all headers
         for cid, ckey in columns.items():
              tree.heading(cid, text=ckey.capitalize() if cid!='#0' else 'Command')
         
         arrow = " ▼" if reverse else " ▲"
         tree.heading(col_id, text=header_text + arrow)
 
-        # Get data to sort
-        if col_id == '#0':
-             l = [(tree.item(k)['text'], k) for k in tree.get_children('')]
-        else:
-             l = [(tree.set(k, col_id), k) for k in tree.get_children('')]
-        
-        l.sort(key=lambda t: t[0].lower(), reverse=reverse)
-        for index, (val, k) in enumerate(l):
-            tree.move(k, '', index)
+        # Iterate over each device parent and sort its children
+        for parent_id in tree.get_children(''):
+            if col_id == '#0':
+                 l = [(tree.item(k)['text'], k) for k in tree.get_children(parent_id)]
+            else:
+                 l = [(tree.set(k, col_id), k) for k in tree.get_children(parent_id)]
+            
+            l.sort(key=lambda t: t[0].lower(), reverse=reverse)
+            for index, (val, k) in enumerate(l):
+                tree.move(k, parent_id, index)
 
-        # Update the heading command to toggle sorting
         tree.heading(col_id, command=lambda: sort_column(col_id, not reverse))
-        # Store sort state
         tree.sort_by = col_id
         tree.sort_rev = reverse
 

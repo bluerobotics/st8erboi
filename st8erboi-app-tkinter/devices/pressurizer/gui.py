@@ -52,38 +52,62 @@ def create_device_frame(parent, title, state_var, conn_var):
 
 # --- Main GUI Creation Function ---
 
+def get_required_variables():
+    """Returns a list of all required tkinter variables for the Pressurizer GUI."""
+    return [
+        'pressurizer_main_state_var',
+        'pressurizer_pressure_var',
+        'pressurizer_cycles_programmed_var',
+        'pressurizer_cycles_complete_var',
+        'pressurizer_tank1_temp_var',
+        'pressurizer_tank2_temp_var',
+        'status_var_pressurizer'
+    ]
+
+def create_stat(parent, label_text, var, row, col, unit=""):
+    """Helper to create a formatted stat label in the grid."""
+    frame = ttk.Frame(parent, style='Card.TFrame')
+    frame.grid(row=row, column=col, sticky='ew', padx=5, pady=2)
+    ttk.Label(frame, text=label_text, style='Card.TLabel', anchor='w').pack(side=tk.LEFT)
+    val_label = ttk.Label(frame, textvariable=var, style='Card.TLabel', font=("JetBrains Mono", 12, "bold"), anchor='e')
+    val_label.pack(side=tk.RIGHT)
+    if unit:
+        ttk.Label(frame, text=unit, style='Card.TLabel', anchor='e').pack(side=tk.RIGHT)
+
 def create_gui_components(parent, shared_gui_refs):
-    """
-    Creates the GUI components for the Pressurizer device.
-    """
-    state_var_name = 'pressurizer_main_state_var'
-    conn_var_name = 'status_var_pressurizer'
+    """Creates the Pressurizer status panel."""
     
-    outer_container, content_frame = create_device_frame(
+    # Initialize all required tkinter variables
+    for var_name in get_required_variables():
+        if var_name.endswith('_var'):
+            shared_gui_refs.setdefault(var_name, tk.StringVar(value='---'))
+
+    device_frame, _ = create_device_frame(
         parent, 
         "Pressurizer",
-        shared_gui_refs.setdefault(state_var_name, tk.StringVar(value='---')),
-        shared_gui_refs.setdefault(conn_var_name, tk.StringVar(value='🔌 Pressurizer Disconnected'))
+        shared_gui_refs['pressurizer_main_state_var'],
+        shared_gui_refs['status_var_pressurizer']
     )
+    shared_gui_refs['pressurizer_panel'] = device_frame
     
-    # --- Create a grid for stats ---
-    stats_grid = ttk.Frame(content_frame, style='Card.TFrame')
-    stats_grid.pack(fill=tk.X, expand=True, pady=(5, 2))
-    stats_grid.grid_columnconfigure(1, weight=1)
-    stats_grid.grid_columnconfigure(3, weight=1)
+    # --- Main Content ---
+    content_frame = ttk.Frame(device_frame, style='Card.TFrame')
+    content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
+    content_frame.grid_columnconfigure(0, weight=1)
+    content_frame.grid_columnconfigure(1, weight=1)
 
-    # --- Helper to create a stat display ---
-    def create_stat(parent, label_text, var_name, row, col):
-        ttk.Label(parent, text=label_text, style='TLabel', font=theme.FONT_BOLD).grid(row=row, column=col, sticky='w')
-        shared_gui_refs.setdefault(var_name, tk.StringVar(value='---'))
-        stat_label = ttk.Label(parent, textvariable=shared_gui_refs[var_name], style='TLabel', font=theme.FONT_BOLD, foreground=theme.PRIMARY_ACCENT)
-        stat_label.grid(row=row, column=col+1, sticky='e', padx=(10, 20))
+    # Pressure display
+    pressure_frame = ttk.Frame(content_frame, style='Card.TFrame')
+    pressure_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(5, 10))
+    pressure_frame.grid_columnconfigure(1, weight=1)
+    ttk.Label(pressure_frame, text="Pressure (msw):", style='Card.TLabel', font=("JetBrains Mono", 12)).grid(row=0, column=0, sticky='w')
+    pressure_val_label = ttk.Label(pressure_frame, textvariable=shared_gui_refs['pressurizer_pressure_var'], style='Card.TLabel', font=("JetBrains Mono", 28, "bold"), anchor='e')
+    pressure_val_label.grid(row=0, column=1, sticky='e')
 
-    # --- Populate Grid ---
-    create_stat(stats_grid, "Pressure (msw):", 'pressurizer_pressure_var', 0, 0)
-    create_stat(stats_grid, "Cycles Programmed:", 'pressurizer_cycles_prog_var', 1, 0)
-    create_stat(stats_grid, "Cycles Complete:", 'pressurizer_cycles_comp_var', 2, 0)
-    create_stat(stats_grid, "Tank 1 Temp (°C):", 'pressurizer_tank1_temp_var', 1, 2)
-    create_stat(stats_grid, "Tank 2 Temp (°C):", 'pressurizer_tank2_temp_var', 2, 2)
+    # Stats
+    create_stat(content_frame, "Cycles Programmed:", shared_gui_refs['pressurizer_cycles_programmed_var'], 1, 0)
+    create_stat(content_frame, "Cycles Complete:", shared_gui_refs['pressurizer_cycles_complete_var'], 1, 1)
+    create_stat(content_frame, "Tank 1 Temp:", shared_gui_refs['pressurizer_tank1_temp_var'], 2, 0, "°C")
+    create_stat(content_frame, "Tank 2 Temp:", shared_gui_refs['pressurizer_tank2_temp_var'], 2, 1, "°C")
 
-    return outer_container
+    return device_frame

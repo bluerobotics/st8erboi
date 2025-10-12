@@ -62,7 +62,7 @@ def create_device_frame(parent, title, state_var, conn_var):
     title_label.pack(side=tk.LEFT, padx=(0, 5))
     ip_label = ttk.Label(header_frame, text="", font=("JetBrains Mono", 9), style='Subtle.TLabel')
     ip_label.pack(side=tk.LEFT, anchor='sw', pady=(0, 2))
-    state_label = ttk.Label(header_frame, textvariable=state_var, font=("JetBrains Mono", 14, "bold"), style='Subtle.TLabel')
+    state_label = ttk.Label(header_frame, textvariable=state_var, font=("JetBrains Mono", 12, "bold"), style='Subtle.TLabel')
     state_label.pack(side=tk.RIGHT)
     state_label.tracer = make_state_tracer(state_var, state_label)
     state_var.trace_add('write', state_label.tracer)
@@ -84,27 +84,47 @@ def create_device_frame(parent, title, state_var, conn_var):
     content_frame.pack(fill='x', expand=True, pady=(5,0))
     return outer_container, content_frame
 
+def get_required_variables():
+    """Returns a list of tkinter variable names required by this GUI module."""
+    return [
+        'gantry_main_state_var', 'status_var_gantry',
+        'gantry_x_pos_var', 'gantry_x_torque_var', 'gantry_x_enabled_var', 'gantry_x_homed_var', 'gantry_x_state_var',
+        'gantry_y_pos_var', 'gantry_y_torque_var', 'gantry_y_enabled_var', 'gantry_y_homed_var', 'gantry_y_state_var',
+        'gantry_z_pos_var', 'gantry_z_torque_var', 'gantry_z_enabled_var', 'gantry_z_homed_var', 'gantry_z_state_var'
+    ]
+
 # --- Main GUI Creation Function ---
 
 def create_gui_components(parent, shared_gui_refs):
     """Creates the Gantry status panel."""
+
+    # Initialize all required tkinter variables
+    for var_name in get_required_variables():
+        if var_name.endswith('_var'):
+            if 'torque' in var_name:
+                shared_gui_refs.setdefault(var_name, tk.DoubleVar(value=0.0))
+            else:
+                shared_gui_refs.setdefault(var_name, tk.StringVar(value='---'))
+    
     font_large_readout = ("JetBrains Mono", 28, "bold")
     bar_height = 55
 
-    gantry_outer_container, gantry_content = create_device_frame(parent, "Gantry", shared_gui_refs['fh_state_var'], shared_gui_refs['status_var_gantry'])
-    
+    device_frame, content_frame = create_device_frame(parent, "Gantry", shared_gui_refs['gantry_main_state_var'], shared_gui_refs['status_var_gantry'])
+    shared_gui_refs['gantry_panel'] = device_frame
+
     gantry_axes_data = [
-        {'label': 'X', 'pos_var': 'fh_pos_m0_var', 'homed_var': 'fh_homed_m0_var', 'torque_var': 'fh_torque_m0_var', 'state_var': 'fh_state_x_var'},
-        {'label': 'Y', 'pos_var': 'fh_pos_m1_var', 'homed_var': 'fh_homed_m1_var', 'torque_var': 'fh_torque_m1_var', 'state_var': 'fh_state_y_var'},
-        {'label': 'Z', 'pos_var': 'fh_pos_m3_var', 'homed_var': 'fh_homed_m3_var', 'torque_var': 'fh_torque_m3_var', 'state_var': 'fh_state_z_var'}
+        {'label': 'X', 'pos_var': 'gantry_x_pos_var', 'homed_var': 'gantry_x_homed_var', 'torque_var': 'gantry_x_torque_var', 'state_var': 'gantry_x_state_var'},
+        {'label': 'Y', 'pos_var': 'gantry_y_pos_var', 'homed_var': 'gantry_y_homed_var', 'torque_var': 'gantry_y_torque_var', 'state_var': 'gantry_y_state_var'},
+        {'label': 'Z', 'pos_var': 'gantry_z_pos_var', 'homed_var': 'gantry_z_homed_var', 'torque_var': 'gantry_z_torque_var', 'state_var': 'gantry_z_state_var'},
     ]
     for axis_info in gantry_axes_data:
-        axis_frame = ttk.Frame(gantry_content, style='Card.TFrame')
+        axis_frame = ttk.Frame(content_frame, style='Card.TFrame')
         axis_frame.pack(anchor='w', pady=4, fill='x')
         axis_frame.grid_columnconfigure(2, weight=1)
         axis_label = ttk.Label(axis_frame, text=f"{axis_info['label']}:", width=3, anchor='w', font=font_large_readout, style='Subtle.TLabel')
-        axis_label.grid(row=0, column=0, sticky='w', padx=(0, 5))
+        axis_label.grid(row=0, column=0, sticky='ns', padx=(0, 5))
         
+        # Create and trace the state label
         state_label = ttk.Label(axis_frame, textvariable=shared_gui_refs[axis_info['state_var']], font=("JetBrains Mono", 10, "bold"), style='Subtle.TLabel')
         state_label.grid(row=0, column=1, sticky='w', padx=(0, 10))
         state_label.tracer = make_state_tracer(shared_gui_refs[axis_info['state_var']], state_label)
@@ -112,13 +132,11 @@ def create_gui_components(parent, shared_gui_refs):
         state_label.tracer()
 
         ttk.Label(axis_frame, textvariable=shared_gui_refs[axis_info['pos_var']], font=font_large_readout, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
-        
         torque_widget = create_torque_widget(axis_frame, shared_gui_refs[axis_info['torque_var']], bar_height)
-        torque_widget.grid(row=0, column=3, sticky='ns')
-
+        torque_widget.grid(row=0, column=3, rowspan=1, sticky='ns', padx=(10, 0))
         homed_var = shared_gui_refs[axis_info['homed_var']]
         axis_label.tracer = make_homed_tracer(homed_var, axis_label)
         homed_var.trace_add('write', axis_label.tracer)
         axis_label.tracer()
 
-    return gantry_outer_container
+    return device_frame

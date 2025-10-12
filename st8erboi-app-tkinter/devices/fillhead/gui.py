@@ -116,15 +116,42 @@ def create_device_frame(parent, title, state_var, conn_var):
     content_frame.pack(fill='x', expand=True, pady=(5,0))
     return outer_container, content_frame
 
+def get_required_variables():
+    """Returns a list of tkinter variable names required by this GUI module."""
+    return [
+        'fillhead_main_state_var', 'status_var_fillhead',
+        'fillhead_injector_state_var', 'fillhead_machine_steps_var', 'fillhead_homed0_var',
+        'fillhead_cartridge_steps_var', 'fillhead_homed1_var',
+        'fillhead_inject_cumulative_ml_var', 'fillhead_inject_active_ml_var',
+        'fillhead_torque0_var', 'fillhead_torque1_var',
+        'fillhead_inj_valve_pos_var', 'fillhead_inj_valve_homed_var', 'fillhead_torque2_var',
+        'fillhead_inj_valve_state_var',
+        'fillhead_vac_valve_pos_var', 'fillhead_vac_valve_homed_var', 'fillhead_torque3_var',
+        'fillhead_vac_valve_state_var',
+        'fillhead_vacuum_state_var', 'fillhead_vacuum_psig_var',
+        'fillhead_heater_state_var', 'fillhead_temp_c_var', 'fillhead_heater_display_var'
+    ]
+
+
 # --- Main GUI Creation Function ---
 
 def create_gui_components(parent, shared_gui_refs):
     """Creates the Fillhead status panel."""
+
+    # Initialize all required tkinter variables
+    for var_name in get_required_variables():
+        if var_name.endswith('_var'):
+            if 'torque' in var_name:
+                shared_gui_refs.setdefault(var_name, tk.DoubleVar(value=0.0))
+            else:
+                shared_gui_refs.setdefault(var_name, tk.StringVar(value='---'))
+
+    # Helper variables
     font_small_readout = ("JetBrains Mono", 14, "bold")
     font_injector_readout = ("JetBrains Mono", 12, "bold")
     small_bar_height = 20
     
-    fillhead_outer_container, fillhead_content = create_device_frame(parent, "Fillhead", shared_gui_refs['main_state_var'], shared_gui_refs['status_var_fillhead'])
+    fillhead_outer_container, fillhead_content = create_device_frame(parent, "Fillhead", shared_gui_refs['fillhead_main_state_var'], shared_gui_refs['status_var_fillhead'])
     
     injector_container = ttk.Frame(fillhead_content, style='CardBorder.TFrame')
     injector_container.pack(anchor='w', pady=(10, 5), fill='x')
@@ -144,16 +171,16 @@ def create_gui_components(parent, shared_gui_refs):
 
     machine_label = ttk.Label(content_grid, text="Machine:", font=font_injector_readout, style='Subtle.TLabel')
     machine_label.grid(row=0, column=2, sticky='w', padx=(10, 5))
-    ttk.Label(content_grid, textvariable=shared_gui_refs['machine_steps_var'], font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=0, column=3, sticky='ew')
-    machine_homed_var = shared_gui_refs['homed0_var']
+    ttk.Label(content_grid, textvariable=shared_gui_refs['fillhead_machine_steps_var'], font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=0, column=3, sticky='ew')
+    machine_homed_var = shared_gui_refs['fillhead_homed0_var']
     machine_label.tracer = make_homed_tracer(machine_homed_var, machine_label)
     machine_homed_var.trace_add('write', machine_label.tracer)
     machine_label.tracer()
     
     cartridge_label = ttk.Label(content_grid, text="Cartridge:", font=font_injector_readout, style='Subtle.TLabel')
     cartridge_label.grid(row=1, column=2, sticky='w', padx=(10, 5))
-    ttk.Label(content_grid, textvariable=shared_gui_refs['cartridge_steps_var'], font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=1, column=3, sticky='ew')
-    cartridge_homed_var = shared_gui_refs['homed1_var']
+    ttk.Label(content_grid, textvariable=shared_gui_refs['fillhead_cartridge_steps_var'], font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=1, column=3, sticky='ew')
+    cartridge_homed_var = shared_gui_refs['fillhead_homed1_var']
     cartridge_label.tracer = make_homed_tracer(cartridge_homed_var, cartridge_label)
     cartridge_homed_var.trace_add('write', cartridge_label.tracer)
     cartridge_label.tracer()
@@ -162,22 +189,22 @@ def create_gui_components(parent, shared_gui_refs):
     total_disp_frame.grid(row=2, column=0, columnspan=4, sticky='ew')
     total_disp_frame.grid_columnconfigure(1, weight=1)
     ttk.Label(total_disp_frame, text="Total Dispensed:", font=font_injector_readout, style='Subtle.TLabel').grid(row=0, column=0, sticky='w')
-    ttk.Label(total_disp_frame, textvariable=shared_gui_refs['total_dispensed_var'], font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=0, column=1, sticky='ew')
+    ttk.Label(total_disp_frame, textvariable=shared_gui_refs['fillhead_inject_cumulative_ml_var'], font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=0, column=1, sticky='ew')
 
     cycle_disp_frame = ttk.Frame(content_grid, style='Card.TFrame')
     cycle_disp_frame.grid(row=3, column=0, columnspan=4, sticky='ew')
     cycle_disp_frame.grid_columnconfigure(1, weight=1)
     ttk.Label(cycle_disp_frame, text="Cycle Dispensed:", font=font_injector_readout, style='Subtle.TLabel').grid(row=0, column=0, sticky='w')
-    ttk.Label(cycle_disp_frame, textvariable=shared_gui_refs['cycle_dispensed_var'], foreground=theme.SUCCESS_GREEN, font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=0, column=1, sticky='ew')
+    ttk.Label(cycle_disp_frame, textvariable=shared_gui_refs['fillhead_inject_active_ml_var'], foreground=theme.SUCCESS_GREEN, font=font_injector_readout, style='Subtle.TLabel', anchor='e').grid(row=0, column=1, sticky='ew')
 
-    injector_torque_widget = create_torque_widget(content_grid, shared_gui_refs['torque0_var'], 115)
+    injector_torque_widget = create_torque_widget(content_grid, shared_gui_refs['fillhead_torque0_var'], 115)
     injector_torque_widget.grid(row=0, column=4, rowspan=4, sticky='ns', padx=(10, 0))
     
     ttk.Separator(fillhead_content, orient='horizontal').pack(fill='x', pady=8, padx=10)
     
     pinch_axes_data = [
-        {'label': 'Inj Valve', 'pos_var': 'inj_valve_pos_var', 'homed_var': 'inj_valve_homed_var', 'torque_var': 'torque2_var', 'state_var': 'fillhead_inj_valve_state_var'},
-        {'label': 'Vac Valve', 'pos_var': 'vac_valve_pos_var', 'homed_var': 'vac_valve_homed_var', 'torque_var': 'torque3_var', 'state_var': 'fillhead_vac_valve_state_var'},
+        {'label': 'Inj Valve', 'pos_var': 'fillhead_inj_valve_pos_var', 'homed_var': 'fillhead_inj_valve_homed_var', 'torque_var': 'fillhead_torque2_var', 'state_var': 'fillhead_inj_valve_state_var'},
+        {'label': 'Vac Valve', 'pos_var': 'fillhead_vac_valve_pos_var', 'homed_var': 'fillhead_vac_valve_homed_var', 'torque_var': 'fillhead_torque3_var', 'state_var': 'fillhead_vac_valve_state_var'},
     ]
     for axis_info in pinch_axes_data:
         axis_frame = ttk.Frame(fillhead_content, style='Card.TFrame')
@@ -206,10 +233,10 @@ def create_gui_components(parent, shared_gui_refs):
     vac_status_tracer = make_on_off_tracer(shared_gui_refs['fillhead_vacuum_state_var'], (vac_status_label, theme.SUCCESS_GREEN, theme.COMMENT_COLOR))
     shared_gui_refs['fillhead_vacuum_state_var'].trace_add('write', vac_status_tracer)
     vac_status_tracer()
-    vac_value_tracer = make_vacuum_value_tracer(shared_gui_refs['vacuum_psig_var'], vac_label)
-    shared_gui_refs['vacuum_psig_var'].trace_add('write', vac_value_tracer)
+    vac_value_tracer = make_vacuum_value_tracer(shared_gui_refs['fillhead_vacuum_psig_var'], vac_label)
+    shared_gui_refs['fillhead_vacuum_psig_var'].trace_add('write', vac_value_tracer)
     vac_value_tracer()
-    ttk.Label(vac_frame, textvariable=shared_gui_refs['vacuum_psig_var'], font=font_small_readout, foreground=theme.PRIMARY_ACCENT, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
+    ttk.Label(vac_frame, textvariable=shared_gui_refs['fillhead_vacuum_psig_var'], font=font_small_readout, foreground=theme.PRIMARY_ACCENT, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
 
     heater_frame = ttk.Frame(fillhead_content, style='Card.TFrame')
     heater_frame.pack(anchor='w', pady=2, fill='x')
@@ -221,9 +248,9 @@ def create_gui_components(parent, shared_gui_refs):
     heater_status_tracer = make_on_off_tracer(shared_gui_refs['fillhead_heater_state_var'], (heater_status_label, theme.SUCCESS_GREEN, theme.COMMENT_COLOR))
     shared_gui_refs['fillhead_heater_state_var'].trace_add('write', heater_status_tracer)
     heater_status_tracer()
-    heater_value_tracer = make_heater_value_tracer(shared_gui_refs['temp_c_var'], heater_label)
-    shared_gui_refs['temp_c_var'].trace_add('write', heater_value_tracer)
+    heater_value_tracer = make_heater_value_tracer(shared_gui_refs['fillhead_temp_c_var'], heater_label)
+    shared_gui_refs['fillhead_temp_c_var'].trace_add('write', heater_value_tracer)
     heater_value_tracer()
-    ttk.Label(heater_frame, textvariable=shared_gui_refs['heater_display_var'], font=font_small_readout, foreground=theme.WARNING_YELLOW, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
+    ttk.Label(heater_frame, textvariable=shared_gui_refs['fillhead_temp_c_var'], font=font_small_readout, foreground=theme.WARNING_YELLOW, anchor='e', style='Subtle.TLabel').grid(row=0, column=2, sticky='ew', padx=(0, 10))
     
     return fillhead_outer_container

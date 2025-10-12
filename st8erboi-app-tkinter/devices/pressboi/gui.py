@@ -86,18 +86,32 @@ def create_device_frame(parent, title, state_var, conn_var):
     content_frame.pack(fill='x', expand=True, pady=(5,0))
     return outer_container, content_frame
 
+def get_required_variables():
+    """Returns a list of tkinter variable names required by this GUI module."""
+    return [
+        'pressboi_main_state_var', 'status_var_pressboi',
+        'pressboi_pos_m0_var', 'pressboi_homed_m0_var', 'pressboi_enabled_m0_var', 'pressboi_torque_m0_var',
+        'pressboi_pos_m1_var', 'pressboi_homed_m1_var', 'pressboi_enabled_m1_var', 'pressboi_torque_m1_var',
+        'pressboi_pressure_var', 'pressboi_temperature_var', 'pressboi_enabled_var'
+    ]
+
 # --- Main GUI Creation Function ---
 
 def create_gui_components(parent, shared_gui_refs):
     """Creates the PressBoi status panel."""
     
-    shared_gui_refs.setdefault('pressboi_state_var', tk.StringVar(value='---'))
-    shared_gui_refs.setdefault('status_var_pressboi', tk.StringVar(value='🔌 PressBoi Disconnected'))
-    
+    # Initialize all required tkinter variables
+    for var_name in get_required_variables():
+        if var_name.endswith('_var'):
+            if 'torque' in var_name:
+                shared_gui_refs.setdefault(var_name, tk.DoubleVar(value=0.0))
+            else:
+                shared_gui_refs.setdefault(var_name, tk.StringVar(value='---'))
+
     outer_container, content_frame = create_device_frame(
         parent, 
         "PressBoi",
-        shared_gui_refs['pressboi_state_var'],
+        shared_gui_refs['pressboi_main_state_var'],
         shared_gui_refs['status_var_pressboi']
     )
     
@@ -105,56 +119,48 @@ def create_gui_components(parent, shared_gui_refs):
     m0_frame = ttk.Frame(content_frame, style='Card.TFrame')
     m0_frame.pack(fill=tk.X, expand=True, pady=(5, 2))
     
-    m0_label = ttk.Label(m0_frame, text="M0 Pos:", style='TLabel')
+    m0_label = ttk.Label(m0_frame, text="M0 Pos:", style='Card.TLabel')
     m0_label.pack(side=tk.LEFT)
     
-    shared_gui_refs.setdefault('pressboi_pos_m0_var', tk.StringVar(value='---'))
-    m0_pos_label = ttk.Label(m0_frame, textvariable=shared_gui_refs['pressboi_pos_m0_var'], style='TLabel', width=8)
+    m0_pos_label = ttk.Label(m0_frame, textvariable=shared_gui_refs['pressboi_pos_m0_var'], style='Card.TLabel', width=8)
     m0_pos_label.pack(side=tk.LEFT, padx=5)
 
-    m0_homed_label = ttk.Label(m0_frame, text="Not Homed", style='TLabel', foreground=theme.ERROR_RED)
+    m0_homed_label = ttk.Label(m0_frame, text="Not Homed", style='Card.TLabel', foreground=theme.ERROR_RED)
     m0_homed_label.pack(side=tk.RIGHT)
-    shared_gui_refs.setdefault('pressboi_homed_m0_var', tk.StringVar(value='Not Homed'))
     m0_homed_label.tracer = make_homed_tracer(shared_gui_refs['pressboi_homed_m0_var'], m0_homed_label)
     shared_gui_refs['pressboi_homed_m0_var'].trace_add('write', m0_homed_label.tracer)
     m0_homed_label.tracer()
 
-    m0_enabled_label = ttk.Label(m0_frame, text="Disabled", foreground=theme.ERROR_RED, style='TLabel')
+    m0_enabled_label = ttk.Label(m0_frame, text="Disabled", foreground=theme.ERROR_RED, style='Card.TLabel')
     m0_enabled_label.pack(side=tk.RIGHT, padx=10)
-    shared_gui_refs.setdefault('pressboi_enabled_m0_var', tk.StringVar(value='Disabled'))
     m0_enabled_label.tracer = make_state_tracer(shared_gui_refs['pressboi_enabled_m0_var'], m0_enabled_label)
     shared_gui_refs['pressboi_enabled_m0_var'].trace_add('write', m0_enabled_label.tracer)
     m0_enabled_label.tracer()
 
-    shared_gui_refs.setdefault('pressboi_torque_m0_var', tk.DoubleVar(value=0.0))
     create_torque_widget(m0_frame, shared_gui_refs['pressboi_torque_m0_var'], 20).pack(side=tk.RIGHT)
 
     # --- Motor 1 ---
     m1_frame = ttk.Frame(content_frame, style='Card.TFrame')
     m1_frame.pack(fill=tk.X, expand=True, pady=(5, 2))
     
-    m1_label = ttk.Label(m1_frame, text="M1 Pos:", style='TLabel')
+    m1_label = ttk.Label(m1_frame, text="M1 Pos:", style='Card.TLabel')
     m1_label.pack(side=tk.LEFT)
     
-    shared_gui_refs.setdefault('pressboi_pos_m1_var', tk.StringVar(value='---'))
-    m1_pos_label = ttk.Label(m1_frame, textvariable=shared_gui_refs['pressboi_pos_m1_var'], style='TLabel', width=8)
+    m1_pos_label = ttk.Label(m1_frame, textvariable=shared_gui_refs['pressboi_pos_m1_var'], style='Card.TLabel', width=8)
     m1_pos_label.pack(side=tk.LEFT, padx=5)
 
-    m1_homed_label = ttk.Label(m1_frame, text="Not Homed", style='TLabel', foreground=theme.ERROR_RED)
+    m1_homed_label = ttk.Label(m1_frame, text="Not Homed", style='Card.TLabel', foreground=theme.ERROR_RED)
     m1_homed_label.pack(side=tk.RIGHT)
-    shared_gui_refs.setdefault('pressboi_homed_m1_var', tk.StringVar(value='Not Homed'))
     m1_homed_label.tracer = make_homed_tracer(shared_gui_refs['pressboi_homed_m1_var'], m1_homed_label)
     shared_gui_refs['pressboi_homed_m1_var'].trace_add('write', m1_homed_label.tracer)
     m1_homed_label.tracer()
 
-    m1_enabled_label = ttk.Label(m1_frame, text="Disabled", foreground=theme.ERROR_RED, style='TLabel')
+    m1_enabled_label = ttk.Label(m1_frame, text="Disabled", foreground=theme.ERROR_RED, style='Card.TLabel')
     m1_enabled_label.pack(side=tk.RIGHT, padx=10)
-    shared_gui_refs.setdefault('pressboi_enabled_m1_var', tk.StringVar(value='Disabled'))
     m1_enabled_label.tracer = make_state_tracer(shared_gui_refs['pressboi_enabled_m1_var'], m1_enabled_label)
     shared_gui_refs['pressboi_enabled_m1_var'].trace_add('write', m1_enabled_label.tracer)
     m1_enabled_label.tracer()
     
-    shared_gui_refs.setdefault('pressboi_torque_m1_var', tk.DoubleVar(value=0.0))
     create_torque_widget(m1_frame, shared_gui_refs['pressboi_torque_m1_var'], 20).pack(side=tk.RIGHT)
 
     return outer_container

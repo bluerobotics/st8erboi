@@ -1,35 +1,30 @@
-import comms
+import tkinter as tk
 
 def parse_telemetry(message, gui_refs, queue_ui_update, safe_float):
-    """
-    Parses telemetry data for the PressBoi and updates the GUI.
-    Expected format: PRESSBOI_TELEM: state=[STATE] m0_pos=[POS] m1_pos=[POS] ...
-    """
+    """Parses telemetry messages for the Pressboi device."""
+    if "PRESSBOI_TELEM:" not in message:
+        return
+
     try:
-        # Check if the message is valid and contains the expected marker
-        if "PRESSBOI_TELEM:" not in message:
-            return
+        payload = message.split("PRESSBOI_TELEM: ")[1]
+        parts = dict(item.split(':', 1) for item in payload.split(',') if ':' in item)
 
-        payload = message.split("PRESSBOI_TELEM:")[1].strip()
-        parts = dict(item.split('=', 1) for item in payload.split() if '=' in item)
+        # Update main state
+        queue_ui_update(gui_refs, 'pressboi_main_state_var', parts.get("MAIN_STATE", "---"))
 
-        # Update State
-        state = parts.get("state", "---")
-        queue_ui_update(gui_refs, 'pressboi_state_var', state)
+        # Update pressure and temperature
+        pressure_psi = safe_float(parts.get("pressure_psi", 0.0))
+        queue_ui_update(gui_refs, 'pressboi_pressure_var', f"{pressure_psi:.2f} PSI")
+        
+        temp_c = safe_float(parts.get("temperature_c", 0.0))
+        queue_ui_update(gui_refs, 'pressboi_temperature_var', f"{temp_c:.1f} °C")
 
-        # Update Motor 0
-        queue_ui_update(gui_refs, 'pressboi_pos_m0_var', parts.get("m0_pos", "---"))
-        queue_ui_update(gui_refs, 'pressboi_torque_m0_var', parts.get("m0_torque", 0.0))
-        queue_ui_update(gui_refs, 'pressboi_homed_m0_var', "Homed" if parts.get("m0_homed") == "1" else "Not Homed")
-        queue_ui_update(gui_refs, 'pressboi_enabled_m0_var', "Enabled" if parts.get("m0_en") == "1" else "Disabled")
+        # Update enabled status
+        is_enabled = parts.get("enabled", "0") == "1"
+        queue_ui_update(gui_refs, 'pressboi_enabled_var', "Enabled" if is_enabled else "Disabled")
 
-        # Update Motor 1
-        queue_ui_update(gui_refs, 'pressboi_pos_m1_var', parts.get("m1_pos", "---"))
-        queue_ui_update(gui_refs, 'pressboi_torque_m1_var', parts.get("m1_torque", 0.0))
-        queue_ui_update(gui_refs, 'pressboi_homed_m1_var', "Homed" if parts.get("m1_homed") == "1" else "Not Homed")
-        queue_ui_update(gui_refs, 'pressboi_enabled_m1_var', "Enabled" if parts.get("m1_en") == "1" else "Disabled")
-
-    except IndexError:
-        print(f"Error parsing PressBoi telemetry: Unexpected format '{message}'")
     except Exception as e:
-        print(f"An error occurred during PressBoi telemetry parsing: {e}")
+        # It's helpful to log parsing errors to the in-app terminal
+        log_func = gui_refs.get('log_func')
+        if log_func:
+            log_func(f"Pressboi telem parse error: {e}")

@@ -30,7 +30,7 @@ MOVE_Z -55 mm 4 mm/s
 VACUUM_OFF
 HEATER_OFF
 MOVE_Z 0 mm
-
+Fillhead Gantry Fillhead Fillhead 
 # PURGE ROUTINE
 MOVE_X 400 mm, MOVE_Y 41 mm
 
@@ -54,6 +54,20 @@ INJECTION_VALVE_CLOSE
 INJECTION_VALVE_OPEN
 
 MOVE_X 400 mm
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

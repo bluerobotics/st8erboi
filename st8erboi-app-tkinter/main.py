@@ -243,98 +243,24 @@ class MainApplication:
         """
         # --- Shared State and Functions ---
         shared_gui_refs = {
-            # --- Connection and Global State ---
-            'status_var_fillhead': tk.StringVar(value='🔌 Fillhead Disconnected'),
-            'status_var_gantry': tk.StringVar(value='🔌 Gantry Disconnected'),
-            'main_state_var': tk.StringVar(value='---'),
-            'feed_state_var': tk.StringVar(value='---'),
             'error_state_var': tk.StringVar(value='No Error'),
 
-            # --- Fillhead Enabled States ---
-            'enabled_state1_var': tk.StringVar(value='Disabled'),
-            'enabled_state2_var': tk.StringVar(value='Disabled'),
-            'enabled_state3_var': tk.StringVar(value='Disabled'),
-
-            # --- Fillhead Position, Homing, and Dispensing ---
-            'pos_mm0_var': tk.StringVar(value='---'),
-            'pos_mm1_var': tk.StringVar(value='---'),
-            'homed0_var': tk.StringVar(value='Not Homed'),
-            'homed1_var': tk.StringVar(value='Not Homed'),
-            'machine_steps_var': tk.StringVar(value='---'),
-            'cartridge_steps_var': tk.StringVar(value='---'),
-            'heater_mode_var': tk.StringVar(value='---'),
-            'vacuum_state_var': tk.StringVar(value='---'),
-            'inject_cumulative_ml_var': tk.StringVar(value='---'),
-            'inject_active_ml_var': tk.StringVar(value='---'),
-            'total_dispensed_var': tk.StringVar(value='--- ml'),
-            'cycle_dispensed_var': tk.StringVar(value='--- / --- ml'),
-            'injection_target_ml_var': tk.StringVar(value='---'),
-
-            # --- Fillhead Component States ---
-            'fillhead_injector_state_var': tk.StringVar(value='---'),
-            'fillhead_inj_valve_state_var': tk.StringVar(value='---'),
-            'fillhead_vac_valve_state_var': tk.StringVar(value='---'),
-            'fillhead_heater_state_var': tk.StringVar(value='---'),
-            'fillhead_vacuum_state_var': tk.StringVar(value='---'),
-
-            # --- Fillhead Torque Values ---
-            'torque0_var': tk.DoubleVar(value=0.0),
-            'torque1_var': tk.DoubleVar(value=0.0),
-            'torque2_var': tk.DoubleVar(value=0.0),
-            'torque3_var': tk.DoubleVar(value=0.0),
-
-            # --- Gantry Enabled States ---
-            'fh_enabled_m0_var': tk.StringVar(value='Disabled'),
-            'fh_enabled_m1_var': tk.StringVar(value='Disabled'),
-            'fh_enabled_m2_var': tk.StringVar(value='Disabled'),
-            'fh_enabled_m3_var': tk.StringVar(value='Disabled'),
-
-            # --- Gantry Position and Homing ---
-            'fh_pos_m0_var': tk.StringVar(value='---'),
-            'fh_pos_m1_var': tk.StringVar(value='---'),
-            'fh_pos_m2_var': tk.StringVar(value='---'),
-            'fh_pos_m3_var': tk.StringVar(value='---'),
-            'fh_homed_m0_var': tk.StringVar(value='Not Homed'),
-            'fh_homed_m1_var': tk.StringVar(value='Not Homed'),
-            'fh_homed_m2_var': tk.StringVar(value='Not Homed'),
-            'fh_homed_m3_var': tk.StringVar(value='Not Homed'),
-
-            # --- Gantry Axis States ---
-            'fh_state_x_var': tk.StringVar(value='---'),
-            'fh_state_y_var': tk.StringVar(value='---'),
-            'fh_state_z_var': tk.StringVar(value='---'),
-            'fh_state_var': tk.StringVar(value='---'), # Used by status_panel
-
-            # --- Gantry Torque Values ---
-            'fh_torque_m0_var': tk.DoubleVar(value=0.0),
-            'fh_torque_m1_var': tk.DoubleVar(value=0.0),
-            'fh_torque_m2_var': tk.DoubleVar(value=0.0),
-            'fh_torque_m3_var': tk.DoubleVar(value=0.0),
-
-            # --- Fillhead Pinch Valve Variables ---
-            'inj_valve_pos_var': tk.StringVar(value='---'),
-            'inj_valve_homed_var': tk.StringVar(value='Not Homed'),
-            'vac_valve_pos_var': tk.StringVar(value='---'),
-            'vac_valve_homed_var': tk.StringVar(value='Not Homed'),
-
-            # --- System Status Variables (Heater, Vacuum, etc.) ---
-            'vacuum_psig_var': tk.StringVar(value='0.00 PSIG'),
+            # --- Variables for internal MainApplication logic (tracers, etc.) ---
             'temp_c_var': tk.StringVar(value='0.0 °C'),
-            'pid_setpoint_var': tk.StringVar(value='25.0'), # Default setpoint
+            'pid_setpoint_var': tk.StringVar(value='25.0'),
+            'fillhead_heater_state_var': tk.StringVar(value='---'),
             'heater_display_var': tk.StringVar(value='--- / --- °C'),
-
-            # Heater variables
-            'heater_setpoint_var': tk.StringVar(value='70.0'),
-            'heater_kp_var': tk.StringVar(value='60.0'),
-            'heater_ki_var': tk.StringVar(value='2.5'),
-            'heater_kd_var': tk.StringVar(value='40.0'),
-
-            # Vacuum variables
-            'vac_target_var': tk.StringVar(value='-14.0'),
-            'vac_timeout_var': tk.StringVar(value='30'),
-            'vac_leak_delta_var': tk.StringVar(value='0.1'),
-            'vac_leak_duration_var': tk.StringVar(value='10')
+            'inject_cumulative_ml_var': tk.StringVar(value='---'),
+            'total_dispensed_var': tk.StringVar(value='--- ml'),
+            'inject_active_ml_var': tk.StringVar(value='---'),
+            'injection_target_ml_var': tk.StringVar(value='---'),
+            'cycle_dispensed_var': tk.StringVar(value='--- / --- ml'),
         }
+
+        # --- DYNAMICALLY CREATE DEVICE-SPECIFIC STATUS VARS ---
+        for device_name in device_modules.keys():
+            shared_gui_refs[f'status_var_{device_name}'] = tk.StringVar(value=f'🔌 {device_name.capitalize()} Disconnected')
+
 
         # --- System Status Variables (Heater, Vacuum, etc.) ---
         shared_gui_refs.update({
