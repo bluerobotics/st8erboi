@@ -5,18 +5,50 @@ import threading
 import time
 import random
 from collections import deque
+import os
+import sys
+import importlib.util
 
 # --- Constants ---
 CLEARCORE_PORT = 8888
 GUI_APP_PORT = 6272
 TELEMETRY_INTERVAL = 1.0  # seconds
+BASE_IP = "127.0.0.1"
 
-# Hardcoded IP addresses for the simulated devices
-GANTRY_IP = "127.0.0.1"
-FILLHEAD_IP = "127.0.0.1"
+def discover_device_schemas():
+    """Scans the 'devices' directory and dynamically loads telemetry schemas."""
+    schemas = {}
+    # Path is relative to the simulator's location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    devices_path = os.path.abspath(os.path.join(script_dir, '..', 'st8erboi-app-tkinter', 'devices'))
+
+    if not os.path.exists(devices_path):
+        print(f"Device directory not found at: {devices_path}")
+        return schemas
+
+    # Add the devices directory to the python path to allow imports
+    sys.path.insert(0, os.path.abspath(os.path.join(devices_path, '..')))
+
+    for device_name in os.listdir(devices_path):
+        device_dir = os.path.join(devices_path, device_name)
+        schema_file = os.path.join(device_dir, 'telem_schema.py')
+        if os.path.isdir(device_dir) and os.path.exists(schema_file):
+            try:
+                # Dynamically import the telem_schema module
+                module_name = f'devices.{device_name}.telem_schema'
+                spec = importlib.util.spec_from_file_location(module_name, schema_file)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+
+                if hasattr(module, 'get_schema'):
+                    schemas[device_name] = module.get_schema()
+                    print(f"Loaded schema for device: {device_name}")
+            except Exception as e:
+                print(f"Could not load schema for {device_name}: {e}")
+    return schemas
 
 class DeviceSimulator(threading.Thread):
-    def __init__(self, device_name, ip, port, gui_app_port):
+    def __init__(self, device_name, ip, port, gui_app_port, schema):
         super().__init__()
         self.device_name = device_name
         self.ip = ip
@@ -26,33 +58,8 @@ class DeviceSimulator(threading.Thread):
         self._stop_event = threading.Event()
         self.sock = None
         self.daemon = True
-        self.state = self.initialize_state()
+        self.state = schema  # Use the provided schema directly
         self.command_queue = deque()
-
-    def initialize_state(self):
-        """Initializes the state dictionary with more realistic values based on real telemetry."""
-        if self.device_name == 'gantry':
-            return {
-                'gantry_state': 'STANDBY', 'x_st': 'Standby', 'y_st': 'Standby', 'z_st': 'Standby',
-                'x_p': 0.0, 'x_t': 0.0, 'x_e': 1, 'x_h': 0,
-                'y_p': 0.0, 'y_t': 0.0, 'y_e': 1, 'y_h': 0,
-                'z_p': 0.0, 'z_t': 0.0, 'z_e': 1, 'z_h': 0,
-            }
-        elif self.device_name == 'fillhead':
-            return {
-                'MAIN_STATE': 'STANDBY',
-                'inj_t0': 0.0, 'inj_t1': 0.0, 'inj_h_mach': 0, 'inj_h_cart': 0,
-                'inj_mach_mm': 0.0, 'inj_cart_mm': 0.0,
-                'inj_cumulative_ml': 0.0, 'inj_active_ml': 0.0, 'inj_tgt_ml': 0.0,
-                'enabled0': 1, 'enabled1': 1,
-                'inj_valve_pos': 0.0, 'inj_valve_torque': 0.0, 'inj_valve_homed': 0, 'inj_valve_state': 0,
-                'vac_valve_pos': 0.0, 'vac_valve_torque': 0.0, 'vac_valve_homed': 0, 'vac_valve_state': 0,
-                'h_st': 0, 'h_sp': 70.0, 'h_pv': 25.0, 'h_op': 0.0,
-                'vac_st': 0, 'vac_pv': 0.5, 'vac_sp': -14.0,
-                'inj_st': 'Standby', 'inj_v_st': 'Not Homed', 'vac_v_st': 'Not Homed',
-                'h_st_str': 'Off', 'vac_st_str': 'Off',
-            }
-        return {}
 
     def stop(self):
         self._stop_event.set()
@@ -129,65 +136,46 @@ class DeviceSimulator(threading.Thread):
         command = parts[0]
         args = parts[1:]
         
-        # Default response is sent immediately for most commands
+        # Generic response for any command that isn't special-cased
         response = f"DONE: {command}"
 
         try:
+            # --- Device-Specific Command Simulation ---
+            # (This section can be expanded with more complex, device-specific logic if needed)
             if self.device_name == 'gantry':
-                # --- Gantry Commands ---
                 if command.startswith("MOVE_"):
                     axis = command.split('_')[1].lower()
-                    dist = float(args[0])
-                    duration = max(0.5, abs(dist) / 50.0) # Simulate time based on distance
-                    self.set_state('gantry_state', 'MOVING', f'Moving {axis.upper()}')
-                    self.command_queue.append((self.simulate_move, (axis, self.state[f'{axis}_p'] + dist, duration, gui_address, command)))
-                    return # Don't send default DONE response
-                
+                    if axis in ['x', 'y', 'z']:
+                        dist = float(args[0])
+                        duration = max(0.5, abs(dist) / 50.0)
+                        self.set_state('gantry_state', 'MOVING', f'Moving {axis.upper()}')
+                        self.command_queue.append((self.simulate_move, (axis, self.state.get(f'{axis}_p', 0) + dist, duration, gui_address, command)))
+                        return
                 elif command.startswith("HOME_"):
                     axis = command.split('_')[1].lower()
-                    self.set_state('gantry_state', 'HOMING', f'Homing {axis.upper()}')
-                    self.command_queue.append((self.simulate_homing, (axis, 2.0, gui_address, command)))
-                    return # Don't send default DONE response
+                    if axis in ['x', 'y', 'z']:
+                        self.set_state('gantry_state', 'HOMING', f'Homing {axis.upper()}')
+                        self.command_queue.append((self.simulate_homing, (axis, 2.0, gui_address, command)))
+                        return
 
             elif self.device_name == 'fillhead':
-                # --- Fillhead Commands ---
                 if command == "JOG_MOVE":
                     self.state['inj_mach_mm'] += float(args[0])
                     self.state['inj_cart_mm'] += float(args[1])
-                elif command == "MACHINE_HOME_MOVE":
-                    self.set_state('MAIN_STATE', 'HOMING')
-                    self.command_queue.append((self.simulate_fillhead_homing, ('machine', 2.0, gui_address, command)))
-                    return
-                elif command == "CARTRIDGE_HOME_MOVE":
-                    self.set_state('MAIN_STATE', 'HOMING')
-                    self.command_queue.append((self.simulate_fillhead_homing, ('cartridge', 2.0, gui_address, command)))
-                    return
-                elif command in ["INJECTION_VALVE_HOME_UNTUBED", "INJECTION_VALVE_HOME_TUBED"]:
-                    self.set_state('MAIN_STATE', 'HOMING')
-                    self.command_queue.append((self.simulate_fillhead_homing, ('injection_valve', 1.0, gui_address, command)))
-                    return
-                elif command in ["VACUUM_VALVE_HOME_UNTUBED", "VACUUM_VALVE_HOME_TUBED"]:
-                    self.set_state('MAIN_STATE', 'HOMING')
-                    self.command_queue.append((self.simulate_fillhead_homing, ('vacuum_valve', 1.0, gui_address, command)))
-                    return
                 elif command == "INJECT_MOVE":
                     vol = float(args[0])
                     self.state['inj_tgt_ml'] = vol
                     self.set_state('MAIN_STATE', 'INJECTING')
                     self.command_queue.append((self.simulate_injection, (vol, 2.0, gui_address, command)))
                     return
-                elif command == "INJECTION_VALVE_CLOSE":
-                    self.state['inj_valve_pos'] = 0.0
-                elif command == "INJECTION_VALVE_OPEN":
-                    self.state['inj_valve_pos'] = 5.0 # Assume 5mm is open
-                elif command == "VACUUM_VALVE_CLOSE":
-                    self.state['vac_valve_pos'] = 0.0
-                elif command == "VACUUM_VALVE_OPEN":
-                    self.state['vac_valve_pos'] = 5.0 # Assume 5mm is open
         
         except (IndexError, ValueError) as e:
             print(f"[{self.device_name}] Error parsing command '{msg}': {e}")
             response = f"ERROR: Invalid arguments for {command}"
+        except Exception as e:
+            print(f"[{self.device_name}] Unexpected error handling command '{msg}': {e}")
+            response = f"ERROR: Internal simulator error on {command}"
+
 
         self.sock.sendto(response.encode(), gui_address)
         print(f"[{self.device_name}] Responded to {command} with '{response}'")
@@ -273,84 +261,102 @@ class DeviceSimulator(threading.Thread):
         """Periodically update dynamic state values like temperature."""
         if self.device_name == 'fillhead':
             # Simulate heater PID loop
-            if self.state['h_st'] == 1:
-                error = self.state['h_sp'] - self.state['h_pv']
-                self.state['h_op'] = min(100, max(0, error * 10)) # Simple proportional control
-                self.state['h_pv'] += self.state['h_op'] * 0.01 - 0.05 # Heat up and cool down
+            if self.state.get('h_st') == 1:
+                error = self.state.get('h_sp', 70) - self.state.get('h_pv', 25)
+                self.state['h_op'] = min(100, max(0, error * 10))
+                self.state['h_pv'] += self.state.get('h_op', 0) * 0.01 - 0.05
             else:
                 self.state['h_op'] = 0
-                if self.state['h_pv'] > 25:
-                    self.state['h_pv'] -= 0.1 # Cool down to ambient
+                if self.state.get('h_pv', 0) > 25:
+                    self.state['h_pv'] -= 0.1
 
     def generate_telemetry(self):
+        s = self.state
+        # --- Special formats for legacy parsers ---
         if self.device_name == 'gantry':
-            s = self.state
-            # Slightly randomize torque for realism
-            s['x_t'] = random.uniform(5, 15) if s['gantry_state'] != 'STANDBY' else 0.0
-            s['y_t'] = random.uniform(5, 15) if s['gantry_state'] != 'STANDBY' else 0.0
-            s['z_t'] = random.uniform(5, 15) if s['gantry_state'] != 'STANDBY' else 0.0
-
-            return (f"GANTRY_TELEM: gantry_state:{s['gantry_state']},x_p:{s['x_p']:.2f},x_t:{s['x_t']:.2f},x_e:{s['x_e']},x_h:{s['x_h']},x_st:{s['x_st']},"
-                    f"y_p:{s['y_p']:.2f},y_t:{s['y_t']:.2f},y_e:{s['y_e']},y_h:{s['y_h']},y_st:{s['y_st']},"
-                    f"z_p:{s['z_p']:.2f},z_t:{s['z_t']:.2f},z_e:{s['z_e']},z_h:{s['z_h']},z_st:{s['z_st']}")
-        elif self.device_name == 'fillhead':
-            s = self.state
-            # Simulate some dynamic values
-            s['inj_t0'] = random.uniform(5, 15) if s['MAIN_STATE'] != 'STANDBY' else 0.0
-            s['inj_t1'] = random.uniform(5, 15) if s['MAIN_STATE'] != 'STANDBY' else 0.0
+            s['x_t'] = random.uniform(5, 15) if s.get('gantry_state') != 'STANDBY' else 0.0
+            s['y_t'] = random.uniform(5, 15) if s.get('gantry_state') != 'STANDBY' else 0.0
+            s['z_t'] = random.uniform(5, 15) if s.get('gantry_state') != 'STANDBY' else 0.0
             
-            return (f"FILLHEAD_TELEM: MAIN_STATE:{s['MAIN_STATE']},"
-                    f"inj_t0:{s['inj_t0']:.1f},inj_t1:{s['inj_t1']:.1f},inj_h_mach:{s['inj_h_mach']},inj_h_cart:{s['inj_h_cart']},"
-                    f"inj_mach_mm:{s['inj_mach_mm']:.2f},inj_cart_mm:{s['inj_cart_mm']:.2f},"
-                    f"inj_cumulative_ml:{s['inj_cumulative_ml']:.2f},inj_active_ml:{s['inj_active_ml']:.2f},inj_tgt_ml:{s['inj_tgt_ml']:.2f},"
-                    f"enabled0:{s['enabled0']},enabled1:{s['enabled1']},"
-                    f"inj_valve_pos:{s['inj_valve_pos']:.2f},inj_valve_torque:{s['inj_valve_torque']:.1f},inj_valve_homed:{s['inj_valve_homed']},inj_valve_state:{s['inj_valve_state']},"
-                    f"vac_valve_pos:{s['vac_valve_pos']:.2f},vac_valve_torque:{s['vac_valve_torque']:.1f},vac_valve_homed:{s['vac_valve_homed']},vac_valve_state:{s['vac_valve_state']},"
-                    f"h_st:{s['h_st']},h_sp:{s['h_sp']:.1f},h_pv:{s['h_pv']:.1f},h_op:{s['h_op']:.1f},"
-                    f"vac_st:{s['vac_st']},vac_pv:{s['vac_pv']:.2f},vac_sp:{s['vac_sp']:.1f},"
-                    f"inj_st:{s['inj_st']},inj_v_st:{s['inj_v_st']},vac_v_st:{s['vac_v_st']},h_st_str:{s['h_st_str']},vac_st_str:{s['vac_st_str']}")
-        return ""
+            # Format using .get() for safety in case schema is modified
+            return (f"GANTRY_TELEM: gantry_state:{s.get('gantry_state', 'ERR')},x_p:{s.get('x_p', 0):.2f},x_t:{s.get('x_t', 0):.2f},x_e:{s.get('x_e', 0)},x_h:{s.get('x_h', 0)},x_st:{s.get('x_st', 'ERR')},"
+                    f"y_p:{s.get('y_p', 0):.2f},y_t:{s.get('y_t', 0):.2f},y_e:{s.get('y_e', 0)},y_h:{s.get('y_h', 0)},y_st:{s.get('y_st', 'ERR')},"
+                    f"z_p:{s.get('z_p', 0):.2f},z_t:{s.get('z_t', 0):.2f},z_e:{s.get('z_e', 0)},z_h:{s.get('z_h', 0)},z_st:{s.get('z_st', 'ERR')}")
+
+        elif self.device_name == 'fillhead':
+            s['inj_t0'] = random.uniform(5, 15) if s.get('MAIN_STATE') != 'STANDBY' else 0.0
+            s['inj_t1'] = random.uniform(5, 15) if s.get('MAIN_STATE') != 'STANDBY' else 0.0
+            
+            # This is a very long f-string, building it part by part is safer.
+            # Using .get() provides default values if a key is missing from the schema.
+            parts = [
+                f"MAIN_STATE:{s.get('MAIN_STATE', 'ERR')}",
+                f"inj_t0:{s.get('inj_t0', 0):.1f}", f"inj_t1:{s.get('inj_t1', 0):.1f}",
+                f"inj_h_mach:{s.get('inj_h_mach', 0)}", f"inj_h_cart:{s.get('inj_h_cart', 0)}",
+                f"inj_mach_mm:{s.get('inj_mach_mm', 0):.2f}", f"inj_cart_mm:{s.get('inj_cart_mm', 0):.2f}",
+                f"inj_cumulative_ml:{s.get('inj_cumulative_ml', 0):.2f}", f"inj_active_ml:{s.get('inj_active_ml', 0):.2f}", f"inj_tgt_ml:{s.get('inj_tgt_ml', 0):.2f}",
+                f"enabled0:{s.get('enabled0', 0)}", f"enabled1:{s.get('enabled1', 0)}",
+                f"inj_valve_pos:{s.get('inj_valve_pos', 0):.2f}", f"inj_valve_torque:{s.get('inj_valve_torque', 0):.1f}", f"inj_valve_homed:{s.get('inj_valve_homed', 0)}", f"inj_valve_state:{s.get('inj_valve_state', 0)}",
+                f"vac_valve_pos:{s.get('vac_valve_pos', 0):.2f}", f"vac_valve_torque:{s.get('vac_valve_torque', 0):.1f}", f"vac_valve_homed:{s.get('vac_valve_homed', 0)}", f"vac_valve_state:{s.get('vac_valve_state', 0)}",
+                f"h_st:{s.get('h_st', 0)}", f"h_sp:{s.get('h_sp', 0):.1f}", f"h_pv:{s.get('h_pv', 0):.1f}", f"h_op:{s.get('h_op', 0):.1f}",
+                f"vac_st:{s.get('vac_st', 0)}", f"vac_pv:{s.get('vac_pv', 0):.2f}", f"vac_sp:{s.get('vac_sp', 0):.1f}",
+                f"inj_st:{s.get('inj_st', 'ERR')}", f"inj_v_st:{s.get('inj_v_st', 'ERR')}", f"vac_v_st:{s.get('vac_v_st', 'ERR')}",
+                f"h_st_str:{s.get('h_st_str', 'ERR')}", f"vac_st_str:{s.get('vac_st_str', 'ERR')}"
+            ]
+            return f"FILLHEAD_TELEM: {','.join(parts)}"
+        
+        # --- Generic Telemetry Format for all other devices ---
+        else:
+            telem_parts = [f"{key}:{value}" for key, value in s.items()]
+            return f"{self.device_name.upper()}_TELEM: {','.join(telem_parts)}"
 
 
 class SimulatorApp:
-    def __init__(self, root):
+    def __init__(self, root, device_schemas):
         self.root = root
         self.root.title("St8erBoi Device Simulator")
         self.simulators = {}
-
-        self.gantry_var = tk.BooleanVar()
-        self.fillhead_var = tk.BooleanVar()
+        self.device_schemas = device_schemas
+        self.device_vars = {}
 
         frame = ttk.Frame(self.root, padding="10")
         frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-        ttk.Checkbutton(frame, text="Simulate Gantry", variable=self.gantry_var, command=self.toggle_gantry).grid(row=0, column=0, sticky=tk.W, pady=2)
-        ttk.Label(frame, text=f"IP: {GANTRY_IP} Port: {CLEARCORE_PORT}").grid(row=0, column=1, sticky=tk.W, padx=5)
+        # Dynamically create checkbuttons for each discovered device
+        row = 0
+        for device_name in sorted(self.device_schemas.keys()):
+            self.device_vars[device_name] = tk.BooleanVar()
+            cb = ttk.Checkbutton(
+                frame,
+                text=f"Simulate {device_name.capitalize()}",
+                variable=self.device_vars[device_name],
+                command=lambda name=device_name: self.toggle_simulator(name, self.device_vars[name].get())
+            )
+            cb.grid(row=row, column=0, sticky=tk.W, pady=2)
+            
+            # Each device listens on the same port for discovery, but on a unique IP.
+            # For simulation, we just use localhost.
+            ttk.Label(frame, text=f"IP: {BASE_IP} Port: {CLEARCORE_PORT}").grid(row=row, column=1, sticky=tk.W, padx=5)
+            row += 1
 
-        ttk.Checkbutton(frame, text="Simulate Fillhead", variable=self.fillhead_var, command=self.toggle_fillhead).grid(row=1, column=0, sticky=tk.W, pady=2)
-        ttk.Label(frame, text=f"IP: {FILLHEAD_IP} Port: {CLEARCORE_PORT}").grid(row=1, column=1, sticky=tk.W, padx=5) # Both listen on the same port
+        if not self.device_schemas:
+            ttk.Label(frame, text="No device schemas found. Check paths and telem_schema.py files.").grid(row=0, column=0)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    def toggle_gantry(self):
-        self.toggle_simulator('gantry', self.gantry_var.get(), GANTRY_IP, CLEARCORE_PORT)
-
-    def toggle_fillhead(self):
-        # Both simulators must listen on the same port for broadcast discovery.
-        self.toggle_simulator('fillhead', self.fillhead_var.get(), FILLHEAD_IP, CLEARCORE_PORT)
-
-    def toggle_simulator(self, name, start, ip, port):
+    def toggle_simulator(self, name, start):
         if start:
             if name not in self.simulators or not self.simulators[name].running:
                 print(f"Starting {name} simulator...")
-                sim = DeviceSimulator(name, ip, port, GUI_APP_PORT)
+                schema = self.device_schemas[name]
+                sim = DeviceSimulator(name, BASE_IP, CLEARCORE_PORT, GUI_APP_PORT, schema)
                 self.simulators[name] = sim
                 sim.start()
         else:
             if name in self.simulators and self.simulators[name].running:
                 print(f"Stopping {name} simulator...")
                 self.simulators[name].stop()
-                self.simulators[name].join() # Wait for thread to finish
+                self.simulators[name].join()
 
     def on_closing(self):
         print("Closing simulator...")
@@ -362,6 +368,9 @@ class SimulatorApp:
 
 
 if __name__ == "__main__":
+    # Discover schemas before initializing the app
+    discovered_schemas = discover_device_schemas()
+    
     root = tk.Tk()
-    app = SimulatorApp(root)
+    app = SimulatorApp(root, discovered_schemas)
     root.mainloop()

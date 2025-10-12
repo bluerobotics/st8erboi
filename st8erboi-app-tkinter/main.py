@@ -12,6 +12,9 @@ import tkinter.font as tkfont
 import platform
 import ctypes
 from queue import Queue, Empty
+import device_actions # Import the new device actions
+from devices import device_modules, discovery_logs # Import the discovered device modules and logs
+import datetime
 
 # Import GUI components
 from top_menu import create_top_menu
@@ -462,7 +465,7 @@ class MainApplication:
         """Makes a device's status panel visible."""
         panel = self.shared_gui_refs.get(f'{device_key}_panel')
         if panel:
-            panel.pack(side=tk.TOP, fill="x", expand=True, pady=(0, 8))
+            panel.pack(side=tk.TOP, fill="x", expand=False, pady=(0, 8))
 
     def initialize_command_functions(self):
         # This method is now obsolete and can be removed.
@@ -503,6 +506,15 @@ class MainApplication:
 
         terminal_widgets = create_terminal_panel(main_content_frame, self.shared_gui_refs)
         self.shared_gui_refs.update(terminal_widgets)
+
+        # --- Log device discovery messages to the GUI terminal ---
+        if 'terminal_cb' in self.shared_gui_refs:
+            terminal_cb = self.shared_gui_refs['terminal_cb']
+            for log_msg in discovery_logs:
+                timestr = datetime.datetime.now().strftime("[%H:%M:%S.%f]")[:-3]
+                full_msg = f"{timestr} [SYSTEM] {log_msg}\n"
+                terminal_cb(full_msg)
+
         terminal_widgets['terminal_frame'].pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(0, 10))
 
 
@@ -561,14 +573,32 @@ class MainApplication:
         status_widgets_dict = create_status_bar(left_bar_frame, self.shared_gui_refs)
         self.shared_gui_refs.update(status_widgets_dict)
 
-        # Hide panels by default
-        self.shared_gui_refs['gantry_panel'].pack_forget()
-        self.shared_gui_refs['fillhead_panel'].pack_forget()
+        # --- DYNAMIC DEVICE GUI CREATION ---
+        # The create_status_bar function now returns a container for device panels
+        device_panel_container = self.shared_gui_refs.get('status_bar_container')
+        if device_panel_container:
+            for device_name, modules in device_modules.items():
+                if hasattr(modules['gui'], 'create_gui_components'):
+                    # Create the panel using the device-specific function
+                    panel = modules['gui'].create_gui_components(device_panel_container, self.shared_gui_refs)
+                    
+                    # Store a reference to the panel and hide it initially
+                    self.shared_gui_refs[f'{device_name}_panel'] = panel
+                    panel.pack_forget()
+                    print(f"Created GUI panel for {device_name}")
+
+        # Hide panels by default (redundant but safe)
+        for device_name in device_modules.keys():
+            panel = self.shared_gui_refs.get(f'{device_name}_panel')
+            if panel:
+                panel.pack_forget()
+
 
         # Create Top Menu (and pass it the file commands from the scripting GUI)
         file_commands = self.scripting_gui_refs['file_commands']
         edit_commands = self.scripting_gui_refs['edit_commands']
-        self.menubar, self.recent_files_menu = create_top_menu(self.root, file_commands, edit_commands, self.autosave_var)
+        device_commands = device_actions.create_device_commands(self.root, self.shared_gui_refs)
+        self.menubar, self.recent_files_menu = create_top_menu(self.root, file_commands, edit_commands, device_commands, self.autosave_var)
 
         # Pass the recent files menu reference to the scripting gui
         self.scripting_gui_refs['update_recent_menu_callback'](self.recent_files_menu)
@@ -585,6 +615,9 @@ class MainApplication:
         """
         # Ask the scripting GUI to check for unsaved changes before closing
         if self.scripting_gui_refs['check_unsaved']():
+            # Terminate simulator if it's running
+            if device_actions.simulator_process and device_actions.simulator_process.poll() is None:
+                device_actions.simulator_process.terminate()
             self.root.destroy()
 
     def load_last_script(self):

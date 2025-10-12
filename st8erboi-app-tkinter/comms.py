@@ -3,6 +3,7 @@ import threading
 import time
 import datetime
 import tkinter as tk
+from devices import device_modules
 
 # --- Constants ---
 CLEARCORE_PORT = 8888
@@ -289,20 +290,28 @@ def recv_loop(gui_refs):
                         with devices_lock:
                             if device_key not in devices:
                                 devices[device_key] = {"ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0}
-                                log_to_terminal(f"Discovered new device: {device_key}", gui_refs)
+                                # log_to_terminal(f"Discovered new device: {device_key}", gui_refs) # This is redundant
                         handle_connection(device_key, source_ip, gui_refs)
                 except IndexError:
                     log_to_terminal(f"Malformed discovery response: {msg}", gui_refs)
-            elif msg.startswith("FILLHEAD_TELEM: "):
-                handle_connection("fillhead", source_ip, gui_refs)
-                if log_telemetry:
-                    log_to_terminal(f"[TELEM @{source_ip}]: {msg}", gui_refs)
-                parse_fillhead_telemetry(msg, gui_refs)
-            elif msg.startswith("GANTRY_TELEM: "):
-                handle_connection("gantry", source_ip, gui_refs)
-                if log_telemetry:
-                    log_to_terminal(f"[TELEM @{source_ip}]: {msg}", gui_refs)
-                parse_gantry_telemetry(msg, gui_refs)
+            
+            # --- DYNAMIC TELEMETRY PARSING ---
+            elif "_TELEM:" in msg:
+                try:
+                    device_key = msg.split("_TELEM:")[0].lower()
+                    if device_key in device_modules:
+                        handle_connection(device_key, source_ip, gui_refs)
+                        if log_telemetry:
+                            log_to_terminal(f"[TELEM @{source_ip}]: {msg}", gui_refs)
+                        
+                        # Call the dynamically loaded parser
+                        parser = device_modules[device_key]['telem'].parse_telemetry
+                        parser(msg, gui_refs, queue_ui_update, safe_float)
+                    else:
+                        log_to_terminal(f"[UNHANDLED @{source_ip}]: {msg}", gui_refs)
+                except Exception as e:
+                    log_to_terminal(f"Error processing telemetry for {msg}: {e}", gui_refs)
+
             elif msg.startswith(("INFO:", "DONE:", "ERROR:",
                                  "FILLHEAD_DONE:", "FH_DONE:",
                                  "FILLHEAD_INFO:", "FH_INFO:", "FILLHEAD_ERROR:", "FH_ERROR:",

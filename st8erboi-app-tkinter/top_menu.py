@@ -5,7 +5,7 @@ from tkinter import Menu
 import theme
 
 
-def create_top_menu(parent, file_commands, edit_commands, autosave_var):
+def create_top_menu(parent, file_commands, edit_commands, device_commands, autosave_var):
     """
     Creates the main application menu bar.
     """
@@ -52,6 +52,18 @@ def create_top_menu(parent, file_commands, edit_commands, autosave_var):
                      activeforeground=theme.FG_COLOR)
     edit_menu.add_command(label="Find/Replace", command=edit_commands['find_replace'], accelerator="Ctrl+F")
     menubar.add_cascade(label="Edit", menu=edit_menu)
+
+    # --- NEW: Devices Menu ---
+    devices_menu = Menu(menubar, tearoff=0,
+                        bg=theme.WIDGET_BG,
+                        fg=theme.FG_COLOR,
+                        activebackground=theme.PRIMARY_ACCENT,
+                        activeforeground=theme.FG_COLOR)
+    devices_menu.add_command(label="Run Simulator", command=device_commands['run_simulator'])
+    devices_menu.add_separator(background=theme.WIDGET_BORDER)
+    devices_menu.add_command(label="Scan for Devices", command=device_commands['scan_for_devices'])
+    devices_menu.add_command(label="Show Connected Devices", command=device_commands['show_connected_devices'])
+    menubar.add_cascade(label="Devices", menu=devices_menu)
 
     parent.config(menu=menubar)
 
