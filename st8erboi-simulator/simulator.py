@@ -8,6 +8,7 @@ from collections import deque
 import os
 import sys
 import importlib.util
+import json
 
 # --- Constants ---
 CLEARCORE_PORT = 8888
@@ -16,9 +17,8 @@ TELEMETRY_INTERVAL = 1.0  # seconds
 BASE_IP = "127.0.0.1"
 
 def discover_device_schemas():
-    """Scans the 'devices' directory and dynamically loads telemetry schemas."""
+    """Scans the 'devices' directory and dynamically loads telemetry schemas from JSON files."""
     schemas = {}
-    # Path is relative to the simulator's location
     script_dir = os.path.dirname(os.path.abspath(__file__))
     devices_path = os.path.abspath(os.path.join(script_dir, '..', 'st8erboi-app-tkinter', 'devices'))
 
@@ -26,22 +26,17 @@ def discover_device_schemas():
         print(f"Device directory not found at: {devices_path}")
         return schemas
 
-    # Add the devices directory to the python path to allow imports
-    sys.path.insert(0, os.path.abspath(os.path.join(devices_path, '..')))
-
     for device_name in os.listdir(devices_path):
         device_dir = os.path.join(devices_path, device_name)
-        schema_file = os.path.join(device_dir, 'telem_schema.py')
+        schema_file = os.path.join(device_dir, 'telem_schema.json')
         if os.path.isdir(device_dir) and os.path.exists(schema_file):
             try:
-                # Dynamically import the telem_schema module
-                module_name = f'devices.{device_name}.telem_schema'
-                spec = importlib.util.spec_from_file_location(module_name, schema_file)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-
-                if hasattr(module, 'get_schema'):
-                    schemas[device_name] = module.get_schema()
+                with open(schema_file, 'r') as f:
+                    schema_data = json.load(f)
+                    # We need the default values, not the GUI config, for the simulator state
+                    initial_state = {key: details.get('default', '---') 
+                                     for key, details in schema_data.items()}
+                    schemas[device_name] = initial_state
                     print(f"Loaded schema for device: {device_name}")
             except Exception as e:
                 print(f"Could not load schema for {device_name}: {e}")
@@ -278,32 +273,17 @@ class DeviceSimulator(threading.Thread):
             s['y_t'] = random.uniform(5, 15) if s.get('gantry_state') != 'STANDBY' else 0.0
             s['z_t'] = random.uniform(5, 15) if s.get('gantry_state') != 'STANDBY' else 0.0
             
-            # Format using .get() for safety in case schema is modified
-            return (f"GANTRY_TELEM: gantry_state:{s.get('gantry_state', 'ERR')},x_p:{s.get('x_p', 0):.2f},x_t:{s.get('x_t', 0):.2f},x_e:{s.get('x_e', 0)},x_h:{s.get('x_h', 0)},x_st:{s.get('x_st', 'ERR')},"
-                    f"y_p:{s.get('y_p', 0):.2f},y_t:{s.get('y_t', 0):.2f},y_e:{s.get('y_e', 0)},y_h:{s.get('y_h', 0)},y_st:{s.get('y_st', 'ERR')},"
-                    f"z_p:{s.get('z_p', 0):.2f},z_t:{s.get('z_t', 0):.2f},z_e:{s.get('z_e', 0)},z_h:{s.get('z_h', 0)},z_st:{s.get('z_st', 'ERR')}")
+            # The format string is now built dynamically from the state keys
+            telem_parts = [f"{key}:{s.get(key, 0)}" for key in s.keys()]
+            # Special formatting for floats can be added here if needed, but for now, this is simpler
+            return f"GANTRY_TELEM: {','.join(telem_parts)}"
 
         elif self.device_name == 'fillhead':
             s['inj_t0'] = random.uniform(5, 15) if s.get('MAIN_STATE') != 'STANDBY' else 0.0
             s['inj_t1'] = random.uniform(5, 15) if s.get('MAIN_STATE') != 'STANDBY' else 0.0
             
-            # This is a very long f-string, building it part by part is safer.
-            # Using .get() provides default values if a key is missing from the schema.
-            parts = [
-                f"MAIN_STATE:{s.get('MAIN_STATE', 'ERR')}",
-                f"inj_t0:{s.get('inj_t0', 0):.1f}", f"inj_t1:{s.get('inj_t1', 0):.1f}",
-                f"inj_h_mach:{s.get('inj_h_mach', 0)}", f"inj_h_cart:{s.get('inj_h_cart', 0)}",
-                f"inj_mach_mm:{s.get('inj_mach_mm', 0):.2f}", f"inj_cart_mm:{s.get('inj_cart_mm', 0):.2f}",
-                f"inj_cumulative_ml:{s.get('inj_cumulative_ml', 0):.2f}", f"inj_active_ml:{s.get('inj_active_ml', 0):.2f}", f"inj_tgt_ml:{s.get('inj_tgt_ml', 0):.2f}",
-                f"enabled0:{s.get('enabled0', 0)}", f"enabled1:{s.get('enabled1', 0)}",
-                f"inj_valve_pos:{s.get('inj_valve_pos', 0):.2f}", f"inj_valve_torque:{s.get('inj_valve_torque', 0):.1f}", f"inj_valve_homed:{s.get('inj_valve_homed', 0)}", f"inj_valve_state:{s.get('inj_valve_state', 0)}",
-                f"vac_valve_pos:{s.get('vac_valve_pos', 0):.2f}", f"vac_valve_torque:{s.get('vac_valve_torque', 0):.1f}", f"vac_valve_homed:{s.get('vac_valve_homed', 0)}", f"vac_valve_state:{s.get('vac_valve_state', 0)}",
-                f"h_st:{s.get('h_st', 0)}", f"h_sp:{s.get('h_sp', 0):.1f}", f"h_pv:{s.get('h_pv', 0):.1f}", f"h_op:{s.get('h_op', 0):.1f}",
-                f"vac_st:{s.get('vac_st', 0)}", f"vac_pv:{s.get('vac_pv', 0):.2f}", f"vac_sp:{s.get('vac_sp', 0):.1f}",
-                f"inj_st:{s.get('inj_st', 'ERR')}", f"inj_v_st:{s.get('inj_v_st', 'ERR')}", f"vac_v_st:{s.get('vac_v_st', 'ERR')}",
-                f"h_st_str:{s.get('h_st_str', 'ERR')}", f"vac_st_str:{s.get('vac_st_str', 'ERR')}"
-            ]
-            return f"FILLHEAD_TELEM: {','.join(parts)}"
+            telem_parts = [f"{key}:{s.get(key, 0)}" for key in s.keys()]
+            return f"FILLHEAD_TELEM: {','.join(telem_parts)}"
         
         # --- Generic Telemetry Format for all other devices ---
         else:
@@ -340,7 +320,7 @@ class SimulatorApp:
             row += 1
 
         if not self.device_schemas:
-            ttk.Label(frame, text="No device schemas found. Check paths and telem_schema.py files.").grid(row=0, column=0)
+            ttk.Label(frame, text="No device schemas found. Check paths and telem_schema.json files.").grid(row=0, column=0)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
