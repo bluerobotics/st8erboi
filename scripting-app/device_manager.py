@@ -43,29 +43,22 @@ class DeviceManager:
                             scripting_commands = json.load(f)
 
                     # Load telemetry schema and create GUI variables
-                    telem_schema = {}
-                    schema_path = os.path.join(device_path, 'telem_schema.json')
+                    telemetry_data = {}
+                    schema_path = os.path.join(device_path, 'telemetry.json')
                     if os.path.exists(schema_path):
                         with open(schema_path, 'r') as f:
-                            telem_schema = json.load(f)
+                            telemetry_data = json.load(f)
                         # Dynamically create the tk variables
-                        for key, details in telem_schema.items():
+                        for key, details in telemetry_data.items():
                             if 'gui_var' in details:
                                 self.shared_gui_refs[details['gui_var']] = tk.StringVar(value="---")
-
-                    # Load optional device-specific configuration
-                    device_config = {}
-                    config_path = os.path.join(device_path, 'device_config.json')
-                    if os.path.exists(config_path):
-                        with open(config_path, 'r') as f:
-                            device_config = json.load(f)
 
                     self.devices[device_name] = {
                         'gui': gui_module,
                         'parser': parser_module,
-                        'telem_schema': telem_schema, # Store the schema
+                        'telemetry_data': telemetry_data, # Store the schema
                         'scripting_commands': scripting_commands, # Store loaded JSON data
-                        'config': device_config, # Store the optional device config
+                        'config': {}, # Keep the key for consistent structure, but it's now unused
                         'status_var': tk.StringVar(value=f'🔌 {device_name.capitalize()} Disconnected')
                     }
                     # Initialize the state for this device
@@ -123,27 +116,21 @@ class DeviceManager:
                         with open(json_path, 'r') as f:
                             scripting_commands = json.load(f)
 
-                    telem_schema = {}
-                    schema_path = os.path.join(device_path, 'telem_schema.json')
+                    telemetry_data = {}
+                    schema_path = os.path.join(device_path, 'telemetry.json')
                     if os.path.exists(schema_path):
                         with open(schema_path, 'r') as f:
-                            telem_schema = json.load(f)
-                        for key, details in telem_schema.items():
+                            telemetry_data = json.load(f)
+                        for key, details in telemetry_data.items():
                             if 'gui_var' in details:
                                 self.shared_gui_refs[details['gui_var']] = tk.StringVar(value="---")
-
-                    device_config = {}
-                    config_path = os.path.join(device_path, 'device_config.json')
-                    if os.path.exists(config_path):
-                        with open(config_path, 'r') as f:
-                            device_config = json.load(f)
 
                     self.devices[device_name] = {
                         'gui': gui_module,
                         'parser': parser_module,
-                        'telem_schema': telem_schema,
+                        'telemetry_data': telemetry_data,
                         'scripting_commands': scripting_commands,
-                        'config': device_config,
+                        'config': {},
                         'status_var': tk.StringVar(value=f'🔌 {device_name.capitalize()} Disconnected')
                     }
                     self.device_state[device_name] = {
@@ -256,9 +243,9 @@ class DeviceManager:
         all_vars = {}
         for device_name, modules in self.devices.items():
             device_map = {}
-            # Reconstruct the mapping from the stored telem_schema
-            telem_schema = modules.get('telem_schema', {})
-            for schema_key, details in telem_schema.items():
+            # Reconstruct the mapping from the stored telemetry_data
+            telemetry_data = modules.get('telemetry_data', {})
+            for schema_key, details in telemetry_data.items():
                 if 'gui_var' in details:
                     device_map[details['gui_var']] = schema_key
             all_vars[device_name] = device_map

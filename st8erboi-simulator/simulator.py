@@ -28,7 +28,7 @@ def discover_device_schemas():
 
     for device_name in os.listdir(devices_path):
         device_dir = os.path.join(devices_path, device_name)
-        schema_file = os.path.join(device_dir, 'telem_schema.json')
+        schema_file = os.path.join(device_dir, 'telemetry.json')
         if os.path.isdir(device_dir) and os.path.exists(schema_file):
             try:
                 with open(schema_file, 'r') as f:
@@ -320,7 +320,7 @@ class SimulatorApp:
             row += 1
 
         if not self.device_schemas:
-            ttk.Label(frame, text="No device schemas found. Check paths and telem_schema.json files.").grid(row=0, column=0)
+            ttk.Label(frame, text="No device schemas found. Check paths and telemetry.json files.").grid(row=0, column=0)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 

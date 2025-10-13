@@ -218,11 +218,6 @@ def is_status_message(msg, device_manager):
         # Check for standard prefixes (e.g., GANTRY_DONE:)
         if msg.startswith(key.upper() + "_"):
             return True
-        # Check for custom short prefixes from device_config.json
-        config = data.get('config', {})
-        short_prefixes = config.get('message_prefixes', {}).get('short', {}).values()
-        if any(msg.startswith(p) for p in short_prefixes):
-            return True
             
     return False
 

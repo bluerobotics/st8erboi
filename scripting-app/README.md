@@ -84,7 +84,32 @@ This file defines all the commands the device accepts in a script.
     - `help`: A short description of what the command does.
     - `gui_action` (Optional): The name of a function to be called when a UI button is pressed. This links a button in the device's GUI panel to a script command.
 
-### 4.2. `telem_schema.json`
+**Example `commands.json`:**
+```json
+{
+  "MOVE_X": {
+    "device": "gantry",
+    "params": [
+      { "name": "distance", "type": "float" },
+      { "name": "speed", "type": "int" }
+    ],
+    "help": "Moves the gantry X-axis by a relative distance at a specified speed."
+  },
+  "HOME_X": {
+    "device": "gantry",
+    "params": [],
+    "help": "Homes the gantry X-axis."
+  },
+  "ENABLE_X": {
+    "device": "gantry",
+    "gui_action": "enable_x",
+    "params": [],
+    "help": "Enables the gantry X-axis motor."
+  }
+}
+```
+
+### 4.2. `telemetry.json`
 This file tells the application how to interpret telemetry data sent by the device.
 
 - **Structure**: A JSON object. Each key is the name of a variable in the telemetry message (e.g., `"pressure_psi"`).
@@ -96,6 +121,26 @@ This file tells the application how to interpret telemetry data sent by the devi
         - `suffix`: Text to add after the value (e.g., `" mm"`).
         - `precision`: For numbers, the number of decimal places to show.
         - `multiplier`: A number to multiply the incoming value by.
+
+**Example `telemetry.json`:**
+```json
+{
+  "gantry_state": {
+    "gui_var": "gantry_main_state_var", 
+    "default": "STANDBY"
+  },
+  "x_p": {
+    "gui_var": "gantry_x_pos_var", 
+    "default": 0.0,
+    "format": { "precision": 2, "suffix": " mm" }
+  },
+  "x_h": {
+    "gui_var": "gantry_x_homed_var", 
+    "default": 0,
+    "format": { "map": { "0": "Not Homed", "1": "Homed" } }
+  }
+}
+```
 
 ### 4.3. `gui.py`
 This Python file contains the code to build the device's UI panel.
@@ -123,11 +168,6 @@ def create_gui_components(parent, shared_gui_refs):
 
     return device_panel
 ```
-
-### 4.4. `device_config.json` (Optional)
-This file can be used for any other configuration unique to the device.
-
-- **Example Use**: The `fillhead` device uses abbreviated message prefixes (`FH_DONE:`). This file is used to tell the core application to recognize these short prefixes as valid status messages for this device.
 
 ---
 
