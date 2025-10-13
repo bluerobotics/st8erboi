@@ -265,31 +265,41 @@ class MainApplication:
         if panel:
             panel.pack_forget()
 
-        # Get the list of variables for this device from the device manager
-        device_vars_map = self.device_manager.get_all_device_variable_names()
-        vars_to_reset = device_vars_map.get(device_key, [])
-        
-        for var_name in vars_to_reset:
+        # Get the schema and variable mappings for this device
+        device_vars_map = self.device_manager.get_all_device_variable_names().get(device_key, {})
+        device_schema = self.device_manager.get_device_modules().get(device_key, {}).get('telem_schema', {})
+
+        # Iterate over the gui_var -> schema_key mapping
+        for var_name, schema_key in device_vars_map.items():
             var = self.shared_gui_refs.get(var_name)
-            if var:
-                if isinstance(var, tk.StringVar):
-                    # Reset based on type
-                    if "homed" in var_name:
-                        var.set("Not Homed")
-                    elif "enabled" in var_name:
-                        var.set("Disabled")
-                    elif "psig" in var_name:
-                        var.set("0.00 PSIG")
-                    elif "°C" in var_name:
-                        var.set("0.0 °C")
-                    elif "ml" in var_name:
-                        var.set("--- ml")
-                    elif "status_var" in var_name:
-                        var.set(f"🔌 {device_key.capitalize()} Disconnected")
+            if var and schema_key in device_schema:
+                default_value = device_schema[schema_key].get('default', None)
+                
+                # Use a generic reset value if 'default' isn't in the schema
+                if default_value is None:
+                    if isinstance(var, tk.StringVar):
+                        default_value = "---"
+                    elif isinstance(var, tk.DoubleVar):
+                        default_value = 0.0
                     else:
-                        var.set("---")
-                elif isinstance(var, tk.DoubleVar):
-                    var.set(0.0)
+                        continue # Skip if type is unknown
+                
+                # Set the value, handling type conversions
+                try:
+                    if isinstance(var, tk.StringVar):
+                        # The default schema value might be a number, so convert to string
+                        var.set(str(default_value))
+                    elif isinstance(var, tk.DoubleVar):
+                        var.set(float(default_value))
+                except (ValueError, TypeError):
+                    # Fallback if the default value is incompatible with the var type
+                    var.set("---" if isinstance(var, tk.StringVar) else 0.0)
+
+        # Also handle the main status_var for the device, which isn't in the schema
+        status_var_name = f'status_var_{device_key}'
+        status_var = self.shared_gui_refs.get(status_var_name)
+        if status_var and isinstance(status_var, tk.StringVar):
+            status_var.set(f"🔌 {device_key.capitalize()} Disconnected")
 
     def show_panel(self, device_key):
         """Makes a device's status panel visible."""

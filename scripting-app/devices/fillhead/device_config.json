@@ -1,0 +1,9 @@
+{
+    "message_prefixes": {
+        "short": {
+            "DONE": "FH_DONE:",
+            "INFO": "FH_INFO:",
+            "ERROR": "FH_ERROR:"
+        }
+    }
+}

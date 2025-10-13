@@ -20,7 +20,7 @@ def discover_device_schemas():
     """Scans the 'devices' directory and dynamically loads telemetry schemas from JSON files."""
     schemas = {}
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    devices_path = os.path.abspath(os.path.join(script_dir, '..', 'st8erboi-app-tkinter', 'devices'))
+    devices_path = os.path.abspath(os.path.join(script_dir, '..', 'scripting-app', 'devices'))
 
     if not os.path.exists(devices_path):
         print(f"Device directory not found at: {devices_path}")
