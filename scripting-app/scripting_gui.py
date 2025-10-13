@@ -670,7 +670,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         filename = "Untitled"
         if current_filepath: filename = os.path.basename(current_filepath)
         modified_star = "*" if script_editor.edit_modified() else "";
-        root.title(f"{filename}{modified_star} - Multi-Device Controller")
+        root.title(f"{filename}{modified_star} - BR Equipment Control App")
 
     def on_text_modified(event):
         """Updates window title and triggers autosave if enabled."""

@@ -92,8 +92,8 @@ def create_top_menu(parent, file_commands, edit_commands, device_commands, autos
 def show_about_window(parent):
     """Displays the 'About' window with version and author information."""
     messagebox.showinfo(
-        "About Blue Robotics Equipment Control Application",
-        "Blue Robotics Equipment Control Application\n\n"
+        "About BR Equipment Control App",
+        "BR Equipment Control App\n\n"
         "Version: 1.2\n"
         "Release Date: 2025-10-13\n\n"
         "Author: Eldin Miller-Stead",

@@ -318,14 +318,14 @@ def recv_loop(gui_refs, device_manager):
                         # Call the dynamically loaded parser
                         device_info = device_modules[device_key]
                         parser_module = device_info.get('parser')
-                        telem_schema = device_info.get('telem_schema', {})
+                        telemetry_data = device_info.get('telemetry_data', {})
                         
                         if parser_module and hasattr(parser_module, 'parse_telemetry'):
                             # The schema is now passed to the parser
-                            parser_module.parse_telemetry(msg, telem_schema, gui_refs, queue_ui_update, safe_float)
+                            parser_module.parse_telemetry(msg, telemetry_data, gui_refs, queue_ui_update, safe_float)
                         else:
                             # Fallback to dynamic parsing if no specific parser
-                            parse_dynamic_telemetry(msg, device_key, telem_schema, gui_refs, queue_ui_update, safe_float)
+                            parse_dynamic_telemetry(msg, device_key, telemetry_data, gui_refs, queue_ui_update, safe_float)
                     else:
                         log_to_terminal(f"[UNHANDLED @{source_ip}]: {msg}", gui_refs)
                 except Exception as e:

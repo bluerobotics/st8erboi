@@ -93,7 +93,7 @@ class CollapsiblePanel(ttk.Frame):
 class MainApplication:
     def __init__(self, root):
         self.root = root
-        self.root.title("st8erboi controller")
+        self.root.title("BR Equipment Control App")
         self.root.configure(bg=theme.BG_COLOR)
 
         # Thread-safe queue for GUI updates

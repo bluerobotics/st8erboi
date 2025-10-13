@@ -1,4 +1,8 @@
-# Blue Robotics Equipment Control Application
+<div align="center">
+    <img src="assets/icon.png" alt="Application Icon" width="150">
+</div>
+
+# BR Equipment Control App
 
 **Version:** 1.2  
 **Author:** Eldin Miller-Stead  
@@ -9,6 +13,10 @@
 ## 1. Overview
 
 This application is a desktop program for controlling and scripting multiple pieces of hardware, referred to as "devices". Its main purpose is to provide a single, centralized user interface for running automated scripts that can command several different devices in sequence.
+
+<div align="center">
+    <img src="assets/app.png" alt="Application Screenshot">
+</div>
 
 The system is designed to be modular. You can add new devices to the application without changing the main codebase. This is done by creating a new folder for the device in the `/devices` directory and adding a set of specific configuration files. The application can even detect and load new device modules while it's running.
 
