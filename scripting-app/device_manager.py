@@ -82,6 +82,86 @@ class DeviceManager:
                 except Exception as e:
                     self.log(f"An unexpected error occurred loading '{device_name}': {e}")
 
+    def scan_and_load_new_devices(self):
+        """
+        Scans the 'devices' directory for new device modules that haven't been loaded yet,
+        and loads them into the running application.
+        
+        Returns:
+            A list of the names of the newly loaded devices.
+        """
+        self.log("Scanning for new device modules...")
+        newly_loaded = []
+        devices_dir = os.path.join(os.path.dirname(__file__), 'devices')
+        if not os.path.isdir(devices_dir):
+            self.log(f"Devices directory not found at '{devices_dir}'")
+            return newly_loaded
+
+        for device_name in os.listdir(devices_dir):
+            if os.path.isdir(os.path.join(devices_dir, device_name)) and \
+               not device_name.startswith('__') and \
+               device_name not in self.devices:
+                
+                # This is a new device, so load it.
+                # The original discover_devices logic is reused here implicitly.
+                # We can achieve this by calling it again, but it's more efficient to just load the new one.
+                # For simplicity in this refactor, we'll just log and load.
+                # A more robust implementation would extract the loading logic into a helper.
+                
+                device_path = os.path.join(devices_dir, device_name)
+                try:
+                    gui_module = importlib.import_module(f'devices.{device_name}.gui')
+                    parser_module = None
+                    try:
+                        parser_module = importlib.import_module(f'devices.{device_name}.parser')
+                    except ImportError:
+                        pass
+
+                    scripting_commands = {}
+                    json_path = os.path.join(device_path, 'commands.json')
+                    if os.path.exists(json_path):
+                        with open(json_path, 'r') as f:
+                            scripting_commands = json.load(f)
+
+                    telem_schema = {}
+                    schema_path = os.path.join(device_path, 'telem_schema.json')
+                    if os.path.exists(schema_path):
+                        with open(schema_path, 'r') as f:
+                            telem_schema = json.load(f)
+                        for key, details in telem_schema.items():
+                            if 'gui_var' in details:
+                                self.shared_gui_refs[details['gui_var']] = tk.StringVar(value="---")
+
+                    device_config = {}
+                    config_path = os.path.join(device_path, 'device_config.json')
+                    if os.path.exists(config_path):
+                        with open(config_path, 'r') as f:
+                            device_config = json.load(f)
+
+                    self.devices[device_name] = {
+                        'gui': gui_module,
+                        'parser': parser_module,
+                        'telem_schema': telem_schema,
+                        'scripting_commands': scripting_commands,
+                        'config': device_config,
+                        'status_var': tk.StringVar(value=f'🔌 {device_name.capitalize()} Disconnected')
+                    }
+                    self.device_state[device_name] = {
+                        "ip": None, "last_rx": 0, "connected": False, "last_discovery_attempt": 0
+                    }
+                    self.log(f"Successfully loaded new device: {device_name}")
+                    newly_loaded.append(device_name)
+
+                except ImportError as e:
+                    self.log(f"Failed to load modules for new device '{device_name}': {e}")
+                except Exception as e:
+                    self.log(f"An unexpected error occurred loading new device '{device_name}': {e}")
+        
+        if not newly_loaded:
+            self.log("No new device modules found.")
+            
+        return newly_loaded
+
     def log(self, message):
         """Adds a log message to the discovery logs."""
         print(message) # Also print to console for immediate feedback

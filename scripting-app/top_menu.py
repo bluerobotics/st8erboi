@@ -3,6 +3,19 @@ from tkinter import messagebox, scrolledtext
 from tkinter import ttk
 from tkinter import Menu
 import theme
+import os
+import webbrowser
+
+
+def open_documentation():
+    """Opens the README.md file in the default web browser or text editor."""
+    filepath = os.path.join(os.path.dirname(__file__), 'README.md')
+    if os.path.exists(filepath):
+        # Using webbrowser is a cross-platform way to open the file
+        # It will open in a browser, which renders Markdown nicely.
+        webbrowser.open(f'file://{os.path.realpath(filepath)}')
+    else:
+        messagebox.showerror("Documentation Not Found", f"Could not find README.md at:\n{filepath}")
 
 
 def create_top_menu(parent, file_commands, edit_commands, device_commands, autosave_var):
@@ -61,121 +74,28 @@ def create_top_menu(parent, file_commands, edit_commands, device_commands, autos
                         activeforeground=theme.FG_COLOR)
     devices_menu.add_command(label="Run Simulator", command=device_commands['run_simulator'])
     devices_menu.add_separator(background=theme.WIDGET_BORDER)
-    devices_menu.add_command(label="Scan for Devices", command=device_commands['scan_for_devices'])
-    devices_menu.add_command(label="Show Connected Devices", command=device_commands['show_connected_devices'])
+    devices_menu.add_command(label="Scan for New Device Modules", command=device_commands['scan_for_devices'])
+    devices_menu.add_command(label="Show Known Devices", command=device_commands['show_known_devices'])
     menubar.add_cascade(label="Devices", menu=devices_menu)
+
+    # --- Help Menu ---
+    help_menu = tk.Menu(menubar, tearoff=0, bg=theme.WIDGET_BG, fg=theme.FG_COLOR)
+    help_menu.add_command(label="Documentation", command=open_documentation)
+    help_menu.add_command(label="About", command=lambda: show_about_window(parent))
+    menubar.add_cascade(label="Help", menu=help_menu)
 
     parent.config(menu=menubar)
 
     return menubar, recent_files_menu
 
 
-def show_documentation_window(parent):
-    """Displays the application's UI structure documentation in a new window."""
-    doc_window = tk.Toplevel(parent)
-    doc_window.title("Application Documentation")
-    doc_window.geometry("800x600")
-    doc_window.configure(bg="#2a2d3b")
-
-    text_area = scrolledtext.ScrolledText(doc_window, wrap=tk.WORD, bg="#1b1e2b", fg="white", font=("Consolas", 10))
-    text_area.pack(expand=True, fill="both", padx=10, pady=10)
-
-    documentation_content = """
-# Application UI Structure (Revised)
-
-This document outlines the hierarchical structure of the Tkinter UI elements in your application, reflecting the latest refactoring for improved modularity and clarity.
-
----
-
-### `main.py` - The Root and UI Orchestrator
-
-This file initializes the main application window and is now responsible for creating and placing all major UI components.
-
-- **`root` (`tk.Tk`)**: The main window of the application.
-  - **`Top Menu Bar`** (Created by `create_top_menu` from `top_menu.py`)
-  - **`left_bar_frame` (`tk.Frame`)**: A vertical container on the left side.
-    - **Status Panel** (Created by `create_status_bar` from `status_panel.py`)
-    - **Manual Controls Display** (Created by `create_manual_controls_display` from `manual_controls.py`)
-    - **Global Abort Button** (`tk.Button`)
-  - **`terminal_frame` (`tk.Frame`)**: A container at the bottom of the window.
-    - (Contents created by `create_terminal_panel` from `terminal.py`)
-  - **`main_content_frame` (`tk.Frame`)**: The central area that fills the remaining space.
-    - **Scripting Interface** (Created by `create_scripting_interface` from `scripting_gui.py`)
-
----
-
-### `top_menu.py` - The Main Menu Bar
-
-This file creates the application's main menu bar (File, Help, etc.).
-
-- **`create_top_menu()`**:
-  - `menubar` (`tk.Menu`)
-    - `file_menu` (`tk.Menu`): Contains New, Load, Save, Exit commands.
-    - `help_menu` (`tk.Menu`): Contains Documentation and About commands.
-
----
-
-### `status_panel.py` - Left-Side Status Displays
-
-This file's role is unchanged. It creates the informational panels displayed at the top of the `left_bar_frame`.
-
-- **`create_status_bar()`**:
-  - `status_bar_container` (`tk.Frame`)
-    - `conn_frame` (`tk.LabelFrame`): Connection status.
-    - `fh_frame` (`tk.LabelFrame`): Fillhead position readouts.
-    - `sys_status_frame` (`tk.LabelFrame`): Consolidated system status.
-
----
-
-### `manual_controls.py` - Consolidated Manual Controls
-
-This file consolidates all manual control widgets for both devices into a single, cohesive module.
-
-- **`create_manual_controls_display()`**:
-  - `container` (`tk.Frame`)
-    - `toggle_button` (`ttk.Button`): Shows/hides the controls.
-    - `manual_panel` (`tk.Frame`): The collapsible, scrollable area.
-      - **Motor Power Controls** (`create_motor_power_controls()`)
-      - **Injector Ancillary Controls** (`create_injector_ancillary_controls()`)
-      - **Fillhead Ancillary Controls** (`create_fillhead_ancillary_controls()`)
-
----
-
-### `scripting_gui.py` - Dedicated Scripting Interface
-
-This file's responsibility has been focused. It now exclusively creates the scripting editor and the command reference panel.
-
-- **`create_scripting_interface()`**:
-  - `scripting_area` (`tk.Frame`)
-    - `paned_window` (`ttk.PanedWindow`): Splits the area into two resizable panes.
-      - **`left_pane` (`tk.Frame`)**: Contains the script editor and its control buttons.
-      - **`right_pane` (`tk.Frame`)**: Contains the command reference tree view.
-
----
-
-### `terminal.py` - The Bottom Terminal Panel
-
-This file's role is unchanged. It defines the terminal output window and its associated options.
-
-- **`create_terminal_panel()`**:
-  - `bottom_frame` (`tk.Frame`): The main container for the terminal area.
-    - `terminal` (`tk.Text`) and `scrollbar` (`ttk.Scrollbar`).
-    - `options_frame` (`tk.Frame`) with `Checkbuttons`.
-    """
-    text_area.insert(tk.END, documentation_content)
-    text_area.config(state=tk.DISABLED)
-    doc_window.transient(parent)
-    doc_window.grab_set()
-
-
 def show_about_window(parent):
     """Displays the 'About' window with version and author information."""
     messagebox.showinfo(
-        "About Multi-Device Controller",
-        "Multi-Device Controller\n\n"
-        "Version: 1.1.0\n"
-        "Release Date: July 18, 2025\n\n"
-        "Author: Gemini\n"
-        "Location: Victoria, BC, Canada",
+        "About Blue Robotics Equipment Control Application",
+        "Blue Robotics Equipment Control Application\n\n"
+        "Version: 1.2\n"
+        "Release Date: 2025-10-13\n\n"
+        "Author: Eldin Miller-Stead",
         parent=parent
     )

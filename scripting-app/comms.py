@@ -205,6 +205,28 @@ def handle_connection(device_key, source_ip, gui_refs, device_manager):
             gui_queue.put((update_searching_panel_visibility, (gui_refs,), {}))
 
 
+def is_status_message(msg, device_manager):
+    """
+    Checks if a message is a known status message, either generic or device-specific.
+    This check is dynamic and uses the current state of the device_manager.
+    """
+    if msg.startswith(("INFO:", "DONE:", "ERROR:")):
+        return True
+    
+    device_modules = device_manager.get_device_modules()
+    for key, data in device_modules.items():
+        # Check for standard prefixes (e.g., GANTRY_DONE:)
+        if msg.startswith(key.upper() + "_"):
+            return True
+        # Check for custom short prefixes from device_config.json
+        config = data.get('config', {})
+        short_prefixes = config.get('message_prefixes', {}).get('short', {}).values()
+        if any(msg.startswith(p) for p in short_prefixes):
+            return True
+            
+    return False
+
+
 # --- Dynamic Telemetry Parser ---
 def parse_dynamic_telemetry(msg, device_name, schema, gui_refs, queue_ui_update, safe_float):
     """
@@ -269,24 +291,6 @@ def recv_loop(gui_refs, device_manager):
     """Main network receive loop. Routes packets to the correct local parser."""
     device_modules = device_manager.get_device_modules()
 
-    # --- Dynamically generate all possible status prefixes ---
-    all_status_prefixes = ["INFO:", "DONE:", "ERROR:"]
-    generic_prefixes = ["_DONE:", "_INFO:", "_ERROR:", "_START:"]
-    
-    for device_key, device_data in device_modules.items():
-        # Add standard prefixes like GANTRY_DONE:
-        for prefix in generic_prefixes:
-            all_status_prefixes.append(device_key.upper() + prefix)
-        
-        # Add custom short prefixes from device_config.json
-        device_config = device_data.get('config', {})
-        short_prefixes = device_config.get('message_prefixes', {}).get('short', {})
-        if short_prefixes:
-            all_status_prefixes.extend(short_prefixes.values())
-            
-    # Convert to tuple for optimized startswith() checking
-    all_status_prefixes = tuple(all_status_prefixes)
-
     while True:
         try:
             data, addr = sock.recvfrom(1024)
@@ -332,7 +336,7 @@ def recv_loop(gui_refs, device_manager):
                 except Exception as e:
                     log_to_terminal(f"Error processing telemetry for {msg}: {e}", gui_refs)
 
-            elif msg.startswith(all_status_prefixes):
+            elif is_status_message(msg, device_manager):
                 log_to_terminal(f"[STATUS @{source_ip}]: {msg}", gui_refs)
                 with devices_lock:
                     for key, device_state in device_manager.get_all_device_states().items():

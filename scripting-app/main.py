@@ -399,13 +399,12 @@ class MainApplication:
         )
         
         # Now that the script editor exists, populate the command reference
-        command_ref_widget = create_command_reference(
+        self.command_reference_instance = create_command_reference(
             cmd_ref_content, 
             self.scripting_gui_refs['script_editor'],
-            self.scripting_gui_refs['scripting_commands'],
             self.device_manager
         )
-        command_ref_widget.pack(fill=tk.BOTH, expand=True)
+        self.command_reference_instance.pack(fill=tk.BOTH, expand=True)
 
         # "Searching for devices..." panel
         self.searching_frame = ttk.Frame(left_bar_frame, style='Card.TFrame')
@@ -439,6 +438,37 @@ class MainApplication:
 
         # Pass the recent files menu reference to the scripting gui
         self.scripting_gui_refs['update_recent_menu_callback'](self.recent_files_menu)
+
+        # --- Store references for dynamic updates ---
+        self.shared_gui_refs['refresh_commands_ref'] = self.refresh_command_components
+        self.shared_gui_refs['add_device_panels_ref'] = self.add_new_device_panels
+
+    def refresh_command_components(self):
+        """Refreshes all UI components that depend on the list of commands."""
+        # 1. Refresh the main command function dictionary
+        self.command_funcs = self.device_manager.get_all_command_functions()
+        self.shared_gui_refs['command_funcs'] = self.command_funcs
+        
+        # 2. Refresh the command reference panel
+        if self.command_reference_instance:
+            self.command_reference_instance.refresh()
+            
+        # 3. Refresh the syntax highlighter
+        if self.scripting_gui_refs and self.scripting_gui_refs.get('syntax_highlighter'):
+            self.scripting_gui_refs['syntax_highlighter'].refresh_keywords()
+
+    def add_new_device_panels(self, device_names):
+        """Creates and packs the GUI panels for newly discovered devices."""
+        device_panel_container = self.shared_gui_refs.get('status_bar_container')
+        if device_panel_container:
+            for device_name in device_names:
+                # This is a simplified version of the logic in DeviceManager.create_all_gui_components
+                modules = self.device_manager.get_device_modules().get(device_name)
+                if modules and hasattr(modules.get('gui'), 'create_gui_components'):
+                    panel = modules['gui'].create_gui_components(device_panel_container, self.shared_gui_refs)
+                    self.shared_gui_refs[f'{device_name}_panel'] = panel
+                    panel.pack_forget() # Hide by default
+
 
     def setup_menu(self):
         """

@@ -39,32 +39,60 @@ def run_simulator(parent):
         messagebox.showerror("Error", f"Failed to start simulator:\n{e}", parent=parent)
 
 def scan_for_devices(gui_refs):
-    """Triggers a manual device discovery broadcast."""
-    comms.discover_devices(gui_refs)
-    if 'terminal_cb' in gui_refs:
-        # Use the comms logger to ensure thread safety
-        comms.log_to_terminal("[GUI] Manual device scan triggered.", gui_refs)
+    """
+    Triggers a filesystem scan for new device modules and then a network scan
+    to find all known devices.
+    """
+    device_manager = gui_refs.get('device_manager')
+    if not device_manager:
+        comms.log_to_terminal("[ERROR] Device Manager not found during scan.", gui_refs)
+        return
 
-def show_connected_devices(parent, gui_refs):
-    """Displays a list of currently known devices and their status."""
-    
-    # We need to access the devices dictionary from the comms module
-    # It's protected by a lock, so we should acquire it.
+    # 1. Scan filesystem for new devices and load them
+    newly_loaded = device_manager.scan_and_load_new_devices()
+
+    # 2. If new devices were found, update the UI components
+    if newly_loaded:
+        # Add the GUI panels for the new devices
+        add_panels_func = gui_refs.get('add_device_panels_ref')
+        if add_panels_func:
+            add_panels_func(newly_loaded)
+        
+        # Refresh the command reference and syntax highlighting
+        refresh_commands_func = gui_refs.get('refresh_commands_ref')
+        if refresh_commands_func:
+            refresh_commands_func()
+
+    # 3. Trigger a network broadcast to find IPs for all known devices (including new ones)
+    comms.discover_devices(gui_refs)
+    comms.log_to_terminal("[SYSTEM] Network device scan triggered.", gui_refs)
+
+
+def show_known_devices(parent, gui_refs):
+    """Displays a list of all known (loaded) devices and their current status."""
+    device_manager = gui_refs.get('device_manager')
+    if not device_manager:
+        messagebox.showerror("Error", "Device Manager not found.", parent=parent)
+        return
+
     with comms.devices_lock:
-        if not comms.devices:
-            message = "No devices are currently being tracked."
+        device_states = device_manager.get_all_device_states()
+        if not device_states:
+            message = "No device modules are currently loaded."
         else:
-            message = "Known Devices:\n\n"
-            for name, info in comms.devices.items():
-                status = "Connected" if info['connected'] else "Disconnected"
-                ip = info['ip'] if info['ip'] else "N/A"
-                last_seen = f"{time.time() - info['last_rx']:.1f}s ago" if info['last_rx'] > 0 else "Never"
+            message = "Known Device Modules:\n\n"
+            for name, info in device_states.items():
+                status = "Connected" if info.get('connected') else "Disconnected"
+                ip = info.get('ip', "N/A")
+                last_seen_raw = info.get('last_rx', 0)
+                last_seen = f"{time.time() - last_seen_raw:.1f}s ago" if last_seen_raw > 0 else "Never"
+                
                 message += f"- {name.capitalize()}\n"
                 message += f"  Status: {status}\n"
                 message += f"  IP: {ip}\n"
                 message += f"  Last Seen: {last_seen}\n\n"
 
-    messagebox.showinfo("Connected Devices", message, parent=parent)
+    messagebox.showinfo("Known Devices", message, parent=parent)
 
 def create_device_commands(parent, gui_refs):
     """
@@ -74,5 +102,5 @@ def create_device_commands(parent, gui_refs):
     return {
         'run_simulator': lambda: run_simulator(parent),
         'scan_for_devices': lambda: scan_for_devices(gui_refs),
-        'show_connected_devices': lambda: show_connected_devices(parent, gui_refs)
+        'show_known_devices': lambda: show_known_devices(parent, gui_refs)
     }

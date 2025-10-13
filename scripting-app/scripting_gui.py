@@ -278,6 +278,16 @@ class SyntaxHighlighter:
         # Bind to the custom <<Modified>> event, which fires on any text change.
         self.text.bind('<<Modified>>', self.highlight)
 
+    def refresh_keywords(self):
+        """Re-fetches the keywords from the device manager and re-highlights the text."""
+        # This assumes the device_manager reference passed in initially is still valid
+        # and has been updated with the new device info.
+        all_commands = self.device_manager.get_all_scripting_commands()
+        self.device_keywords = [cmd for cmd, details in all_commands.items() if details['device'] not in ['script', 'both']]
+        self.script_keywords = [cmd for cmd, details in all_commands.items() if details['device'] in ['script', 'both']]
+        self.highlight()
+
+
     def _configure_tags(self):
         for tag_name, tag_config in self.tags.items():
             self.text.tag_configure(tag_name, **tag_config)
@@ -327,9 +337,10 @@ class SyntaxHighlighter:
 # --- Themed Script Editor (Rebuilt with Line Numbers) ---
 
 class ScriptEditor(tk.Frame):
-    def __init__(self, parent, device_keywords, script_keywords, **kwargs):
+    def __init__(self, parent, device_manager, **kwargs):
         super().__init__(parent, **kwargs)
         self.config(bg=theme.WIDGET_BG)
+        self.device_manager = device_manager
 
         # --- Layout ---
         self.text = CustomText(self)
@@ -353,7 +364,11 @@ class ScriptEditor(tk.Frame):
         self.text.tag_configure("current_line", background=theme.SECONDARY_ACCENT)
         self._highlight_current_line()
         
+        all_commands = self.device_manager.get_all_scripting_commands()
+        device_keywords = [cmd for cmd, details in all_commands.items() if details['device'] not in ['script', 'both']]
+        script_keywords = [cmd for cmd, details in all_commands.items() if details['device'] in ['script', 'both']]
         self.highlighter = SyntaxHighlighter(self.text, device_keywords, script_keywords)
+        self.highlighter.device_manager = device_manager # Pass manager for refreshing
     
     def _on_tab(self, event):
         self.text.insert(tk.INSERT, "    ")
@@ -416,158 +431,154 @@ class ValidationResultsWindow(tk.Toplevel):
 
 
 # --- GUI Creation Functions (Wiring everything up) ---
-def create_command_reference(parent, script_editor_widget, scripting_commands, device_manager):
-    ref_frame = ttk.Frame(parent, style='TFrame', padding=5)
+class CommandReference(ttk.Frame):
+    def __init__(self, parent, script_editor_widget, device_manager, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.script_editor_widget = script_editor_widget
+        self.device_manager = device_manager
+        self.all_commands = [] # Initialize to prevent race condition
+        
+        self.configure(style='TFrame', padding=5)
 
-    # --- Filter Widgets ---
-    filter_frame = ttk.Frame(ref_frame, style='TFrame')
-    filter_frame.pack(fill=tk.X, pady=(0, 5))
-    filter_frame.grid_columnconfigure((0,1,2,3), weight=1) # Make columns resizable
+        # --- Filter Widgets ---
+        filter_frame = ttk.Frame(self, style='TFrame')
+        filter_frame.pack(fill=tk.X, pady=(0, 5))
+        filter_frame.grid_columnconfigure((0,1,2,3), weight=1) # Make columns resizable
 
-    # --- Treeview ---
-    tree_frame = ttk.Frame(ref_frame, style='TFrame')
-    tree_frame.pack(fill=tk.BOTH, expand=True)
-    tree = ttk.Treeview(tree_frame, columns=('params', 'desc'), show='tree headings')
-    
-    # --- Tag for styling disconnected devices ---
-    tree.tag_configure('disconnected', foreground=theme.COMMENT_COLOR)
+        # --- Treeview ---
+        tree_frame = ttk.Frame(self, style='TFrame')
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        self.tree = ttk.Treeview(tree_frame, columns=('params', 'desc'), show='tree headings')
+        
+        self.tree.tag_configure('disconnected', foreground=theme.COMMENT_COLOR)
 
-    all_commands = []
-    for cmd, details in sorted(scripting_commands.items(), key=lambda item: (item[1]['device'], item[0])):
-        all_commands.append({
-            'cmd': cmd,
-            'device': details['device'].capitalize(),
-            'params': " ".join([p['name'] for p in details['params']]),
-            'desc': details['help']
-        })
+        self.filter_widgets = {} # Store widgets instead of vars
+        self.columns = {'#0': 'cmd', 'params': 'params', 'desc': 'desc'}
+        widths = {'#0': 200, 'params': 120, 'desc': 300}
 
-    def populate_tree(commands_to_display):
-        for item in tree.get_children():
-            tree.delete(item)
+        for i, (col_id, col_key) in enumerate(self.columns.items()):
+            self.tree.heading(col_id, text=col_key.capitalize() if col_id!='#0' else 'Command')
+            self.tree.column(col_id, width=widths[col_id], anchor='w')
+            
+            var = tk.StringVar()
+            var.trace_add("write", self.apply_filters)
+            
+            entry = EntryWithPlaceholder(filter_frame, 
+                                         textvariable=var,
+                                         placeholder=f"Filter {col_key.capitalize()}...")
+            entry.grid(row=0, column=i, sticky='ew', padx=(0 if i==0 else 2, 0))
+            self.filter_widgets[col_key] = entry # Store the widget
 
-        # Create device sections first
+        for col_id, col_key in self.columns.items():
+            self.tree.heading(col_id, command=lambda c=col_id: self.sort_column(c, False))
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.refresh() # Initial population
+        self.tree.after(100, lambda: self.sort_column('#0', False))
+
+        context_menu = tk.Menu(self, tearoff=0, 
+                               bg=theme.WIDGET_BG, 
+                               fg=theme.FG_COLOR,
+                               activebackground=theme.PRIMARY_ACCENT,
+                               activeforeground=theme.FG_COLOR)
+        context_menu.add_command(label="Copy Command", command=self.copy_command)
+        context_menu.add_command(label="Add to Script", command=self.add_to_script)
+
+        self.tree.bind("<Button-3>", self.show_context_menu)
+        self.tree.bind("<Double-1>", lambda e: self.add_to_script())
+
+    def refresh(self):
+        """Clears and repopulates the treeview with the latest command data."""
+        self.scripting_commands = self.device_manager.get_all_scripting_commands()
+        self.all_commands = []
+        for cmd, details in sorted(self.scripting_commands.items(), key=lambda item: (item[1]['device'], item[0])):
+            self.all_commands.append({
+                'cmd': cmd,
+                'device': details['device'].capitalize(),
+                'params': " ".join([p['name'] for p in details['params']]),
+                'desc': details['help']
+            })
+        self.apply_filters()
+
+    def populate_tree(self, commands_to_display):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
         device_parents = {}
-        with devices_lock: # Safely access connection status
-            device_states = device_manager.get_all_device_states()
+        with devices_lock:
+            device_states = self.device_manager.get_all_device_states()
             for device_name in sorted(device_states.keys()):
                 is_connected = device_states[device_name].get('connected', False)
-                
-                # Set appearance and state based on connection
                 tags = () if is_connected else ('disconnected',)
-                is_open = is_connected # Expand if connected, collapse if not
-                
-                parent_id = tree.insert('', 'end', text=device_name.capitalize(), values=('', ''), open=is_open, tags=tags)
+                is_open = is_connected
+                parent_id = self.tree.insert('', 'end', text=device_name.capitalize(), values=('', ''), open=is_open, tags=tags)
                 device_parents[device_name] = parent_id
 
-        # Populate commands under the correct device section
         for cmd_data in commands_to_display:
             device_key = cmd_data['device'].lower()
             parent_id = device_parents.get(device_key)
             if parent_id:
-                # Use same tags as parent for consistent styling
-                tags = tree.item(parent_id, 'tags')
-                tree.insert(parent_id, 'end', text=cmd_data['cmd'], values=(cmd_data['params'], cmd_data['desc']), tags=tags)
+                tags = self.tree.item(parent_id, 'tags')
+                self.tree.insert(parent_id, 'end', text=cmd_data['cmd'], values=(cmd_data['params'], cmd_data['desc']), tags=tags)
 
-    filter_vars = {}
-    def apply_filters(*args):
-        filtered_commands = all_commands
-        for col, var in filter_vars.items():
-            entry = var.get()
-            # Don't filter if it's just the placeholder
-            if entry and entry != f"Filter {col.capitalize()}...":
+    def apply_filters(self, *args):
+        filtered_commands = self.all_commands
+        for col, widget in self.filter_widgets.items():
+            entry = widget.get() # Use the widget's custom get()
+            if entry: # The custom get() returns "" for placeholder, so this check is sufficient
                 filter_text = entry.lower()
                 filtered_commands = [cmd for cmd in filtered_commands if filter_text in cmd[col].lower()]
-        populate_tree(filtered_commands)
-        # After filtering, re-apply the current sort
-        if 'sort_by' in tree.__dict__:
-             sort_column(tree.sort_by, tree.sort_rev, True)
+        self.populate_tree(filtered_commands)
+        if hasattr(self.tree, 'sort_by'):
+             self.sort_column(self.tree.sort_by, self.tree.sort_rev, True)
 
-
-    columns = {'#0': 'cmd', 'params': 'params', 'desc': 'desc'}
-    widths = {'#0': 200, 'params': 120, 'desc': 300}
-
-    for i, (col_id, col_key) in enumerate(columns.items()):
-        tree.heading(col_id, text=col_key.capitalize() if col_id!='#0' else 'Command')
-        tree.column(col_id, width=widths[col_id], anchor='w')
+    def sort_column(self, col_id, reverse, preserve=False):
+        header_text = self.tree.heading(col_id, "text").replace(" ▲", "").replace(" ▼", "")
         
-        var = tk.StringVar()
-        var.trace_add("write", apply_filters)
-        filter_vars[col_key] = var
-        
-        entry = EntryWithPlaceholder(filter_frame, 
-                                     textvariable=var,
-                                     placeholder=f"Filter {col_key.capitalize()}...")
-        entry.grid(row=0, column=i, sticky='ew', padx=(0 if i==0 else 2, 0))
-
-    def sort_column(col_id, reverse, preserve=False):
-        # This function will now sort items WITHIN each device parent
-        header_text = tree.heading(col_id, "text").replace(" ▲", "").replace(" ▼", "")
-        
-        for cid, ckey in columns.items():
-             tree.heading(cid, text=ckey.capitalize() if cid!='#0' else 'Command')
+        for cid, ckey in self.columns.items():
+             self.tree.heading(cid, text=ckey.capitalize() if cid!='#0' else 'Command')
         
         arrow = " ▼" if reverse else " ▲"
-        tree.heading(col_id, text=header_text + arrow)
+        self.tree.heading(col_id, text=header_text + arrow)
 
-        # Iterate over each device parent and sort its children
-        for parent_id in tree.get_children(''):
+        for parent_id in self.tree.get_children(''):
             if col_id == '#0':
-                 l = [(tree.item(k)['text'], k) for k in tree.get_children(parent_id)]
+                 l = [(self.tree.item(k)['text'], k) for k in self.tree.get_children(parent_id)]
             else:
-                 l = [(tree.set(k, col_id), k) for k in tree.get_children(parent_id)]
+                 l = [(self.tree.set(k, col_id), k) for k in self.tree.get_children(parent_id)]
             
             l.sort(key=lambda t: t[0].lower(), reverse=reverse)
             for index, (val, k) in enumerate(l):
-                tree.move(k, parent_id, index)
+                self.tree.move(k, parent_id, index)
 
-        tree.heading(col_id, command=lambda: sort_column(col_id, not reverse))
-        tree.sort_by = col_id
-        tree.sort_rev = reverse
+        self.tree.heading(col_id, command=lambda: self.sort_column(col_id, not reverse))
+        self.tree.sort_by = col_id
+        self.tree.sort_rev = reverse
 
-
-    for col_id, col_key in columns.items():
-        tree.heading(col_id, command=lambda c=col_id: sort_column(c, False))
-
-
-    vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-    tree.configure(yscrollcommand=vsb.set)
-    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    vsb.pack(side=tk.RIGHT, fill=tk.Y)
-
-    populate_tree(all_commands)
-    # Sort by the 'Command' column by default on startup
-    # Using 'after' gives the UI a moment to draw before sorting.
-    tree.after(100, lambda: sort_column('#0', False))
-
-    context_menu = tk.Menu(parent, tearoff=0, 
-                           bg=theme.WIDGET_BG, 
-                           fg=theme.FG_COLOR,
-                           activebackground=theme.PRIMARY_ACCENT,
-                           activeforeground=theme.FG_COLOR)
-
-    def get_selected_command():
-        selected_item = tree.focus()
+    def get_selected_command(self):
+        selected_item = self.tree.focus()
         if not selected_item: return None
-        return tree.item(selected_item, "text")
+        return self.tree.item(selected_item, "text")
 
-    def copy_command():
-        command = get_selected_command()
-        if command: ref_frame.clipboard_clear(); ref_frame.clipboard_append(command)
+    def copy_command(self):
+        command = self.get_selected_command()
+        if command: self.clipboard_clear(); self.clipboard_append(command)
 
-    def add_to_script():
-        command = get_selected_command()
-        if command: script_editor_widget.insert(tk.INSERT, f"{command} ")
+    def add_to_script(self):
+        command = self.get_selected_command()
+        if command: self.script_editor_widget.insert(tk.INSERT, f"{command} ")
 
-    context_menu.add_command(label="Copy Command", command=copy_command);
-    context_menu.add_command(label="Add to Script", command=add_to_script)
+    def show_context_menu(self, event):
+        iid = self.tree.identify_row(event.y)
+        if iid: self.tree.selection_set(iid); self.tree.focus(iid); self.context_menu.post(event.x_root, event.y_root)
 
-    def show_context_menu(event):
-        iid = tree.identify_row(event.y)
-        if iid: tree.selection_set(iid); tree.focus(iid); context_menu.post(event.x_root, event.y_root)
-
-    tree.bind("<Button-3>", show_context_menu);
-    tree.bind("<Double-1>", lambda e: add_to_script())
-    return ref_frame
+def create_command_reference(parent, script_editor_widget, device_manager):
+    # This is now a wrapper for the class
+    return CommandReference(parent, script_editor_widget, device_manager)
 
 
 def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_var):
@@ -633,11 +644,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
     editor_frame = ttk.LabelFrame(left_pane, style='TFrame')
     editor_frame.pack(fill=tk.BOTH, expand=True, pady=5)
     
-    # --- Separate keywords for syntax highlighting ---
-    device_keywords = [cmd for cmd, details in scripting_commands.items() if details['device'] not in ['script', 'both']]
-    script_keywords = [cmd for cmd, details in scripting_commands.items() if details['device'] in ['script', 'both']]
-    
-    script_editor = ScriptEditor(editor_frame, device_keywords=device_keywords, script_keywords=script_keywords)
+    script_editor = ScriptEditor(editor_frame, device_manager=device_manager)
     script_editor.pack(fill="both", expand=True)
 
     # --- NEW: Find/Replace Frame ---
@@ -1029,6 +1036,7 @@ def create_scripting_interface(parent, command_funcs, shared_gui_refs, autosave_
         "check_unsaved": check_unsaved_changes,
         "load_specific_script": load_specific_script,
         "script_editor": script_editor, # Expose the script editor widget
+        "syntax_highlighter": script_editor.highlighter, # Expose for refreshing
         "scripting_commands": scripting_commands, # Expose for command reference
         "device_modules": device_modules # Expose for command reference
     }
