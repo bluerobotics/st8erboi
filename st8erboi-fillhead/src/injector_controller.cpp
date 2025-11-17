@@ -768,12 +768,14 @@ const char* Injector::getTelemetryString() {
     "inj_h_mach:%d,inj_h_cart:%d,"
     "inj_mach_mm:%.2f,inj_cart_mm:%.2f,"
     "inj_cumulative_ml:%.2f,inj_active_ml:%.2f,inj_tgt_ml:%.2f,"
-    "enabled0:%d,enabled1:%d",
+    "enabled0:%d,enabled1:%d,"
+    "injector_state:%d",
     displayTorque0, displayTorque1,
     (int)m_homingMachineDone, (int)m_homingCartridgeDone,
     machine_pos_mm, cartridge_pos_mm,
     live_cumulative_ml, m_active_op_total_dispensed_ml, m_active_op_target_ml,
-    enabled0, enabled1
+    enabled0, enabled1,
+    (int)m_state
     );
     return m_telemetryBuffer;
 }

@@ -305,7 +305,7 @@ void Fillhead::publishTelemetry() {
     // Assemble the full telemetry string from all components.
     snprintf(telemetryBuffer, sizeof(telemetryBuffer),
         "%s"
-        "MAIN_STATE:%s,"
+        "fillhead_state:%d,"
         "%s," // Injector Telemetry
         "%s," // Injection Valve Telemetry
         "%s," // Vacuum Valve Telemetry
@@ -313,7 +313,7 @@ void Fillhead::publishTelemetry() {
         "%s," // Vacuum Telemetry
 		"inj_st:%s,inj_v_st:%s,vac_v_st:%s,h_st_str:%s,vac_st_str:%s",
         TELEM_PREFIX,
-        mainStateStr,
+        (int)m_mainState,
         m_injector.getTelemetryString(),
         m_injectorValve.getTelemetryString(),
         m_vacuumValve.getTelemetryString(),
